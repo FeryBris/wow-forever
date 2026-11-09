@@ -8,7 +8,7 @@ libxell.dll
 Logs/
 Screenshots/
 Utils/
-vkd3d-proton.cache
+vkd3d-proton.cache*
 Wow.exe
 wow_loader.dll
 .flavor.info
@@ -38,3 +38,7 @@ Errors/
 WTF/**/*.lua.bak
 # Console log: thousands of changed lines every session, nothing to share
 WTF/SavedVariables/Blizzard_Console.lua
+
+# SoT Launcher's addon state file and the folder it moves replaced addons to
+Interface/AddOns/.sotlauncher.json
+Interface/.DeletedAddons/
