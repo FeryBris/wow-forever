@@ -26,3 +26,6 @@ WTF/**/*.old
 WTF/**/layout-local.txt
 WTF/**/character-list-order.txt
 !WTF/**/SavedVariables/**
+
+# Python cache
+__pycache__/
