@@ -5,37 +5,37 @@ AzeriteUI5_DB = {
 ["warriorEndcap"] = "warswords",
 ["warriorEndcapY"] = -3,
 ["hunterPreview"] = false,
-["druidPreview"] = false,
-["warriorPreview"] = true,
-["roguePreview"] = false,
 ["paladinPreview"] = false,
+["druidPreview"] = false,
+["roguePreview"] = false,
+["warriorCastEndcapScale"] = 0.8,
 ["shamanPreview"] = false,
 ["legacyHUD"] = false,
-["warriorCastEndcapScale"] = 0.8,
+["warriorPreview"] = true,
 ["magePreview"] = false,
 },
 },
 ["global"] = {
 ["nameplateInterruptSpells"] = {
 ["platerImported"] = false,
-["interruptible"] = {
-},
+["platerImportedAt"] = 0,
 ["platerImportedCount"] = 0,
 ["protected"] = {
 },
-["platerImportedAt"] = 0,
+["interruptible"] = {
+},
 },
 ["debugHealthFilter"] = "Target.",
-["optionsWindowStyle"] = "rounded",
+["optionsTheme"] = "azerite",
 ["runtimeUnitTestMode"] = false,
 ["secureSnippets"] = {
-["build"] = "70862",
 ["available"] = true,
+["build"] = "70862",
 },
-["optionsTheme"] = "azerite",
+["optionsWindowStyle"] = "rounded",
 ["optionsScale"] = 1,
-["whatsNewSeen"] = "5.35.1-JuNNeZ",
 ["version"] = 25,
+["whatsNewSeen"] = "5.35.1-JuNNeZ",
 ["optionsPanel"] = {
 ["y"] = -78.82557678222656,
 ["x"] = -55.83265686035156,
@@ -81,13 +81,13 @@ AzeriteUI5_DB = {
 ["fadeFrom"] = 1,
 ["layout"] = "grid",
 ["dimWhenResting"] = false,
-["blockFadedClicks"] = true,
-["enableBarFading"] = false,
 ["fadeInCombat"] = true,
+["enableBarFading"] = false,
+["blockFadedClicks"] = true,
 },
 {
 ["clickOnDown"] = true,
-["dimWhenInactive"] = true,
+["showEmptyButtons"] = true,
 ["savedPosition"] = {
 "BOTTOM",
 -0.0006103515625,
@@ -97,17 +97,17 @@ AzeriteUI5_DB = {
 ["growthHorizontal"] = "LEFT",
 ["growthVertical"] = "UP",
 ["numbuttons"] = 11,
-["dimWhenResting"] = false,
-["enabled"] = true,
 ["breakpadding"] = 0,
+["enabled"] = true,
+["dimWhenResting"] = false,
 ["startAt"] = 1,
 ["padding"] = 0,
 ["enableBarFading"] = false,
-["showEmptyButtons"] = true,
+["dimWhenInactive"] = true,
 },
 {
 ["clickOnDown"] = true,
-["dimWhenInactive"] = true,
+["showEmptyButtons"] = true,
 ["savedPosition"] = {
 "BOTTOM",
 -121.7172241210938,
@@ -123,26 +123,26 @@ AzeriteUI5_DB = {
 ["layout"] = "zigzag",
 ["breakpadding"] = 0,
 ["padding"] = 0,
-["showEmptyButtons"] = true,
+["dimWhenInactive"] = true,
 },
 {
 ["clickOnDown"] = true,
-["showEmptyButtons"] = true,
+["dimWhenInactive"] = true,
 ["savedPosition"] = {
 "BOTTOMRIGHT",
 -536.4249267578125,
 258.8390808105469,
 ["scale"] = 1.031494111066422,
 },
-["breakpadding"] = 0,
+["dimWhenResting"] = false,
 ["growthHorizontal"] = "LEFT",
 ["enabled"] = true,
 ["numbuttons"] = 2,
 ["layout"] = "zigzag",
-["dimWhenResting"] = false,
+["breakpadding"] = 0,
 ["fadeInCombat"] = true,
 ["padding"] = 0,
-["dimWhenInactive"] = true,
+["showEmptyButtons"] = true,
 },
 {
 ["clickOnDown"] = true,
@@ -155,17 +155,17 @@ AzeriteUI5_DB = {
 },
 ["showEmptyButtons"] = true,
 ["growthHorizontal"] = "LEFT",
-["enabled"] = true,
+["breakpoint"] = 12,
 ["numbuttons"] = 2,
 ["layout"] = "zigzag",
-["dimWhenResting"] = false,
-["breakpoint"] = 12,
-["padding"] = 0,
 ["breakpadding"] = 0,
+["enabled"] = true,
+["padding"] = 0,
+["dimWhenResting"] = false,
 },
 {
 ["clickOnDown"] = true,
-["dimWhenInactive"] = true,
+["showEmptyButtons"] = true,
 ["savedPosition"] = {
 "BOTTOMLEFT",
 536.4234619140625,
@@ -178,14 +178,14 @@ AzeriteUI5_DB = {
 ["growthVertical"] = "UP",
 ["numbuttons"] = 2,
 ["layout"] = "zigzag",
-["growth"] = "vertical",
 ["breakpadding"] = 0,
+["growth"] = "vertical",
 ["padding"] = 0,
-["showEmptyButtons"] = true,
+["dimWhenInactive"] = true,
 },
 {
 ["clickOnDown"] = true,
-["showEmptyButtons"] = true,
+["dimWhenInactive"] = true,
 ["savedPosition"] = {
 "BOTTOM",
 -6.103515625e-05,
@@ -199,11 +199,11 @@ AzeriteUI5_DB = {
 ["startAt"] = 7,
 ["padding"] = 0,
 ["enableBarFading"] = true,
-["dimWhenInactive"] = true,
+["showEmptyButtons"] = true,
 },
 {
 ["clickOnDown"] = true,
-["showEmptyButtons"] = true,
+["dimWhenInactive"] = true,
 ["savedPosition"] = {
 "BOTTOM",
 -0.00042724609375,
@@ -215,7 +215,7 @@ AzeriteUI5_DB = {
 ["breakpadding"] = 6,
 ["numbuttons"] = 1,
 ["padding"] = 7,
-["dimWhenInactive"] = true,
+["showEmptyButtons"] = true,
 },
 },
 ["dimWhenInactive"] = true,
@@ -280,7 +280,7 @@ nil,
 ["savedPosition"] = {
 nil,
 -0.00042724609375,
--263.5977783203125,
+-263.59765625,
 ["lockAnchorPoint"] = false,
 },
 },
@@ -470,33 +470,11 @@ nil,
 },
 },
 },
-["UIWidgetTopCenter"] = {
-["profiles"] = {
-["Azerite"] = {
-["savedPosition"] = {
-nil,
--0.00042724609375,
--37.0570068359375,
-["scale"] = 1.316550936489539,
-["lockAnchorPoint"] = false,
-},
-},
-},
+["AuraSounds"] = {
 },
 ["GameMenuSkin"] = {
 },
-["PartyFrames"] = {
-["profiles"] = {
-["Azerite"] = {
-["showPlayerInParty"] = true,
-["savedPosition"] = {
-nil,
-0,
-0,
-["lockAnchorPoint"] = false,
-},
-},
-},
+["Containers"] = {
 },
 ["PetBar"] = {
 ["profiles"] = {
@@ -523,41 +501,16 @@ nil,
 },
 },
 },
-["Auras"] = {
+["WorldMap"] = {
+},
+["ChatFrames"] = {
+},
+["NamePlates"] = {
 ["profiles"] = {
 ["Azerite"] = {
-["savedPosition"] = {
-nil,
--311.7406005859375,
-0.0032958984375,
-["lockAnchorPoint"] = false,
-},
-["enableAuraFading"] = false,
-["ignoreTarget"] = true,
-},
-},
-},
-["PlayerTotemsFrame"] = {
-["profiles"] = {
-["Azerite"] = {
-["savedPosition"] = {
-"BOTTOMLEFT",
-423.7145690917969,
-341.9457092285156,
-["lockAnchorPoint"] = false,
-},
-},
-},
-},
-["RaidFrame25"] = {
-["profiles"] = {
-["Azerite"] = {
-["savedPosition"] = {
-nil,
-57.30521774291992,
--48.130859375,
-["lockAnchorPoint"] = false,
-},
+["nameplateScaleModelVersion"] = 11,
+["showObjectNames"] = true,
+["showNameAlways"] = true,
 },
 },
 },
@@ -574,17 +527,15 @@ nil,
 },
 },
 },
-["VehicleExit"] = {
+["RaidFrame25"] = {
 ["profiles"] = {
 ["Azerite"] = {
 ["savedPosition"] = {
 nil,
--249.32421875,
-249.3234710693359,
-["scale"] = 1.146104622502105,
+57.30521774291992,
+-48.130859375,
 ["lockAnchorPoint"] = false,
 },
-["customPositionInitialized"] = true,
 },
 },
 },
@@ -600,15 +551,20 @@ nil,
 },
 },
 },
-["PlayerFrameParty"] = {
+["Tooltips"] = {
 ["profiles"] = {
 ["Azerite"] = {
+["nameplateUnitTransparency"] = true,
+["showItemID"] = true,
 ["savedPosition"] = {
 nil,
--0.00042724609375,
-309.4480285644531,
+-359.9830322265625,
+187.3263854980469,
+["scale"] = 1.128472231276747,
 ["lockAnchorPoint"] = false,
 },
+["theme"] = "Azerite",
+["showSpellID"] = true,
 },
 },
 },
@@ -647,20 +603,15 @@ nil,
 },
 },
 },
-["Tooltips"] = {
+["PlayerFrameParty"] = {
 ["profiles"] = {
 ["Azerite"] = {
-["nameplateUnitTransparency"] = true,
-["showItemID"] = true,
 ["savedPosition"] = {
 nil,
--359.9830322265625,
-187.3263854980469,
-["scale"] = 1.128472231276747,
+-0.00042724609375,
+309.447998046875,
 ["lockAnchorPoint"] = false,
 },
-["theme"] = "Azerite",
-["showSpellID"] = true,
 },
 },
 },
@@ -676,22 +627,71 @@ nil,
 },
 },
 },
-["NamePlates"] = {
+["VehicleExit"] = {
 ["profiles"] = {
 ["Azerite"] = {
-["nameplateScaleModelVersion"] = 11,
-["showObjectNames"] = true,
-["showNameAlways"] = true,
+["customPositionInitialized"] = true,
+["savedPosition"] = {
+nil,
+-249.32421875,
+249.3234710693359,
+["scale"] = 1.146104622502105,
+["lockAnchorPoint"] = false,
 },
 },
 },
-["ChatFrames"] = {
 },
-["WorldMap"] = {
+["PlayerTotemsFrame"] = {
+["profiles"] = {
+["Azerite"] = {
+["savedPosition"] = {
+"BOTTOMLEFT",
+423.7145690917969,
+341.9457092285156,
+["lockAnchorPoint"] = false,
 },
-["Containers"] = {
 },
-["AuraSounds"] = {
+},
+},
+["Auras"] = {
+["profiles"] = {
+["Azerite"] = {
+["savedPosition"] = {
+nil,
+-311.7406005859375,
+0.0032958984375,
+["lockAnchorPoint"] = false,
+},
+["enableAuraFading"] = false,
+["ignoreTarget"] = true,
+},
+},
+},
+["PartyFrames"] = {
+["profiles"] = {
+["Azerite"] = {
+["showPlayerInParty"] = true,
+["savedPosition"] = {
+nil,
+0,
+0,
+["lockAnchorPoint"] = false,
+},
+},
+},
+},
+["UIWidgetTopCenter"] = {
+["profiles"] = {
+["Azerite"] = {
+["savedPosition"] = {
+nil,
+-0.00042724609375,
+-37.0570068359375,
+["scale"] = 1.316550936489539,
+["lockAnchorPoint"] = false,
+},
+},
+},
 },
 },
 ["profileKeys"] = {
@@ -704,11 +704,11 @@ nil,
 ["Azerite"] = {
 ["moverLinks"] = {
 ["azerite"] = {
-["PlayerFrame"] = {
-["y"] = 49.51,
-["x"] = -469.33,
-["point"] = "LEFT",
-["relativePoint"] = "LEFT",
+["TargetFrame"] = {
+["y"] = 0,
+["x"] = 464.17,
+["point"] = "RIGHT",
+["relativePoint"] = "RIGHT",
 ["target"] = "ActionBars.bar8",
 },
 ["ActionBars.bar6"] = {
@@ -718,11 +718,11 @@ nil,
 ["relativePoint"] = "TOPLEFT",
 ["target"] = "ActionBars.bar1",
 },
-["ActionBars.bar2"] = {
-["y"] = -185.67,
-["x"] = 0,
-["point"] = "BOTTOM",
-["relativePoint"] = "BOTTOM",
+["ActionBars.bar5"] = {
+["y"] = -77.36,
+["x"] = 72.2,
+["point"] = "BOTTOMRIGHT",
+["relativePoint"] = "BOTTOMRIGHT",
 ["target"] = "ActionBars.bar1",
 },
 ["ActionBars.bar3"] = {
@@ -732,11 +732,11 @@ nil,
 ["relativePoint"] = "BOTTOMLEFT",
 ["target"] = "ActionBars.bar1",
 },
-["ActionBars.bar5"] = {
-["y"] = -77.36,
-["x"] = 72.2,
-["point"] = "BOTTOMRIGHT",
-["relativePoint"] = "BOTTOMRIGHT",
+["ActionBars.bar2"] = {
+["y"] = -185.67,
+["x"] = 0,
+["point"] = "BOTTOM",
+["relativePoint"] = "BOTTOM",
 ["target"] = "ActionBars.bar1",
 },
 ["ActionBars.bar4"] = {
@@ -746,11 +746,11 @@ nil,
 ["relativePoint"] = "TOPRIGHT",
 ["target"] = "ActionBars.bar1",
 },
-["TargetFrame"] = {
-["y"] = 0,
-["x"] = 464.17,
-["point"] = "RIGHT",
-["relativePoint"] = "RIGHT",
+["PlayerFrame"] = {
+["y"] = 49.51,
+["x"] = -469.33,
+["point"] = "LEFT",
+["relativePoint"] = "LEFT",
 ["target"] = "ActionBars.bar8",
 },
 },
