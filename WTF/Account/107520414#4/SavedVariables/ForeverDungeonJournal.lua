@@ -10,7 +10,7 @@ ForeverDungeonJournalDB = {
 ["displayIDs"] = {
 },
 ["mapBossScale"] = 0.3,
-["newestSeenAt"] = 1794220094,
+["newestSeenAt"] = 1794220210,
 ["newestSeenVersion"] = "1.7.4",
 ["mapFloors"] = {
 ["Ragefire Chasm"] = 1,
@@ -668,9 +668,9 @@ ForeverDungeonJournalDB = {
 ["o"] = "Speak with Thun'grim Firegaze in the Barrens.",
 ["d"] = "Thun'grim Firegaze, an orc blacksmith of renown, has heard of your continued deeds of valor in service of the Horde.  He would like to fashion for you a suit of armor, and bids you speak with him immediately.\n\nThun'grim is camped east of the Crossroads in the Barrens.",
 },
-[1153] = {
-["o"] = "Find an Unrefined Ore Sample on a Gravelsnout Digger or Surveyor and bring it to Tatternack Steelforge at Camp Taurajo in the Barrens.",
-["d"] = "Warrior, you have done well in helping me in the past. The warchief is pleased thus far with what I've accomplished, and asks me to continue with renewed determination. My honor dictates that I give you proper recognition to the warchief for all you have done, but first I would ask you for your help again.\n\nTravelers recently came from the south from a place called Thousand Needles. There they killed a kobold who had an unusual ore sample, but they would not sell it. I want a sample of that ore to examine.",
+[92401] = {
+["o"] = "Investigate the disappearance of Edward Heartweaver in the Ruins of Lordaeron.",
+["d"] = "It's my husband Edward...\r\n\r\nHe has not returned from his weekly journey to the graveyard in the Lordaeron ruins. Our son was lost when Arthas razed the city, and my dear Edward is still filled with guilt and sorrow that we never found his body. I've tried to warn him against searching those overrun ruins, but he refuses to give up. I try not to worry, but it's been days.\r\n\r\nThere are things there I cannot contend with but if you are willing, I need to know the fate of my husband.",
 },
 [1013] = {
 ["o"] = "Bring the Book of Ur to Keeper Bel'dugur at the Apothecarium in the Undercity.",
@@ -732,13 +732,13 @@ ForeverDungeonJournalDB = {
 ["o"] = "Get the Super Reaper 6000 Nprints for Ziz Fizziks in the Stonetalon Mountains.",
 ["d"] = "Terrible what the Venture Company has done here, eh? What were they thinking? Goblin company hiring a gnome!\n\nLucky for me, Sputtervalve knows a genius when he sees one. Hired me just after I'd been kicked out!\n\nTells me they built some enormous woodcutting machine, and Sput' wants me to steal the plans for him. Unfortunately, Gerenzo--bloody gnome--wants me dead on sight... maybe you could steal the plans for me? You should be able to find them on one of their operators.",
 },
-[6382] = {
-["o"] = "Speak with Senani Thunderheart at Splintertree Post, Ashenvale.",
-["d"] = "Your strength impresses me, warrior.  Your willingness to embrace the hunt gives me confidence that you could move on to bigger game... and bigger challenges.\n\nThe forests of Ashenvale represent a vast untamed wild that the Horde seeks to impose its own will upon, both politically and spiritually.  If you seek to prove yourself in an unproven land, seek the guidance of Senani Thunderheart in Splintertree Post.  The outpost is due north of the path leading from the Barrens.",
-},
 [1221] = {
 ["o"] = "Grab a Crate with Holes.\nGrab a Snufflenose Command Stick.\nGrab and read the Snufflenose Owner's Manual.\n\nIn Razorfen Kraul, use the Crate with Holes to summon a Snufflenose Gopher, and use the Command Stick on the gopher to make it search for Tubers.\n\nBring 6 Nleaf Tubers, the Snufflenose Command Stick and the Crate with Holes to Mebok Mizzyrix in Ratchet.",
 ["d"] = "Nleaf tubers are a delicacy around the world!  But they're rare, very rare.  The only place to find them is here in the Barrens, deep in the earth, in Razorfen Kraul.\n\nAnd even then, they're impossible to find unless you know just where to look!  That's why I've trained these snufflenose gophers to find them for me.  They have great noses and can smell a tuber from fifty paces away.\n\nIt won't be easy, but if you get me some tubers I'll pay you handsomely.",
+},
+[6382] = {
+["o"] = "Speak with Senani Thunderheart at Splintertree Post, Ashenvale.",
+["d"] = "Your strength impresses me, warrior.  Your willingness to embrace the hunt gives me confidence that you could move on to bigger game... and bigger challenges.\n\nThe forests of Ashenvale represent a vast untamed wild that the Horde seeks to impose its own will upon, both politically and spiritually.  If you seek to prove yourself in an unproven land, seek the guidance of Senani Thunderheart in Splintertree Post.  The outpost is due north of the path leading from the Barrens.",
 },
 [5725] = {
 ["o"] = "Bring the books Spells of Shadow and Incantations from the Nether to Varimathras in Undercity.",
@@ -800,9 +800,9 @@ ForeverDungeonJournalDB = {
 ["o"] = "Kill 8 Bleeding Horrors and 8 Wandering Spirits, then report back to Linnea at her camp.",
 ["d"] = "The defenders on The Bulwark protecting Tirisfal from the Plaguelands are on constant alert. But sometimes Scourge will slip past them.\n\nOur success at the Bulwark depends on a one-front battle - we cannot allow an attack from the rear, nor can we allow our defenders' supply line to be cut.\n\nAssist the Bulwark. Patrol east and slay any Scourge you find. Spend particular effort at the Balnir Farmstead to the east. It has become a haven for interloping Scourge.",
 },
-[92401] = {
-["o"] = "Investigate the disappearance of Edward Heartweaver in the Ruins of Lordaeron.",
-["d"] = "It's my husband Edward...\r\n\r\nHe has not returned from his weekly journey to the graveyard in the Lordaeron ruins. Our son was lost when Arthas razed the city, and my dear Edward is still filled with guilt and sorrow that we never found his body. I've tried to warn him against searching those overrun ruins, but he refuses to give up. I try not to worry, but it's been days.\r\n\r\nThere are things there I cannot contend with but if you are willing, I need to know the fate of my husband.",
+[1153] = {
+["o"] = "Find an Unrefined Ore Sample on a Gravelsnout Digger or Surveyor and bring it to Tatternack Steelforge at Camp Taurajo in the Barrens.",
+["d"] = "Warrior, you have done well in helping me in the past. The warchief is pleased thus far with what I've accomplished, and asks me to continue with renewed determination. My honor dictates that I give you proper recognition to the warchief for all you have done, but first I would ask you for your help again.\n\nTravelers recently came from the south from a place called Thousand Needles. There they killed a kobold who had an unusual ore sample, but they would not sell it. I want a sample of that ore to examine.",
 },
 [1838] = {
 ["o"] = "Bring to Thun'grim Firegaze 15 Smoky Iron Ingots, 10 Powdered Azurite, 10 Iron Bars and a Vial of Phlogiston.",

@@ -2,21 +2,9 @@
 ForeverPlusDB = {
 ["chatHistory"] = {
 ["Player-6946-0068FBC9"] = {
-["stamp"] = "2026-11-09 11:15:40",
+["stamp"] = "2026-11-09 11:29:50",
 ["windows"] = {
 ["ChatFrame4"] = {
-{
-"|Haddon:ForeverPlus:line:1794178145.2|h[11:52]|h |Hchannel:channel:1|h[1]|h |A:classicon-warlock:14:14|a |Hplayer:Azeroth Airlines:141:CHANNEL:1|h[|cff8788eeAzeroth Airlines|r]|h: DIM your UI with: /run UIParent:SetAlpha(0.60)",
-1,
-0.753,
-0.753,
-},
-{
-"|Haddon:ForeverPlus:line:1794178145.3|h[11:52]|h |Hchannel:channel:1|h[1]|h |A:classicon-warlock:14:14|a |Hplayer:Azeroth Airlines:142:CHANNEL:1|h[|cff8788eeAzeroth Airlines|r]|h: 1 is back to normal",
-1,
-0.753,
-0.753,
-},
 {
 "|Haddon:ForeverPlus:line:1794178145.9|h[12:00]|h |Hchannel:channel:1|h[1]|h |A:classicon-druid:14:14|a |Hplayer:Ishh Nn:156:CHANNEL:1|h[|cffff7c0aIshh Nn|r]|h: <COMP> Recruiting players of ALL CLASSES for organised World PvP, PvE, Battlegrounds and Raids!We believe in fair loot distribution through Soft Res, NOT loot funneling to core members. Everyone deserves a fair shot at the loot ./w me for invite",
 1,
@@ -605,8 +593,32 @@ ForeverPlusDB = {
 0.753,
 0.753,
 },
+{
+"Left Channel: |Hchannel:CHANNEL:1|h[1]|h",
+1,
+0.753,
+0.753,
+},
+{
+"Left Channel: |Hchannel:CHANNEL:3|h[3]|h",
+1,
+0.753,
+0.753,
+},
 },
 ["ChatFrame3"] = {
+{
+"Speech to text allows you to add closed captioning in a voice channel.",
+1,
+1,
+0,
+},
+{
+"Speech to text allows you to add closed captioning in a voice channel.",
+1,
+1,
+0,
+},
 {
 "Speech to text allows you to add closed captioning in a voice channel.",
 1,
@@ -735,6 +747,48 @@ ForeverPlusDB = {
 {
 "|cff69ccf0SoT Guild Sync|r: last probe: 2026-11-09 11:08 by Blue, bank not captured (open the guild bank after probing)",
 },
+{
+"|cffd8a83cDungeon Journal by Exehn|r |cffffffffv1.6.7|r",
+},
+{
+"|cff00b4ffForeverPlus|r: v1.0.7 loaded, 26 of 29 modules enabled, profile |cffffffffDefault|r. Open the settings with |cff888888/fplus|r.",
+},
+{
+"Remember to act responsibly, protect your personal information, and report anything offensive. View our In-Game Code of Conduct on |HurlIndex:64|h|cnVISITABLE_URL_DEFAULT_CHAT_LINK_COLOR:https://support.blizzard.com/article/42673|r|h for more information.",
+1,
+1,
+0,
+},
+{
+"Guild Message of the Day: \"Pridajte sa na discord (link guild info) a dajte si tam nick ako mate v hre, aspon do zatvorky.\"",
+0.251,
+1,
+0.251,
+},
+{
+"|cffd8a83cDungeonJournal|r Version 1.7.4 is available (you have 1.6.7). Update on CurseForge.",
+},
+{
+"Guild Message of the Day: \"Pridajte sa na discord (link guild info) a dajte si tam nick ako mate v hre, aspon do zatvorky.\"",
+0.251,
+1,
+0.251,
+},
+{
+"|cffd8a83cDungeon Journal by Exehn|r |cffffffffv1.6.7|r",
+},
+{
+"|cff00b4ffForeverPlus|r: v1.0.7 loaded, 26 of 29 modules enabled, profile |cffffffffDefault|r. Open the settings with |cff888888/fplus|r.",
+},
+{
+"Remember to act responsibly, protect your personal information, and report anything offensive. View our In-Game Code of Conduct on |HurlIndex:64|h|cnVISITABLE_URL_DEFAULT_CHAT_LINK_COLOR:https://support.blizzard.com/article/42673|r|h for more information.",
+1,
+1,
+0,
+},
+{
+"|cffd8a83cDungeonJournal|r Version 1.7.4 is available (you have 1.6.7). Update on CurseForge.",
+},
 },
 },
 },
@@ -795,12 +849,12 @@ ForeverPlusDB = {
 ["reagent17026"] = 20,
 ["reagent5565"] = 5,
 ["poison8927"] = 10,
-["poison10922"] = 20,
 ["poison6947"] = 10,
+["poison2893"] = 10,
 ["poison8985"] = 10,
 ["reagent17035"] = 5,
 ["reagent17032"] = 10,
-["poison2893"] = 10,
+["poison10922"] = 20,
 ["buyWithoutAsking"] = false,
 ["reagent17037"] = 5,
 ["poison2892"] = 10,
@@ -864,16 +918,16 @@ ForeverPlusDB = {
 ["searchX"] = 0,
 ["raceIcons"] = false,
 ["leftEdge"] = false,
-["searchY"] = 0,
+["stampOpen"] = true,
 ["tabsOnHover"] = false,
 ["arrowHistory"] = true,
-["history"] = true,
 ["fadeAfter"] = 10,
+["history"] = true,
 ["search"] = false,
 ["soundPause"] = 10,
 ["webAddresses"] = true,
 ["inputPlace"] = "below",
-["stampOpen"] = true,
+["searchY"] = 0,
 ["searchAlways"] = false,
 },
 ["modules"] = {
@@ -893,8 +947,8 @@ ForeverPlusDB = {
 ["Reagents"] = true,
 ["MinimapButton"] = true,
 ["MailAlts"] = true,
-["QuestAutoTurnIn"] = true,
 ["HideElements"] = true,
+["QuestAutoTurnIn"] = true,
 ["Tooltip"] = true,
 ["BagWindow"] = true,
 ["QuestZoneTracking"] = true,
@@ -908,13 +962,15 @@ ForeverPlusDB = {
 ["GossipAuto"] = true,
 },
 ["BuffExpiry"] = {
-["warnShort"] = 10,
+["warnMounted"] = true,
 ["selfBuffs"] = true,
 ["tracking"] = true,
-["warnMounted"] = true,
+["warnShort"] = 10,
 ["groupBuffs"] = true,
 ["warnMedium"] = 180,
-["othersInDungeons"] = true,
+["offerWarn"] = {
+["PRIEST/shadowProtection"] = false,
+},
 ["reachYards"] = 100,
 ["targetsSplit"] = true,
 ["off"] = {
@@ -927,9 +983,7 @@ ForeverPlusDB = {
 ["othersInWorld"] = false,
 ["warnLong"] = 300,
 ["warnResting"] = true,
-["offerWarn"] = {
-["PRIEST/shadowProtection"] = false,
-},
+["othersInDungeons"] = true,
 },
 ["AutoBuy"] = {
 ["skipDialog"] = false,
@@ -966,13 +1020,13 @@ ForeverPlusDB = {
 ["holdShiftStop"] = true,
 },
 ["HideElements"] = {
-["addons"] = "show",
-["tracking"] = "show",
 ["calendar"] = "show",
+["tracking"] = "show",
+["zone"] = "show",
 ["clock"] = "show",
 ["bags"] = "show",
 ["micro"] = "show",
-["zone"] = "show",
+["addons"] = "show",
 },
 ["QuestAutoTurnIn"] = {
 ["fromGossip"] = true,
@@ -987,12 +1041,12 @@ ForeverPlusDB = {
 ["barTexture"] = "FLAT",
 ["extras"] = true,
 ["layout"] = "list",
-["showClass"] = true,
+["classColor"] = true,
 ["targetOfTarget"] = true,
 ["showGuild"] = true,
 ["gatherSkill"] = true,
 ["anchor"] = "DEFAULT",
-["classColor"] = true,
+["showClass"] = true,
 ["showFaction"] = true,
 ["vendorPrice"] = true,
 },
@@ -1034,9 +1088,9 @@ ForeverPlusDB = {
 0.1019607856869698,
 0,
 },
-["positioned"] = true,
-["xpRate"] = true,
 ["gold"] = true,
+["xpRate"] = true,
+["positioned"] = true,
 ["junkPlainClick"] = false,
 ["goldHideOthers"] = false,
 ["junk"] = false,
@@ -1151,7 +1205,7 @@ ForeverPlusDB = {
 ["xpSession"] = {
 ["gained"] = 0,
 ["key"] = "Player-6946-0068FBC9",
-["started"] = 258142.733,
+["started"] = 258995.329,
 ["xp"] = 5914,
 ["maximum"] = 34000,
 },
