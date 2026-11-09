@@ -29,3 +29,12 @@ WTF/**/character-list-order.txt
 
 # Python cache
 __pycache__/
+
+# Crash dumps written by BlizzardError.exe
+errors/
+Errors/
+
+# WoW's copy of the previous session's SavedVariables (the .lua history already has it)
+WTF/**/*.lua.bak
+# Console log: thousands of changed lines every session, nothing to share
+WTF/SavedVariables/Blizzard_Console.lua
