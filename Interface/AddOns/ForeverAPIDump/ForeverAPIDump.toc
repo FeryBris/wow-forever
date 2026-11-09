@@ -1,0 +1,8 @@
+## Interface: 16001, 120100, 120105, 120107
+## Title: ForeverAPIDump
+## Notes: Dumps the client's API (APIDocumentation, globals, Enum, widget methods) to SavedVariables. Run /apidump, then /reload.
+## Author: FeryWork
+## Version: 1.0.0
+## SavedVariables: ForeverAPIDumpDB
+
+ForeverAPIDump.lua
