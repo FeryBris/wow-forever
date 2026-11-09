@@ -13,3 +13,16 @@ Wow.exe
 wow_loader.dll
 .flavor.info
 WTF/Config.wtf
+
+# WoW API annotations (separate git repo, Ketho/vscode-wow-api)
+.wow-api-cache/
+
+# WTF: ignore client config & cache files, keep SavedVariables + AddOns.txt
+WTF/*.wtf
+WTF/*.json
+WTF/gamecontrollerdb.txt
+WTF/**/*cache*
+WTF/**/*.old
+WTF/**/layout-local.txt
+WTF/**/character-list-order.txt
+!WTF/**/SavedVariables/**

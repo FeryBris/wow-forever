@@ -1,9 +1,0 @@
-VER 3 0100000000000002 "Changestance" "134400"
-#showtooltip
-/cast [stance:2] Battle Stance
-/cast [stance:1] Defensive Stance 
-END
-VER 3 0100000000000001 "Overenge" "134400"
-#showtooltip
-/cast [stance:1] Overpower; [stance:2] Revenge
-END

@@ -4,782 +4,6 @@ Blizzard_Console_SavedVars = {
 ["height"] = 299.9999694824219,
 ["messageHistory"] = {
 {
-"Character list response received success=\"true\" isRegionwideData=\"true\" isDeletedCharacters=\"false\" characterCount=\"9\" hadPendingResult=\"false\"",
-0,
-},
-{
-"Character list update waiting on startup prerequisites waitingForHotfixesReady=\"false\" tactEncryptionConnectedReady=\"false\" tactKeyPendingPatchesReady=\"false\" sectionLoadsReady=\"true\" preloadAccountSettingsDataReady=\"true\"",
-0,
-},
-{
-"Initial hotfixes applied",
-0,
-},
-{
-"LoadAccountDataFromFile type=\"0\" pendingBefore=\"false\" hasCallback=\"true\" param=\"0\"",
-0,
-},
-{
-"LoadAccountDataFromFile type=\"10\" pendingBefore=\"false\" hasCallback=\"true\" param=\"0\"",
-0,
-},
-{
-"LoadAccountDataFromFile type=\"16\" pendingBefore=\"false\" hasCallback=\"true\" param=\"0\"",
-0,
-},
-{
-"LoadAccountDataFromFile type=\"19\" pendingBefore=\"false\" hasCallback=\"false\" param=\"0\"",
-0,
-},
-{
-"Account item collection data received for character selection collectionListType=\"7\" itemCount=\"0\" wasWaiting=\"true\"",
-0,
-},
-{
-"Character selection updating character list success=\"true\" isRegionwideData=\"true\" isDeletedCharacters=\"false\" count=\"9\"",
-0,
-},
-{
-"-------------------------------------------------- Previous Session --------------------------------------------------",
-0,
-},
-{
-"Suspend()",
-0,
-},
-{
-"LimitedLuaResources: Reset Timer",
-0,
-},
-{
-"AccountData_RequestLoad type=\"12\" fromAuth=\"false\" pending=\"false\" existingHasCallback=\"false\" newHasCallback=\"true\" existingParam=\"0\" newParam=\"123145070883600\" isReloadingUI=\"false\" loadOnDemandOnly=\"false\"",
-0,
-},
-{
-"AccountData_RequestLoad updated callback state type=\"12\" pending=\"false\" hasCallback=\"true\" param=\"123145070883600\"",
-0,
-},
-{
-"AccountData_RequestLoad type=\"13\" fromAuth=\"false\" pending=\"false\" existingHasCallback=\"false\" newHasCallback=\"true\" existingParam=\"0\" newParam=\"0\" isReloadingUI=\"false\" loadOnDemandOnly=\"false\"",
-0,
-},
-{
-"AccountData_RequestLoad updated callback state type=\"13\" pending=\"false\" hasCallback=\"true\" param=\"0\"",
-0,
-},
-{
-"AccountData_RequestLoad type=\"14\" fromAuth=\"false\" pending=\"false\" existingHasCallback=\"false\" newHasCallback=\"true\" existingParam=\"0\" newParam=\"0\" isReloadingUI=\"false\" loadOnDemandOnly=\"false\"",
-0,
-},
-{
-"AccountData_RequestLoad updated callback state type=\"14\" pending=\"false\" hasCallback=\"true\" param=\"0\"",
-0,
-},
-{
-"AccountData_RequestLoad type=\"8\" fromAuth=\"false\" pending=\"false\" existingHasCallback=\"false\" newHasCallback=\"true\" existingParam=\"0\" newParam=\"123145070893696\" isReloadingUI=\"false\" loadOnDemandOnly=\"false\"",
-0,
-},
-{
-"AccountData_RequestLoad updated callback state type=\"8\" pending=\"false\" hasCallback=\"true\" param=\"123145070893696\"",
-0,
-},
-{
-"AccountData_RequestLoad type=\"9\" fromAuth=\"false\" pending=\"false\" existingHasCallback=\"false\" newHasCallback=\"true\" existingParam=\"0\" newParam=\"123145070893696\" isReloadingUI=\"false\" loadOnDemandOnly=\"false\"",
-0,
-},
-{
-"AccountData_RequestLoad updated callback state type=\"9\" pending=\"false\" hasCallback=\"true\" param=\"123145070893696\"",
-0,
-},
-{
-"AccountData_RequestLoad type=\"18\" fromAuth=\"false\" pending=\"false\" existingHasCallback=\"false\" newHasCallback=\"true\" existingParam=\"0\" newParam=\"0\" isReloadingUI=\"false\" loadOnDemandOnly=\"false\"",
-0,
-},
-{
-"AccountData_RequestLoad updated callback state type=\"18\" pending=\"false\" hasCallback=\"true\" param=\"0\"",
-0,
-},
-{
-"PreLoadGameCVars initialized pending mask pendingMask=\"32\" initCounter=\"1\" characterlessLogin=\"false\"",
-0,
-},
-{
-"AccountData_RequestLoad type=\"2\" fromAuth=\"false\" pending=\"false\" existingHasCallback=\"false\" newHasCallback=\"true\" existingParam=\"0\" newParam=\"196609\" isReloadingUI=\"false\" loadOnDemandOnly=\"false\"",
-0,
-},
-{
-"AccountData_RequestLoad updated callback state type=\"2\" pending=\"false\" hasCallback=\"true\" param=\"196609\"",
-0,
-},
-{
-"AccountData_RequestLoad type=\"3\" fromAuth=\"false\" pending=\"false\" existingHasCallback=\"false\" newHasCallback=\"true\" existingParam=\"0\" newParam=\"196610\" isReloadingUI=\"false\" loadOnDemandOnly=\"false\"",
-0,
-},
-{
-"AccountData_RequestLoad updated callback state type=\"3\" pending=\"false\" hasCallback=\"true\" param=\"196610\"",
-0,
-},
-{
-"AccountData_RequestLoad type=\"6\" fromAuth=\"false\" pending=\"false\" existingHasCallback=\"false\" newHasCallback=\"true\" existingParam=\"0\" newParam=\"0\" isReloadingUI=\"false\" loadOnDemandOnly=\"false\"",
-0,
-},
-{
-"AccountData_RequestLoad updated callback state type=\"6\" pending=\"false\" hasCallback=\"true\" param=\"0\"",
-0,
-},
-{
-"AccountData_RequestLoad type=\"11\" fromAuth=\"false\" pending=\"false\" existingHasCallback=\"false\" newHasCallback=\"true\" existingParam=\"0\" newParam=\"0\" isReloadingUI=\"false\" loadOnDemandOnly=\"false\"",
-0,
-},
-{
-"AccountData_RequestLoad updated callback state type=\"11\" pending=\"false\" hasCallback=\"true\" param=\"0\"",
-0,
-},
-{
-"LoadGameCVars request dispatch initCounter=\"1\" pendingMask=\"32\" characterlessLogin=\"false\"",
-0,
-},
-{
-"AccountData_RequestLoad type=\"1\" fromAuth=\"false\" pending=\"false\" existingHasCallback=\"false\" newHasCallback=\"true\" existingParam=\"0\" newParam=\"65568\" isReloadingUI=\"false\" loadOnDemandOnly=\"false\"",
-0,
-},
-{
-"AccountData_RequestLoad updated callback state type=\"1\" pending=\"false\" hasCallback=\"true\" param=\"65568\"",
-0,
-},
-{
-"AccountData_RequestLoad type=\"4\" fromAuth=\"false\" pending=\"false\" existingHasCallback=\"false\" newHasCallback=\"true\" existingParam=\"0\" newParam=\"65537\" isReloadingUI=\"false\" loadOnDemandOnly=\"false\"",
-0,
-},
-{
-"AccountData_RequestLoad updated callback state type=\"4\" pending=\"false\" hasCallback=\"true\" param=\"65537\"",
-0,
-},
-{
-"AccountData_RequestLoad type=\"5\" fromAuth=\"false\" pending=\"false\" existingHasCallback=\"false\" newHasCallback=\"true\" existingParam=\"0\" newParam=\"131073\" isReloadingUI=\"false\" loadOnDemandOnly=\"false\"",
-0,
-},
-{
-"AccountData_RequestLoad updated callback state type=\"5\" pending=\"false\" hasCallback=\"true\" param=\"131073\"",
-0,
-},
-{
-"AccountData_RequestLoad type=\"7\" fromAuth=\"false\" pending=\"false\" existingHasCallback=\"false\" newHasCallback=\"true\" existingParam=\"0\" newParam=\"0\" isReloadingUI=\"false\" loadOnDemandOnly=\"false\"",
-0,
-},
-{
-"AccountData_RequestLoad updated callback state type=\"7\" pending=\"false\" hasCallback=\"true\" param=\"0\"",
-0,
-},
-{
-"Connecting to sourceRealmAddress=\"93-5-4\" connection=\"000000005ec8bd80\" serial=\"17\" protocol=\"(enum)0\"",
-0,
-},
-{
-"Opening network connection connectionIndex=\"(enum)3\" connection=\"000000005ec8bd80\" protocol=\"(enum)0\" directAddressCount=\"1\" bleepProxyCount=\"0\"",
-0,
-},
-{
-"Resuming communications connectionIndex=\"(enum)3\"",
-0,
-},
-{
-"Proficiency in item class 2 set to 0x000005c099",
-0,
-},
-{
-"Proficiency in item class 4 set to 0x000000006f",
-0,
-},
-{
-"Weather changed to 0, intensity 0.000000\n",
-0,
-},
-{
-"Time set to 11/8/2026 (Sun) 22:43",
-0,
-},
-{
-"Gamespeed set from 0.017 to 0.017",
-0,
-},
-{
-"LoadAccountDataFromFile type=\"1\" pendingBefore=\"false\" hasCallback=\"true\" param=\"65568\"",
-0,
-},
-{
-"LoadGameCVarsCallback received callbackInitCounter=\"1\" currentInitCounter=\"1\" mask=\"32\" buffsize=\"1281\" pendingMaskBefore=\"32\"",
-0,
-},
-{
-"LoadGameCVarsCallback applied response mask=\"32\" pendingMaskAfter=\"0\"",
-0,
-},
-{
-"LoadGameCVarsCheckDone areCVarsLoaded=\"true\" pendingMask=\"0\"",
-0,
-},
-{
-"LoadGameCVarsCheckDone signaled variables loaded pendingMask=\"0\"",
-0,
-},
-{
-"LoadAccountDataFromFile type=\"2\" pendingBefore=\"false\" hasCallback=\"true\" param=\"196609\"",
-0,
-},
-{
-"LoadAccountDataFromFile type=\"3\" pendingBefore=\"false\" hasCallback=\"true\" param=\"196610\"",
-0,
-},
-{
-"LoadAccountDataFromFile type=\"4\" pendingBefore=\"false\" hasCallback=\"true\" param=\"65537\"",
-0,
-},
-{
-"LoadAccountDataFromFile type=\"5\" pendingBefore=\"false\" hasCallback=\"true\" param=\"131073\"",
-0,
-},
-{
-"LoadAccountDataFromFile type=\"6\" pendingBefore=\"false\" hasCallback=\"true\" param=\"0\"",
-0,
-},
-{
-"LoadAccountDataFromFile type=\"7\" pendingBefore=\"false\" hasCallback=\"true\" param=\"0\"",
-0,
-},
-{
-"LoadAccountDataFromFile type=\"8\" pendingBefore=\"false\" hasCallback=\"true\" param=\"123145070893696\"",
-0,
-},
-{
-"LoadAccountDataFromFile type=\"9\" pendingBefore=\"false\" hasCallback=\"true\" param=\"123145070893696\"",
-0,
-},
-{
-"LoadAccountDataFromFile type=\"11\" pendingBefore=\"false\" hasCallback=\"true\" param=\"0\"",
-0,
-},
-{
-"LoadAccountDataFromFile type=\"12\" pendingBefore=\"false\" hasCallback=\"true\" param=\"123145070883600\"",
-0,
-},
-{
-"LoadAccountDataFromFile type=\"13\" pendingBefore=\"false\" hasCallback=\"true\" param=\"0\"",
-0,
-},
-{
-"LoadAccountDataFromFile type=\"14\" pendingBefore=\"false\" hasCallback=\"true\" param=\"0\"",
-0,
-},
-{
-"LoadAccountDataFromFile type=\"15\" pendingBefore=\"false\" hasCallback=\"false\" param=\"0\"",
-0,
-},
-{
-"LoadAccountDataFromFile type=\"17\" pendingBefore=\"false\" hasCallback=\"false\" param=\"0\"",
-0,
-},
-{
-"LoadAccountDataFromFile type=\"18\" pendingBefore=\"false\" hasCallback=\"true\" param=\"0\"",
-0,
-},
-{
-"-------------------------------------------------- Previous Session --------------------------------------------------",
-0,
-},
-{
-"Linear: 1. 0- disabled (live), 1- linear",
-0,
-},
-{
-"Multithreaded rendering enabled.",
-0,
-},
-{
-"Multithreaded BeginDraw enabled.",
-0,
-},
-{
-"Multithread shadows changed to 1.",
-0,
-},
-{
-"Multithreaded prepass enabled.",
-0,
-},
-{
-"Multithreaded opaque pass enabled.",
-0,
-},
-{
-"Multithreaded opaque pass enabled.",
-0,
-},
-{
-"Multithreaded alpha M2 pass enabled.",
-0,
-},
-{
-"Multithreaded opaque WMO pass enabled.",
-0,
-},
-{
-"Multithreaded terrain pass enabled.",
-0,
-},
-{
-"Multithreaded volumetric fog enabled.",
-0,
-},
-{
-"Multithreaded Refraction Pass enabled.",
-0,
-},
-{
-"Multithreaded miscellaneous passes enabled.",
-0,
-},
-{
-"Multithreaded decal passes disabled.",
-0,
-},
-{
-"Multithreaded outline passes enabled.",
-0,
-},
-{
-"Multithreaded lightshaft passes enabled.",
-0,
-},
-{
-"Use trigger on BeginDrawComplete enabled.",
-4,
-},
-{
-"Multithreaded alpha pass enabled.",
-0,
-},
-{
-"Multithreaded daynight update enabled.",
-0,
-},
-{
-"Water detail changed to 2",
-0,
-},
-{
-"Ripple detail changed to 1",
-0,
-},
-{
-"Reflection mode changed to 2",
-0,
-},
-{
-"Reflection downscale changed to 0",
-0,
-},
-{
-"Sunshafts quality changed to 2",
-0,
-},
-{
-"Refraction mode changed to 2",
-0,
-},
-{
-"Volume fog enabled.",
-0,
-},
-{
-"Particulate volumes enabled.",
-0,
-},
-{
-"Projected textures enabled.",
-0,
-},
-{
-"Shadow mode changed to 3 - 3 band dynamic shadows on units and terrain, 2048",
-0,
-},
-{
-"Shadow texture size changed to 1536.",
-0,
-},
-{
-"Soft shadows changed to 0.",
-0,
-},
-{
-"Shadow cascade blending changed to 1",
-0,
-},
-{
-"Number of shadow cascades changed to 3",
-0,
-},
-{
-"Shadow RT mode changed to 0 (Disabled)",
-0,
-},
-{
-"maxLightCount must be in range 0 to 32.",
-0,
-},
-{
-"CVar 'maxLightCount' failed validation for its initial value.",
-0,
-},
-{
-"Clustered shading enabled.",
-0,
-},
-{
-"Not forcing clustered shading.",
-0,
-},
-{
-"SSAO mode set to 3",
-0,
-},
-{
-"Depth Based Opacity Enabled",
-0,
-},
-{
-"SkyCloudLOD set to 0",
-0,
-},
-{
-"Texture filtering mode updated.",
-0,
-},
-{
-"Terrain mip level changed to 0.",
-0,
-},
-{
-"Outline mode changed to 2",
-0,
-},
-{
-"Physics interaction level changed to 1",
-0,
-},
-{
-"Render scale changed to 1",
-0,
-},
-{
-"Resample quality changed to 3",
-0,
-},
-{
-"MSAA disabled",
-0,
-},
-{
-"MSAA for alpha-test enabled.",
-0,
-},
-{
-"VALAR mode changed to 0",
-0,
-},
-{
-"lodObjectSizeScale cannot be changed.",
-0,
-},
-{
-"Volume fog enabled.",
-0,
-},
-{
-"dynamicLod enabled",
-0,
-},
-{
-"World preload object sort enabled.",
-0,
-},
-{
-"World load object sort enabled.",
-0,
-},
-{
-"World preload non critical enabled.",
-0,
-},
-{
-"World preload high res textures enabled.",
-0,
-},
-{
-"FFX: Color Blind Test Mode Disabled",
-0,
-},
-{
-"CVar 'Sound_AmbienceHighpassDSPCutoff' failed validation for its initial value.",
-0,
-},
-{
-"CVar 'Sound_AllyPlayerHighpassDSPCutoff' failed validation for its initial value.",
-0,
-},
-{
-"CVar 'Sound_EnemyPlayerHighpassDSPCutoff' failed validation for its initial value.",
-0,
-},
-{
-"CVar 'Sound_NPCHighpassDSPCutoff' failed validation for its initial value.",
-0,
-},
-{
-"GamePad input enabled.",
-0,
-},
-{
-"ChromaEffects disabled",
-0,
-},
-{
-"LimitedLuaResources: Addon capacity for Font changed to 300",
-0,
-},
-{
-"LimitedLuaResources: Addon capacity for Font changed to 300",
-0,
-},
-{
-"LimitedLuaResources: Addon capacity for Frame changed to 10000",
-0,
-},
-{
-"LimitedLuaResources: Addon capacity for Frame changed to 10000",
-0,
-},
-{
-"LimitedLuaResources: Global capacity for Timer changed to 500",
-0,
-},
-{
-"LimitedLuaResources: Global capacity for Timer changed to 500",
-0,
-},
-{
-"LimitedLuaResources: Global capacity for Animation changed to 50000",
-0,
-},
-{
-"LimitedLuaResources: Global capacity for Animation changed to 50000",
-0,
-},
-{
-"LimitedLuaResources: Global capacity for Texture changed to 400000",
-0,
-},
-{
-"LimitedLuaResources: Global capacity for Texture changed to 400000",
-0,
-},
-{
-"LimitedLuaResources: Addon capacity for FontString changed to 5000",
-0,
-},
-{
-"LimitedLuaResources: Addon capacity for FontString changed to 5000",
-0,
-},
-{
-"LimitedLuaResources: Addon capacity for Texture changed to 40000",
-0,
-},
-{
-"LimitedLuaResources: Addon capacity for Texture changed to 40000",
-0,
-},
-{
-"LimitedLuaResources: Global capacity for FontString changed to 50000",
-0,
-},
-{
-"LimitedLuaResources: Global capacity for FontString changed to 50000",
-0,
-},
-{
-"LimitedLuaResources: Addon capacity for Timer changed to 500",
-0,
-},
-{
-"LimitedLuaResources: Addon capacity for Timer changed to 500",
-0,
-},
-{
-"LimitedLuaResources: Addon capacity for AnimGroup changed to 2000",
-0,
-},
-{
-"LimitedLuaResources: Addon capacity for AnimGroup changed to 2000",
-0,
-},
-{
-"LimitedLuaResources: Addon capacity for Animation changed to 5000",
-0,
-},
-{
-"LimitedLuaResources: Addon capacity for Animation changed to 5000",
-0,
-},
-{
-"LimitedLuaResources: Global capacity for Font changed to 3000",
-0,
-},
-{
-"LimitedLuaResources: Global capacity for Font changed to 3000",
-0,
-},
-{
-"LimitedLuaResources: Global capacity for Frame changed to 100000",
-0,
-},
-{
-"LimitedLuaResources: Global capacity for Frame changed to 100000",
-0,
-},
-{
-"LimitedLuaResources: Global capacity for AnimGroup changed to 20000",
-0,
-},
-{
-"LimitedLuaResources: Global capacity for AnimGroup changed to 20000",
-0,
-},
-{
-"LimitedLuaResources: Enabled = false",
-0,
-},
-{
-"LimitedLuaResources: Enabled = false",
-0,
-},
-{
-"Startup()",
-0,
-},
-{
-"Resume()",
-0,
-},
-{
-"Screen invalid. Changing from=\"none\" to=\"login\"",
-0,
-},
-{
-"Switching to screen=\"AccountLogin\" (from \"none\")",
-0,
-},
-{
-"From EnsureValidScreen",
-0,
-},
-{
-"Overlay is disabled.  Only internal builds and public China builds have it.",
-4,
-},
-{
-"Glue login started loginType=\"(enum)1\" launcherPortal=\"eu.actual.battle.net\" loginPortal=\"eu.actual.battle.net:1119\"",
-0,
-},
-{
-"Glue login state reset requested",
-0,
-},
-{
-"Battle.net login session initialization requested",
-0,
-},
-{
-"Battle.net logon requested host=\"eu.actual.battle.net\" port=\"1119\"",
-0,
-},
-{
-"Battle.net login waiting for server response",
-0,
-},
-{
-"Battle.net front connected connectionId=\"1\" title_id=\"5730135\" platform=\"Wn64\" locale=\"enUS\" usedToken=\"true\"",
-0,
-},
-{
-"Battle.net login waiting for server response",
-0,
-},
-{
-"Battle.net logon queue update received position=\"1\" estimatedQueueExitTime=\"1794175253\"",
-0,
-},
-{
-"Battle.net logon response received result=\"ERROR_OK (0)\"",
-0,
-},
-{
-"Battle.net logon completed result=\"ERROR_OK (0)\" numGameAccounts=\"1\"",
-0,
-},
-{
-"Battle.net login waiting for server response",
-0,
-},
-{
-"Battle.net account service response received responseType=\"BNetInfo\" responseTypeValue=\"1\" code=\"ERROR_OK (0)\"",
-0,
-},
-{
-"Battle.net account service response received responseType=\"BNetRestriction\" responseTypeValue=\"2\" code=\"ERROR_OK (0)\"",
-0,
-},
-{
-"Battle.net auth token response received code=\"ERROR_OK (0)\" gotCredentials=\"true\"",
-0,
-},
-{
-"Battle.net account service response received responseType=\"GameInfo\" responseTypeValue=\"4\" code=\"ERROR_OK (0)\"",
-0,
-},
-{
-"Battle.net account service game info received responseType=\"GameInfo\" responseTypeValue=\"4\" code=\"ERROR_OK (0)\" name=\"WoW4\" numGameAccounts=\"1\" numGameAccountNames=\"0\"",
-0,
-},
-{
-"Battle.net account service response received responseType=\"GameRestriction\" responseTypeValue=\"8\" code=\"ERROR_OK (0)\"",
-0,
-},
-{
-"Battle.net complete login requested hasGameAccount=\"true\"",
-0,
-},
-{
-"Game account list not saved because accountName CVar is empty",
-0,
-},
-{
-"Battle.net logon completed in glue",
-0,
-},
-{
-"Reconnect token saved creationTime=\"1794175254\" expirationTime=\"1794189654\"",
-0,
-},
-{
-"Character selection waiting for account item collection data collectionListType=\"7\"",
-0,
-},
-{
-"Battle.net login waiting for realm list",
-0,
-},
-{
 "Battle.net realm list ticket requested",
 0,
 },
@@ -4358,6 +3582,846 @@ Blizzard_Console_SavedVars = {
 {
 "Weather changed to 0, intensity 0.000000\n",
 0,
+},
+{
+"-------------------------------------------------- Previous Session --------------------------------------------------",
+0,
+},
+{
+"Linear: 1. 0- disabled (live), 1- linear",
+0,
+},
+{
+"Multithreaded rendering enabled.",
+0,
+},
+{
+"Multithreaded BeginDraw enabled.",
+0,
+},
+{
+"Multithread shadows changed to 1.",
+0,
+},
+{
+"Multithreaded prepass enabled.",
+0,
+},
+{
+"Multithreaded opaque pass enabled.",
+0,
+},
+{
+"Multithreaded opaque pass enabled.",
+0,
+},
+{
+"Multithreaded alpha M2 pass enabled.",
+0,
+},
+{
+"Multithreaded opaque WMO pass enabled.",
+0,
+},
+{
+"Multithreaded terrain pass enabled.",
+0,
+},
+{
+"Multithreaded volumetric fog enabled.",
+0,
+},
+{
+"Multithreaded Refraction Pass enabled.",
+0,
+},
+{
+"Multithreaded miscellaneous passes enabled.",
+0,
+},
+{
+"Multithreaded decal passes disabled.",
+0,
+},
+{
+"Multithreaded outline passes enabled.",
+0,
+},
+{
+"Multithreaded lightshaft passes enabled.",
+0,
+},
+{
+"Use trigger on BeginDrawComplete enabled.",
+4,
+},
+{
+"Multithreaded alpha pass enabled.",
+0,
+},
+{
+"Multithreaded daynight update enabled.",
+0,
+},
+{
+"Water detail changed to 0",
+0,
+},
+{
+"Ripple detail changed to 0",
+0,
+},
+{
+"Reflection mode changed to 0",
+0,
+},
+{
+"Reflection downscale changed to 0",
+0,
+},
+{
+"Sunshafts quality changed to 0",
+0,
+},
+{
+"Refraction mode changed to 0",
+0,
+},
+{
+"Volume fog enabled.",
+0,
+},
+{
+"Particulate volumes enabled.",
+0,
+},
+{
+"Projected textures disabled.",
+0,
+},
+{
+"Shadow mode changed to 2 - 2 band dynamic shadows on units and terrain, 1024",
+0,
+},
+{
+"Shadow texture size changed to 512.",
+0,
+},
+{
+"Soft shadows changed to 0.",
+0,
+},
+{
+"Shadow cascade blending changed to 1",
+0,
+},
+{
+"Number of shadow cascades changed to 3",
+0,
+},
+{
+"Shadow RT mode changed to 0 (Disabled)",
+0,
+},
+{
+"maxLightCount must be in range 0 to 32.",
+0,
+},
+{
+"CVar 'maxLightCount' failed validation for its initial value.",
+0,
+},
+{
+"Clustered shading enabled.",
+0,
+},
+{
+"Not forcing clustered shading.",
+0,
+},
+{
+"SSAO mode set to 0",
+0,
+},
+{
+"Depth Based Opacity Disabled",
+0,
+},
+{
+"SkyCloudLOD set to 0",
+0,
+},
+{
+"Texture filtering mode updated.",
+0,
+},
+{
+"Terrain mip level changed to 1.",
+0,
+},
+{
+"Outline mode changed to 0",
+0,
+},
+{
+"Physics interaction level changed to 0",
+0,
+},
+{
+"Render scale changed to 1",
+0,
+},
+{
+"Resample quality changed to 0",
+0,
+},
+{
+"MSAA disabled",
+0,
+},
+{
+"MSAA for alpha-test disabled.",
+0,
+},
+{
+"Variable Rate Shading not supported on this hardware",
+0,
+},
+{
+"CVar 'vrsWorldGeo' failed validation for its initial value.",
+0,
+},
+{
+"Variable Rate Shading not supported on this hardware",
+0,
+},
+{
+"CVar 'vrsParticles' failed validation for its initial value.",
+0,
+},
+{
+"VALAR mode changed to 0",
+0,
+},
+{
+"lodObjectSizeScale cannot be changed.",
+0,
+},
+{
+"Volume fog enabled.",
+0,
+},
+{
+"dynamicLod enabled",
+0,
+},
+{
+"World preload object sort enabled.",
+0,
+},
+{
+"World load object sort enabled.",
+0,
+},
+{
+"World preload non critical enabled.",
+0,
+},
+{
+"World preload high res textures enabled.",
+0,
+},
+{
+"FFX: Color Blind Test Mode Disabled",
+0,
+},
+{
+"CVar 'Sound_AmbienceHighpassDSPCutoff' failed validation for its initial value.",
+0,
+},
+{
+"CVar 'Sound_AllyPlayerHighpassDSPCutoff' failed validation for its initial value.",
+0,
+},
+{
+"CVar 'Sound_EnemyPlayerHighpassDSPCutoff' failed validation for its initial value.",
+0,
+},
+{
+"CVar 'Sound_NPCHighpassDSPCutoff' failed validation for its initial value.",
+0,
+},
+{
+"GamePad input enabled.",
+0,
+},
+{
+"ChromaEffects disabled",
+0,
+},
+{
+"LimitedLuaResources: Global capacity for AnimGroup changed to 20000",
+0,
+},
+{
+"LimitedLuaResources: Global capacity for AnimGroup changed to 20000",
+0,
+},
+{
+"LimitedLuaResources: Addon capacity for AnimGroup changed to 2000",
+0,
+},
+{
+"LimitedLuaResources: Addon capacity for AnimGroup changed to 2000",
+0,
+},
+{
+"LimitedLuaResources: Addon capacity for Frame changed to 10000",
+0,
+},
+{
+"LimitedLuaResources: Addon capacity for Frame changed to 10000",
+0,
+},
+{
+"LimitedLuaResources: Global capacity for FontString changed to 50000",
+0,
+},
+{
+"LimitedLuaResources: Global capacity for FontString changed to 50000",
+0,
+},
+{
+"LimitedLuaResources: Addon capacity for Timer changed to 500",
+0,
+},
+{
+"LimitedLuaResources: Addon capacity for Timer changed to 500",
+0,
+},
+{
+"LimitedLuaResources: Global capacity for Frame changed to 100000",
+0,
+},
+{
+"LimitedLuaResources: Global capacity for Frame changed to 100000",
+0,
+},
+{
+"LimitedLuaResources: Addon capacity for Animation changed to 5000",
+0,
+},
+{
+"LimitedLuaResources: Addon capacity for Animation changed to 5000",
+0,
+},
+{
+"LimitedLuaResources: Global capacity for Timer changed to 500",
+0,
+},
+{
+"LimitedLuaResources: Global capacity for Timer changed to 500",
+0,
+},
+{
+"LimitedLuaResources: Global capacity for Texture changed to 400000",
+0,
+},
+{
+"LimitedLuaResources: Global capacity for Texture changed to 400000",
+0,
+},
+{
+"LimitedLuaResources: Global capacity for Font changed to 3000",
+0,
+},
+{
+"LimitedLuaResources: Global capacity for Font changed to 3000",
+0,
+},
+{
+"LimitedLuaResources: Addon capacity for Font changed to 300",
+0,
+},
+{
+"LimitedLuaResources: Addon capacity for Font changed to 300",
+0,
+},
+{
+"LimitedLuaResources: Addon capacity for Texture changed to 40000",
+0,
+},
+{
+"LimitedLuaResources: Addon capacity for Texture changed to 40000",
+0,
+},
+{
+"LimitedLuaResources: Enabled = false",
+0,
+},
+{
+"LimitedLuaResources: Enabled = false",
+0,
+},
+{
+"LimitedLuaResources: Addon capacity for FontString changed to 5000",
+0,
+},
+{
+"LimitedLuaResources: Addon capacity for FontString changed to 5000",
+0,
+},
+{
+"LimitedLuaResources: Global capacity for Animation changed to 50000",
+0,
+},
+{
+"LimitedLuaResources: Global capacity for Animation changed to 50000",
+0,
+},
+{
+"Startup()",
+0,
+},
+{
+"Resume()",
+0,
+},
+{
+"Screen invalid. Changing from=\"none\" to=\"login\"",
+0,
+},
+{
+"Switching to screen=\"AccountLogin\" (from \"none\")",
+0,
+},
+{
+"From EnsureValidScreen",
+0,
+},
+{
+"Overlay is disabled.  Only internal builds and public China builds have it.",
+4,
+},
+{
+"-------------------------------------------------- Previous Session --------------------------------------------------",
+0,
+},
+{
+"Linear: 1. 0- disabled (live), 1- linear",
+0,
+},
+{
+"Multithreaded rendering enabled.",
+0,
+},
+{
+"Multithreaded BeginDraw enabled.",
+0,
+},
+{
+"Multithread shadows changed to 1.",
+0,
+},
+{
+"Multithreaded prepass enabled.",
+0,
+},
+{
+"Multithreaded opaque pass enabled.",
+0,
+},
+{
+"Multithreaded opaque pass enabled.",
+0,
+},
+{
+"Multithreaded alpha M2 pass enabled.",
+0,
+},
+{
+"Multithreaded opaque WMO pass enabled.",
+0,
+},
+{
+"Multithreaded terrain pass enabled.",
+0,
+},
+{
+"Multithreaded volumetric fog enabled.",
+0,
+},
+{
+"Multithreaded Refraction Pass enabled.",
+0,
+},
+{
+"Multithreaded miscellaneous passes enabled.",
+0,
+},
+{
+"Multithreaded decal passes disabled.",
+0,
+},
+{
+"Multithreaded outline passes enabled.",
+0,
+},
+{
+"Multithreaded lightshaft passes enabled.",
+0,
+},
+{
+"Use trigger on BeginDrawComplete enabled.",
+4,
+},
+{
+"Multithreaded alpha pass enabled.",
+0,
+},
+{
+"Multithreaded daynight update enabled.",
+0,
+},
+{
+"Water detail changed to 0",
+0,
+},
+{
+"Ripple detail changed to 0",
+0,
+},
+{
+"Reflection mode changed to 0",
+0,
+},
+{
+"Reflection downscale changed to 0",
+0,
+},
+{
+"Sunshafts quality changed to 0",
+0,
+},
+{
+"Refraction mode changed to 0",
+0,
+},
+{
+"Volume fog enabled.",
+0,
+},
+{
+"Particulate volumes enabled.",
+0,
+},
+{
+"Projected textures disabled.",
+0,
+},
+{
+"Shadow mode changed to 2 - 2 band dynamic shadows on units and terrain, 1024",
+0,
+},
+{
+"Shadow texture size changed to 512.",
+0,
+},
+{
+"Soft shadows changed to 0.",
+0,
+},
+{
+"Shadow cascade blending changed to 1",
+0,
+},
+{
+"Number of shadow cascades changed to 3",
+0,
+},
+{
+"Shadow RT mode changed to 0 (Disabled)",
+0,
+},
+{
+"maxLightCount must be in range 0 to 32.",
+0,
+},
+{
+"CVar 'maxLightCount' failed validation for its initial value.",
+0,
+},
+{
+"Clustered shading enabled.",
+0,
+},
+{
+"Not forcing clustered shading.",
+0,
+},
+{
+"SSAO mode set to 0",
+0,
+},
+{
+"Depth Based Opacity Disabled",
+0,
+},
+{
+"SkyCloudLOD set to 0",
+0,
+},
+{
+"Texture filtering mode updated.",
+0,
+},
+{
+"Terrain mip level changed to 1.",
+0,
+},
+{
+"Outline mode changed to 0",
+0,
+},
+{
+"Physics interaction level changed to 0",
+0,
+},
+{
+"Render scale changed to 1",
+0,
+},
+{
+"Resample quality changed to 0",
+0,
+},
+{
+"MSAA disabled",
+0,
+},
+{
+"MSAA for alpha-test disabled.",
+0,
+},
+{
+"Variable Rate Shading not supported on this hardware",
+0,
+},
+{
+"CVar 'vrsWorldGeo' failed validation for its initial value.",
+0,
+},
+{
+"Variable Rate Shading not supported on this hardware",
+0,
+},
+{
+"CVar 'vrsParticles' failed validation for its initial value.",
+0,
+},
+{
+"VALAR mode changed to 0",
+0,
+},
+{
+"lodObjectSizeScale cannot be changed.",
+0,
+},
+{
+"Volume fog enabled.",
+0,
+},
+{
+"dynamicLod enabled",
+0,
+},
+{
+"World preload object sort enabled.",
+0,
+},
+{
+"World load object sort enabled.",
+0,
+},
+{
+"World preload non critical enabled.",
+0,
+},
+{
+"World preload high res textures enabled.",
+0,
+},
+{
+"FFX: Color Blind Test Mode Disabled",
+0,
+},
+{
+"CVar 'Sound_AmbienceHighpassDSPCutoff' failed validation for its initial value.",
+0,
+},
+{
+"CVar 'Sound_AllyPlayerHighpassDSPCutoff' failed validation for its initial value.",
+0,
+},
+{
+"CVar 'Sound_EnemyPlayerHighpassDSPCutoff' failed validation for its initial value.",
+0,
+},
+{
+"CVar 'Sound_NPCHighpassDSPCutoff' failed validation for its initial value.",
+0,
+},
+{
+"GamePad input enabled.",
+0,
+},
+{
+"ChromaEffects disabled",
+0,
+},
+{
+"LimitedLuaResources: Global capacity for AnimGroup changed to 20000",
+0,
+},
+{
+"LimitedLuaResources: Global capacity for AnimGroup changed to 20000",
+0,
+},
+{
+"LimitedLuaResources: Addon capacity for AnimGroup changed to 2000",
+0,
+},
+{
+"LimitedLuaResources: Addon capacity for AnimGroup changed to 2000",
+0,
+},
+{
+"LimitedLuaResources: Addon capacity for Frame changed to 10000",
+0,
+},
+{
+"LimitedLuaResources: Addon capacity for Frame changed to 10000",
+0,
+},
+{
+"LimitedLuaResources: Global capacity for FontString changed to 50000",
+0,
+},
+{
+"LimitedLuaResources: Global capacity for FontString changed to 50000",
+0,
+},
+{
+"LimitedLuaResources: Addon capacity for Timer changed to 500",
+0,
+},
+{
+"LimitedLuaResources: Addon capacity for Timer changed to 500",
+0,
+},
+{
+"LimitedLuaResources: Global capacity for Frame changed to 100000",
+0,
+},
+{
+"LimitedLuaResources: Global capacity for Frame changed to 100000",
+0,
+},
+{
+"LimitedLuaResources: Addon capacity for Animation changed to 5000",
+0,
+},
+{
+"LimitedLuaResources: Addon capacity for Animation changed to 5000",
+0,
+},
+{
+"LimitedLuaResources: Global capacity for Timer changed to 500",
+0,
+},
+{
+"LimitedLuaResources: Global capacity for Timer changed to 500",
+0,
+},
+{
+"LimitedLuaResources: Global capacity for Texture changed to 400000",
+0,
+},
+{
+"LimitedLuaResources: Global capacity for Texture changed to 400000",
+0,
+},
+{
+"LimitedLuaResources: Global capacity for Font changed to 3000",
+0,
+},
+{
+"LimitedLuaResources: Global capacity for Font changed to 3000",
+0,
+},
+{
+"LimitedLuaResources: Addon capacity for Font changed to 300",
+0,
+},
+{
+"LimitedLuaResources: Addon capacity for Font changed to 300",
+0,
+},
+{
+"LimitedLuaResources: Addon capacity for Texture changed to 40000",
+0,
+},
+{
+"LimitedLuaResources: Addon capacity for Texture changed to 40000",
+0,
+},
+{
+"LimitedLuaResources: Enabled = false",
+0,
+},
+{
+"LimitedLuaResources: Enabled = false",
+0,
+},
+{
+"LimitedLuaResources: Addon capacity for FontString changed to 5000",
+0,
+},
+{
+"LimitedLuaResources: Addon capacity for FontString changed to 5000",
+0,
+},
+{
+"LimitedLuaResources: Global capacity for Animation changed to 50000",
+0,
+},
+{
+"LimitedLuaResources: Global capacity for Animation changed to 50000",
+0,
+},
+{
+"Startup()",
+0,
+},
+{
+"Resume()",
+0,
+},
+{
+"Screen invalid. Changing from=\"none\" to=\"login\"",
+0,
+},
+{
+"Switching to screen=\"AccountLogin\" (from \"none\")",
+0,
+},
+{
+"From EnsureValidScreen",
+0,
+},
+{
+"Overlay is disabled.  Only internal builds and public China builds have it.",
+4,
 },
 },
 ["isShown"] = false,

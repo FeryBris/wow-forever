@@ -1,8 +1,0 @@
-Version: 1
-Frame: ContainerFrame1
-FrameLevel: 1
-Anchor: BOTTOMRIGHT
-X: -34
-Y: 70
-W: 256
-H: 256
