@@ -220,12 +220,68 @@ local function StepAchievements(nextStep)
 	nextStep()
 end
 
+---------------------------------------------------------------------------
+-- PvP. Forever's Legacy has vanilla honor ranks ("Rank 3 ... Rank 14: Grand
+-- Marshal / High Warlord"), BG reputations and a "Field of Honor Journey"
+-- with weeks (run 2). GetPVPRankInfo / UnitPVPRank are missing, so the rank
+-- may only show via Enum.PvPRanks values (Rank_1 = 5 .. Rank_14 = 18) from
+-- the stats APIs or the title in UnitPVPName. The journey is probably a
+-- major faction: C_MajorFactions.GetMajorFactionProgressionInfo is
+-- Forever-only and has weekNumber + weekly max levels.
+---------------------------------------------------------------------------
+local HONOR_CURRENCY = 1792 -- retail Honor currency id; checked, not assumed
+
 local function StepPvp(nextStep)
-	probe.pvp = {
-		Capture("GetPVPLifetimeStats"),
-		Capture("UnitHonor", "player"),
-		Capture("UnitHonorLevel", "player"),
+	local section = {
+		lifetime = Capture("GetPVPLifetimeStats"),
+		session = Capture("GetPVPSessionStats"),
+		yesterday = Capture("GetPVPYesterdayStats"),
+		inspectHonor = Capture("GetInspectHonorData"),
+		pvpName = Capture("UnitPVPName", "player"),
+		honor = Capture("UnitHonor", "player"),
+		honorMax = Capture("UnitHonorMax", "player"),
+		honorLevel = Capture("UnitHonorLevel", "player"),
+		isPvp = Capture("UnitIsPVP", "player"),
+		warMode = Capture("C_PvP.IsWarModeActive"),
+		canShowHK = Capture("C_PvP.CanDisplayHonorableKills"),
+		uiSeason = Capture("C_PvP.GetUIDisplaySeason"),
+		seasonEnd = Capture("C_SeasonInfo.GetTimeUntilCurrentPVPSeasonEnd"),
+		weeklyChest = Capture("C_PvP.GetWeeklyChestInfo"),
+		honorCurrency = Capture("C_CurrencyInfo.GetCurrencyInfo", HONOR_CURRENCY),
+		trainingGroundsEnabled = Capture("C_PvP.AreTrainingGroundsEnabled"),
+		trainingGroundBGWinToday = Capture("C_PvP.HasRandomTrainingGroundBGWinToday"),
+		trainingGrounds = Capture("C_PvP.GetTrainingGrounds"),
+		randomBG = Capture("C_PvP.GetRandomBGInfo"),
+		numBattlegroundTypes = Capture("GetNumBattlegroundTypes"),
+		battlegrounds = {},
 	}
+	for i = 1, math.min(Num(section.numBattlegroundTypes), 15) do
+		section.battlegrounds[i] = Capture("C_PvP.GetBattlegroundInfo", i)
+	end
+
+	-- Major factions / journeys (with and without an expansion argument).
+	local journeys = { idsNoArg = Capture("C_MajorFactions.GetMajorFactionIDs"),
+		idsExp0 = Capture("C_MajorFactions.GetMajorFactionIDs", 0), factions = {} }
+	local seen = {}
+	for _, key in ipairs({ "idsNoArg", "idsExp0" }) do
+		local ids = First(journeys[key])
+		if type(ids) == "table" then
+			for _, id in ipairs(ids) do
+				if not seen[id] then
+					seen[id] = true
+					journeys.factions[#journeys.factions + 1] = {
+						id = id,
+						data = Capture("C_MajorFactions.GetMajorFactionData", id),
+						progression = Capture("C_MajorFactions.GetMajorFactionProgressionInfo", id),
+						asJourney = Capture("C_MajorFactions.ShouldDisplayMajorFactionAsJourney", id),
+						weeklyCapped = Capture("C_MajorFactions.IsWeeklyRenownCapped", id),
+					}
+				end
+			end
+		end
+	end
+	section.majorFactions = journeys
+	probe.pvp = section
 	nextStep()
 end
 
