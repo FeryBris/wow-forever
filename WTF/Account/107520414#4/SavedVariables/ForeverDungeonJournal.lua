@@ -10,7 +10,7 @@ ForeverDungeonJournalDB = {
 ["displayIDs"] = {
 },
 ["mapBossScale"] = 0.3,
-["newestSeenAt"] = 1794220286,
+["newestSeenAt"] = 1794220852,
 ["newestSeenVersion"] = "1.7.4",
 ["mapFloors"] = {
 ["Ragefire Chasm"] = 1,
@@ -18,7 +18,22 @@ ForeverDungeonJournalDB = {
 ["Ruins of Lordaeron"] = 1,
 },
 ["lastMode"] = "bosses",
-["lastBoss"] = 13,
+["lootFilter"] = {
+["enabled"] = false,
+["classOnly"] = false,
+["recipes"] = false,
+["schools"] = {
+},
+["matchAll"] = true,
+["resists"] = {
+},
+["armorTypes"] = {
+},
+["stats"] = {
+},
+["weaponTypes"] = {
+},
+},
 ["fdjOptionsDump"] = {
 "CategoryRow#1.Background [Texture] atlas=Options_CategoryHeader_1 199x144",
 "CategoryRow#1.Label [FontString] 73x14 text=Gameplay",
@@ -241,10 +256,10 @@ ForeverDungeonJournalDB = {
 },
 ["questFaction"] = "Horde",
 ["lastDungeon"] = "Shadowfang Keep",
-["minimapAngle"] = -44.19294234943775,
+["lastQuest"] = 1,
 ["learnedItemIDs"] = {
 },
-["lastQuest"] = 1,
+["minimapAngle"] = -44.19294234943775,
 ["portraitTexturesByNpcID"] = {
 },
 ["questText"] = {
@@ -609,21 +624,21 @@ ForeverDungeonJournalDB = {
 ["o"] = "Crane Operator Bigglefuzz in Ratchet wants you to retrieve the bottle of 99-Year-Old Port from Mad Magglish who is hiding in the Wailing Caverns.",
 ["d"] = "Oops!\n\nHad a little mishap, as you can see! The morning cargo shipment from Booty Bay was huge. Huge I say! Never seen so many crates. Well, I was trying to expedite things so I started unloading a bit more than I could handle. That's when everything came tumbling down.\n\nBefore I knew what was going on, I saw that menace, Mad Magglish, go running off with a bottle of 99-year-old port. Chased him all the way to Wailing Caverns. No way I was going in there.\n\nMaybe you're brave enough to find him?",
 },
-[6921] = {
-["o"] = "Bring the Fathom Core to Je'neu Sancrea at Zoram'gar Outpost, Ashenvale.",
-["d"] = "The Twilight's Hammer has moved into the Moonshrine Ruins of Blackfathom Deeps.  Their presence can only serve to coerce the elements into working against us.  If left unchecked, this region will be theirs for good.\n\nN, go into Blackfathom and find the ruin's fathom stone; it should be somewhere close in the water.  In it is a fathom core - a device that when properly read it will relate a history of all elemental activity.  If I have it, I and the Earthen Ring can maybe do something to stop them!",
+[1492] = {
+["o"] = "Bring the Secure Crate to Wharfmaster Dizzywig in Ratchet.",
+["d"] = "I have need to send a crate of potions, reagents and other items to my associates in the Old World. Little time I have to actually see them to the dock at Ratchet, and the last caravan has already left.\n\nIf you could, please take this to Wharfmaster Dizzywig. He will ensure that it is placed on the next boat to Blackwater Cove.",
 },
 [896] = {
 ["o"] = "Retrieve the Cats Eye Emerald from one of the Venture Co. Overseers or Enforcers for Wharfmaster Dizzywig at Ratchet.",
 ["d"] = "Being Wharfmaster of a busy port like Ratchet, I keep my finger on the pulse of information. I know all about the exchange of goods and money between here and Booty Bay.\n\nThe latest bit of news I've heard is about the Venture Company's Boulder Lode mine northeast of the Sludge Fen. One of the miners discovered an emerald the size of your fist. I know a few buyers who'd be interested in getting their hands on something like that, and I'd be willing to go half and half on its sale.",
 },
-[6442] = {
-["o"] = "Bring 20 Wrathtail Heads to Marukai along the Zoram Strand.",
-["d"] = "There is evil lurking here along the coast, troll.\n\nIt is the resting place of the doomed city of Zoram, long destroyed and submerged beneath the seas.  Lost, and nearly forgotten.\n\nNow, the naga have returned, and for what reason we do not know.  But reason matters little; we must defend the land we have worked so hard to claim as our own.\n\nReturn to me with 20 of their heads! Throw the naga back to the depths!",
+[914] = {
+["o"] = "Bring the Gems of Cobrahn, Anacondra, Pythas and Serpentis to Nara Wildmane in Thunder Bluff.",
+["d"] = "The druids in the Wailing Caverns, the Druids of the Fang, are an aberration.  They were part of an order of noble druids whose plan was to heal the Barrens, but now seek to remake that land to match their own, twisted dreams.\n\nThe Druids of the Fang have four leaders, and each possesses a dream gem.  Even now their faces haunt me!  Defeat the leaders and bring me their gems, and the Barrens may again know peace.\n\nGo, N.  You will find them lurking deep within the Wailing Caverns.",
 },
-[25] = {
-["o"] = "Dispatch 12 Befouled Water Elementals at Mystral Lake, due east of the Talondeep Path and southwest of Splintertree Post.\n\nScout the gazebo on Mystral Lake that overlooks the nearby Alliance outpost.\n\nReturn to Mastok Wrilehiss at Splintertree Post, Ashenvale.",
-["d"] = "If you want to be useful, then why don't you do something about the situation near Talondeep Path?\n\nThe transports between Ashenvale and Stonetalon are at a standstill because of the lake coming alive and attacking anything that gets close... which means anyone on the path.  What'd be even more useful than just putting the hammer down on the water elementals there is someone scouting the gazebo on Mystral Lake - the one that has a solid view of the Alliance outpost there.\n\nYou up for being useful?",
+[6441] = {
+["o"] = "Collect 16 Satyr Horns for Pixel in Splintertree Post.",
+["d"] = "Heya! I've been traveling through Ashenvale, heading towards Ratchet, and decided to make a stop here at Splintertree. I'm always looking for an opportunity, and it seems that satyr horns are in high demand in Ratchet these days.\n\nAfter asking around here, it seems that the satyrs in Night Run, Satyrnaar, and Xavian all have the type of horns I am looking for. I'm no match for those satyrs... but you look like you might be!\n\nTell you what, you collect the horns for me and I'll make it worth your time.",
 },
 [6571] = {
 ["o"] = "Collect the Warsong Supplies: Warsong Saw Blades, Logging Rope, Warsong Oil, and the Warsong Axe Shipment for Locke Okarr in Splintertree Post.",
@@ -633,9 +648,9 @@ ForeverDungeonJournalDB = {
 ["o"] = "Witch Doctor Jin'Zil at Malaka'jin wants 5 portions of Stonetalon Sap, 5 Twilight Whiskers, 30 Courser Eyes and a Fey Dragon Scale.",
 ["d"] = "So excited I am!\n\nThree little cages for three little elves! But what shall we do with our lovely tree-hugging friends? Why, let's give them a taste of... what do they call it... forest magic!\n\nI'll need a good mess of Stonetalon sap. From those horrid felines, bring me some twilight whiskers. This calls for plenty of courser eyes, of course -- can never have enough eyes. Oh, and lest we forget, a precious scale from a fey dragon.\n\nHurry to Stonetalon Peak, N, so I can brew some forest magic!",
 },
-[6503] = {
-["o"] = "Kill 9 Ashenvale Outrunners, then return to Kuray'bin at Splintertree Outpost.",
-["d"] = "We received reports that Ashenvale outrunners left Silverwing Outpost not long ago, and now sneak near our territories in the forest.  We don't want them gathering intelligence on our defenses!\n\nSneak through the forests south of our post here and east of the Alliance outpost of Silverwing.  Find and slay the outrunners, then return to me.",
+[873] = {
+["o"] = "Bring the Heart of Isha Awak to Mahren Skyseer.",
+["d"] = "The grand Isha Awak is lord of these waters.  Great is his strength, and solemn his pride.  The humans on the coast fear him, for he has consumed many of their number.\n\nBut I do not fear him.  I am grateful he is here.  He is a worthy challenge, and honorable prey.\n\nIf you are ready, then swim out and search for Isha Awak, the Deep Doom.\n\nHis spirit dwells in his heart, and to hear its beat is to know your fate.",
 },
 [447] = {
 ["o"] = "Collect 6 Grizzled Bear Hearts and 6 samples of Skittering Blood and deliver them to Master Apothecary Faranell in the Undercity.",
@@ -645,25 +660,25 @@ ForeverDungeonJournalDB = {
 ["o"] = "Gather 5 Intact Raptor Horns from Sunscale Scytheclaws, and bring them to Mebok Mizzyrix in Ratchet.",
 ["d"] = "The raptors of the Barrens are smarter than raptors in other lands.  And I think all that smarts is hiding in their horns!  If so, then I could grind their horns into powder and use it to make \"smart drinks.\"  I could sell them for a fortune!!!\n\nAnd you can help me.  Find me intact raptor horns from sunscale scytheclaws.  They roam in the southern Barrens, and in the northern Barrens near the border of Ashenvale Forest.",
 },
-[1838] = {
-["o"] = "Bring to Thun'grim Firegaze 15 Smoky Iron Ingots, 10 Powdered Azurite, 10 Iron Bars and a Vial of Phlogiston.",
-["d"] = "I have heard tales of your strength and valor, and wish to make for you a suit of armor, a companion to aid you as tales of your great deeds grow.\n\nBut the fashioning of this armor will be a quest unto itself, N.  I will need your help, and the help of other smiths of the Horde.\n\nHere, take this scroll.  I spent many nights, struggling with near-blind eyes, writing that which I need for the armor.  Bring me the items on this scroll and I will create for you the first piece of the suit.",
+[888] = {
+["o"] = "Retrieve the Shipment of Boots and Telescopic Lens for Gazlowe in Ratchet.",
+["d"] = "While I'd like to recover all my goods, I'm sure that's not possible. Still, there's a few things that I absolutely must have!\n\nAs you see, my observatory is ready to go, but it needs the smaller of the two lenses. The first arrived by caravan from Durotar, but the second was bound by ship, and never arrived. Also, I never got my boot shipment from Drizzlik in Booty Bay!\n\nHead down to the pirate camp and see if you can find them.",
+},
+[1825] = {
+["o"] = "Speak with Thun'grim Firegaze in the Barrens.",
+["d"] = "Thun'grim Firegaze, an orc blacksmith of renown, has heard of your continued deeds of valor in service of the Horde.  He would like to fashion for you a suit of armor, and bids you speak with him immediately.\n\nThun'grim is camped east of the Crossroads in the Barrens.",
 },
 [1153] = {
 ["o"] = "Find an Unrefined Ore Sample on a Gravelsnout Digger or Surveyor and bring it to Tatternack Steelforge at Camp Taurajo in the Barrens.",
 ["d"] = "Warrior, you have done well in helping me in the past. The warchief is pleased thus far with what I've accomplished, and asks me to continue with renewed determination. My honor dictates that I give you proper recognition to the warchief for all you have done, but first I would ask you for your help again.\n\nTravelers recently came from the south from a place called Thousand Needles. There they killed a kobold who had an unusual ore sample, but they would not sell it. I want a sample of that ore to examine.",
 },
-[92401] = {
-["o"] = "Investigate the disappearance of Edward Heartweaver in the Ruins of Lordaeron.",
-["d"] = "It's my husband Edward...\r\n\r\nHe has not returned from his weekly journey to the graveyard in the Lordaeron ruins. Our son was lost when Arthas razed the city, and my dear Edward is still filled with guilt and sorrow that we never found his body. I've tried to warn him against searching those overrun ruins, but he refuses to give up. I try not to worry, but it's been days.\r\n\r\nThere are things there I cannot contend with but if you are willing, I need to know the fate of my husband.",
-},
 [1013] = {
 ["o"] = "Bring the Book of Ur to Keeper Bel'dugur at the Apothecarium in the Undercity.",
 ["d"] = "N, Shadowfang Keep holds a book, the Book of Ur, which would be much prized in my collection.  Ur was a great mage of Dalaran before the coming of the Scourge, his studies in other worlds are of much value to ... certain parties among the Forsaken.\n\nEnter Shadowfang Keep and find the book.  Bring it to me, and I will report your service to our Dark Lady...",
 },
-[6284] = {
-["o"] = "Kill Besseleth and bring Besseleth's Fang to Maggran at Sun Rock Retreat.",
-["d"] = "Warning: Proceed into Sishir Canyon west of here at your own risk.\n\nBesseleth and her eight-legged children of the forest have claimed this canyon as their webbed lair.\n\nMaggran Earthbinder in Sun Rock Retreat has placed a bounty on Besseleth. Slay her and bring proof of your killing to Maggran; there you will receive your reward for disposing this eight-legged menace.",
+[5730] = {
+["o"] = "Speak to Thrall in Orgrimmar and tell him what you've learned.",
+["d"] = "You are one of my lieutenants! Prepare yourself, warrior. I will call upon you soon.\n\nMy time spent on the Searing Blade may be all but wasted now, but that does not mean that the Shadow Council's schemes elsewhere must suffer. I will do what I can to minimize the damage here in Ragefire Chasm. In the meantime, I will have my agents in the Barrens and Ashenvale begin work on our newest agenda. Return to me soon.",
 },
 [1090] = {
 ["o"] = "Get the mysterious ore from Piznik after he finishes mining it.",
@@ -673,17 +688,17 @@ ForeverDungeonJournalDB = {
 ["o"] = "Bring a Razormane Backstabber, a Charred Razormane Wand and a Razormane War Shield to Tatternack Steelforge at Camp Taurajo in the Barrens.",
 ["d"] = "The Razormane quilboars to the south, beyond the Field of Giants, have no skilled blacksmiths from what I am told, but they've apparently started to develop sturdier weapons. I'd like to get my hands on a few different types to learn their techniques if possible.\n\nIf you wish to help bring honor to the Horde, then bring me examples of their weapons. Find me a dagger from their stalkers, a wand from their seers, and a shield from their warfrenzy. That should do nicely!",
 },
-[450] = {
-["o"] = "Retrieve Apothecary Berard's journal from Pyrewood Village and take it to Apothecary Renferrel at the Sepulcher.",
-["d"] = "You can be of further service to the Royal Apothecary Society, N.\n\nWhen Arugal cast his wretched magic on the forest, he cursed one of our most promising members, Apothecary Berard.  Now a mindless servant of Arugal, Berard is useless to us.  But his findings might prove to be of worth.  He was studying an ancient plague that killed off all the aquatic life in Lake Lordamere ages ago.\n\nRetrieve Berard's Journal from his study in the Pyrewood Village Inn and take it to Apothecary Renferrel.",
-},
 [898] = {
 ["o"] = "Safely escort Gilthares Firebough back to Captain Brightsun in Ratchet.",
 ["d"] = "Finally! Someone to rescue me!\n\nI can't believe you got past the guards. These zealots from Theramore are out of their minds. They sank our ship and imprisoned me, the only survivor. I was called an enemy and threat to the Alliance.\n\nMe! A threat to their great sham of an Alliance? I was a deckhand on a moonshine transport between Ratchet and Booty Bay.\n\nEnough talk. Help me get back to Ratchet will you? Let me know when you're ready and we'll make our break.",
 },
-[99156] = {
-["o"] = "Bring Riptear's Heart to Deathguard Linnea.",
-["d"] = "Damn it all! A new report came in while you were on patrol. There has been a sighting of a rogue abomination wandering Eastern Tirisfal Glades, near Venomweb Vale.\r\n\r\nSomething is wrong. Abominations don't just slip through the Bulwark unnoticed.\r\n\r\nKeep this matter on a strictly need-to-know basis. That said, such a creature will not fall easily; you will need allies if you wish to be more than its next meal.\r\n\r\nSee this through, and you will be duly rewarded. Bring me its heart as proof of the deed.",
+[450] = {
+["o"] = "Retrieve Apothecary Berard's journal from Pyrewood Village and take it to Apothecary Renferrel at the Sepulcher.",
+["d"] = "You can be of further service to the Royal Apothecary Society, N.\n\nWhen Arugal cast his wretched magic on the forest, he cursed one of our most promising members, Apothecary Berard.  Now a mindless servant of Arugal, Berard is useless to us.  But his findings might prove to be of worth.  He was studying an ancient plague that killed off all the aquatic life in Lake Lordamere ages ago.\n\nRetrieve Berard's Journal from his study in the Pyrewood Village Inn and take it to Apothecary Renferrel.",
+},
+[871] = {
+["o"] = "Of the Razormane tribe, kill 8 Water Seekers, 8 Thornweavers and 3 Hunters, and then return to Thork in the Crossroads.",
+["d"] = "All the quilboars are our enemies, N. Some just prove to be more of a nuisance than others.\n\nThe Razormane tribe has been attacking our supply lines from Durotar, causing us no end of annoyance. I have scouts seeking the leader of these raids, but until then, any losses you can inflict on the filthy pig men would aid us.\n\nStart in the northeast towards Durotar. You can always tell their dens from the huge thorny vines that come up from the earth. Seek them out, and slay them.",
 },
 [962] = {
 ["o"] = "Apothecary Zamah in Thunder Bluff wants you to collect 10 Serpentbloom.",
@@ -701,9 +716,9 @@ ForeverDungeonJournalDB = {
 ["o"] = "Slay quilboars and collect 4 of Olgra's Adornments for Mankrik's memorial.",
 ["d"] = "The healer who saved me could not save her, and she has died in battle. Her name is Olgra, and I will never forget her.\r\n\r\nYou did not find her adornments on her body? She wore many jewels of polished bone.\r\n\r\nSlay the Razormane Raiders near where she fell, and find her precious works of art!\r\n\r\nI will place them with the memorial that I build in her memory.",
 },
-[6543] = {
-["o"] = "Open the Bundle of Reports.  Take the Warsong Reports to the Warsong Scout, Warsong Runner, and Warsong Outrider. Bring back the updates they give you to Kadrak at the northern watch tower in the barrens.",
-["d"] = "I recently deployed a few scouts into Ashenvale and I need a runner to take them their orders, and bring me back a report of what they have observed.\n\nYour first stop should be the Zoram'gar Outpost, along the coast to the west, at the Zoram Strand, to locate the first runner. You also need to stop at Splintertree Post, to the north, and along the road to the east, near Azshara. You will find a scout and an outrider there.\n\nGive them each a report, and from them, get an update on their findings.",
+[477] = {
+["o"] = "Retrieve the contents of one of the Dalaran wizards' crates. You will find Pyrewood Village to the south.",
+["d"] = "As you may know, the town of Ambermill remains a source of human opposition, mainly through the support they receive from the wizards of Dalaran.\n\nI don't know what their plan is, but for them to show interest in a backwater village like Ambermill indicates that it must have some greater importance.\n\nThey've been shipping crates by the wagon from Hillsbrad. Many of those supplies end up at a small camp north of Pyrewood Village. Retrieve the contents of a crate and return them to me.",
 },
 [867] = {
 ["o"] = "Collect 8 Witchwing talons.\n\nReturn them to Darsok Swiftdagger at the Crossroads.",
@@ -717,17 +732,17 @@ ForeverDungeonJournalDB = {
 ["o"] = "Get the Super Reaper 6000 Nprints for Ziz Fizziks in the Stonetalon Mountains.",
 ["d"] = "Terrible what the Venture Company has done here, eh? What were they thinking? Goblin company hiring a gnome!\n\nLucky for me, Sputtervalve knows a genius when he sees one. Hired me just after I'd been kicked out!\n\nTells me they built some enormous woodcutting machine, and Sput' wants me to steal the plans for him. Unfortunately, Gerenzo--bloody gnome--wants me dead on sight... maybe you could steal the plans for me? You should be able to find them on one of their operators.",
 },
-[882] = {
-["o"] = "Bring Ishamuhale's Fang to Jorn at Camp Taurajo.",
-["d"] = "Ishamuhale, Speartooth, is the fiercest sunscale raptor of the Barrens.  He does not hunt for sport, nor for food.  He hunts because hunting is his passion.  He kills because it is his nature to kill.\n\nAnd you will learn of his nature, N, for your path now follows the taloned tracks of Ishamuhale.\n\nBegin the hunt.  Slay his favorite prey, a zhevra, then bring its carcass to the dead tree northwest of Ratchet.  Ishamuhale will smell the carcass and be drawn to it.\n\nBe ready when he comes.",
+[6382] = {
+["o"] = "Speak with Senani Thunderheart at Splintertree Post, Ashenvale.",
+["d"] = "Your strength impresses me, warrior.  Your willingness to embrace the hunt gives me confidence that you could move on to bigger game... and bigger challenges.\n\nThe forests of Ashenvale represent a vast untamed wild that the Horde seeks to impose its own will upon, both politically and spiritually.  If you seek to prove yourself in an unproven land, seek the guidance of Senani Thunderheart in Splintertree Post.  The outpost is due north of the path leading from the Barrens.",
 },
 [1221] = {
 ["o"] = "Grab a Crate with Holes.\nGrab a Snufflenose Command Stick.\nGrab and read the Snufflenose Owner's Manual.\n\nIn Razorfen Kraul, use the Crate with Holes to summon a Snufflenose Gopher, and use the Command Stick on the gopher to make it search for Tubers.\n\nBring 6 Nleaf Tubers, the Snufflenose Command Stick and the Crate with Holes to Mebok Mizzyrix in Ratchet.",
 ["d"] = "Nleaf tubers are a delicacy around the world!  But they're rare, very rare.  The only place to find them is here in the Barrens, deep in the earth, in Razorfen Kraul.\n\nAnd even then, they're impossible to find unless you know just where to look!  That's why I've trained these snufflenose gophers to find them for me.  They have great noses and can smell a tuber from fifty paces away.\n\nIt won't be easy, but if you get me some tubers I'll pay you handsomely.",
 },
-[874] = {
-["o"] = "Speak with Mahren Skyseer.",
-["d"] = "You have hunted the beasts of the Barrens.  Your spirit is strong.  But a hunter must always be prepared.  A true hunter can stalk prey down any path.  Mountains and swamps will not sway him.\n\nNot even the sea.\n\nFind my sister, Mahren.  She hunts the great water beasts along the coast.  She will be your teacher in their ways.\n\nBut be wary in your search for her, for the Barrens' coast is held by humans.",
+[5725] = {
+["o"] = "Bring the books Spells of Shadow and Incantations from the Nether to Varimathras in Undercity.",
+["d"] = "Many denizens of the Legion bestow gifts on their followers as you may well know. Some of these gifts the Dark Lady feels would be better off in her hands than in the hands of those with... lesser vision.\n\nA sect of the Shadow Council hidden in caverns below Orgrimmar known as the Searing Blade are a prime example. The Lady tells me that members of the Searing Blade have come into the possession of two powerful spell books--she would like to \"borrow\" these books from them. You will get them for her.",
 },
 [1094] = {
 ["o"] = "Deliver the Sealed Envelope to Sputtervalve in the Barrens.",
@@ -749,25 +764,25 @@ ForeverDungeonJournalDB = {
 ["o"] = "Bring the new orders to Ziz Fizziks in the Stonetalon Mountains.",
 ["d"] = "The matter of this gnome that has been hired by the Venture Company has caused a bit of a stir in Undermine. The trade princes do not approve of Razdunk's consorting with this Gerenzo.\n\nRiddlevox has asked me to take care of the problem, and I'm sure he was instructed to do so by one or more of the trade princes. Of course, the Director didn't tell me that. Let's just say I have a hunch.\n\nWhatever the case, Gerenzo must be removed, and it would be a fitting test to have Fizziks take care of him.",
 },
-[5725] = {
-["o"] = "Bring the books Spells of Shadow and Incantations from the Nether to Varimathras in Undercity.",
-["d"] = "Many denizens of the Legion bestow gifts on their followers as you may well know. Some of these gifts the Dark Lady feels would be better off in her hands than in the hands of those with... lesser vision.\n\nA sect of the Shadow Council hidden in caverns below Orgrimmar known as the Searing Blade are a prime example. The Lady tells me that members of the Searing Blade have come into the possession of two powerful spell books--she would like to \"borrow\" these books from them. You will get them for her.",
+[874] = {
+["o"] = "Speak with Mahren Skyseer.",
+["d"] = "You have hunted the beasts of the Barrens.  Your spirit is strong.  But a hunter must always be prepared.  A true hunter can stalk prey down any path.  Mountains and swamps will not sway him.\n\nNot even the sea.\n\nFind my sister, Mahren.  She hunts the great water beasts along the coast.  She will be your teacher in their ways.\n\nBut be wary in your search for her, for the Barrens' coast is held by humans.",
 },
-[6382] = {
-["o"] = "Speak with Senani Thunderheart at Splintertree Post, Ashenvale.",
-["d"] = "Your strength impresses me, warrior.  Your willingness to embrace the hunt gives me confidence that you could move on to bigger game... and bigger challenges.\n\nThe forests of Ashenvale represent a vast untamed wild that the Horde seeks to impose its own will upon, both politically and spiritually.  If you seek to prove yourself in an unproven land, seek the guidance of Senani Thunderheart in Splintertree Post.  The outpost is due north of the path leading from the Barrens.",
+[882] = {
+["o"] = "Bring Ishamuhale's Fang to Jorn at Camp Taurajo.",
+["d"] = "Ishamuhale, Speartooth, is the fiercest sunscale raptor of the Barrens.  He does not hunt for sport, nor for food.  He hunts because hunting is his passion.  He kills because it is his nature to kill.\n\nAnd you will learn of his nature, N, for your path now follows the taloned tracks of Ishamuhale.\n\nBegin the hunt.  Slay his favorite prey, a zhevra, then bring its carcass to the dead tree northwest of Ratchet.  Ishamuhale will smell the carcass and be drawn to it.\n\nBe ready when he comes.",
 },
-[477] = {
-["o"] = "Retrieve the contents of one of the Dalaran wizards' crates. You will find Pyrewood Village to the south.",
-["d"] = "As you may know, the town of Ambermill remains a source of human opposition, mainly through the support they receive from the wizards of Dalaran.\n\nI don't know what their plan is, but for them to show interest in a backwater village like Ambermill indicates that it must have some greater importance.\n\nThey've been shipping crates by the wagon from Hillsbrad. Many of those supplies end up at a small camp north of Pyrewood Village. Retrieve the contents of a crate and return them to me.",
+[6543] = {
+["o"] = "Open the Bundle of Reports.  Take the Warsong Reports to the Warsong Scout, Warsong Runner, and Warsong Outrider. Bring back the updates they give you to Kadrak at the northern watch tower in the barrens.",
+["d"] = "I recently deployed a few scouts into Ashenvale and I need a runner to take them their orders, and bring me back a report of what they have observed.\n\nYour first stop should be the Zoram'gar Outpost, along the coast to the west, at the Zoram Strand, to locate the first runner. You also need to stop at Splintertree Post, to the north, and along the road to the east, near Azshara. You will find a scout and an outrider there.\n\nGive them each a report, and from them, get an update on their findings.",
 },
 [1096] = {
 ["o"] = "Bring Gerenzo Wrenchwhistle's Mechanical Arm to Ziz Fizziks in the Stonetalon Mountains.",
 ["d"] = "I met Gerenzo once, but let me tell you, he's not easy on the eyes. His flesh looks like it's rotting away, and he's grafted metal and gears onto his body, replaced some of his limbs with mechanical ones.\n\nNortheast of here, far above Cragpool Lake, up near the water wheel is where Gerenzo watches over the entire site. There's no way I could fight my way up there, not to mention take on Gerenzo... But you look like you might be able to make it.\n\nIf you kill him for me, I'll make it worth your while!",
 },
-[871] = {
-["o"] = "Of the Razormane tribe, kill 8 Water Seekers, 8 Thornweavers and 3 Hunters, and then return to Thork in the Crossroads.",
-["d"] = "All the quilboars are our enemies, N. Some just prove to be more of a nuisance than others.\n\nThe Razormane tribe has been attacking our supply lines from Durotar, causing us no end of annoyance. I have scouts seeking the leader of these raids, but until then, any losses you can inflict on the filthy pig men would aid us.\n\nStart in the northeast towards Durotar. You can always tell their dens from the huge thorny vines that come up from the earth. Seek them out, and slay them.",
+[99156] = {
+["o"] = "Bring Riptear's Heart to Deathguard Linnea.",
+["d"] = "Damn it all! A new report came in while you were on patrol. There has been a sighting of a rogue abomination wandering Eastern Tirisfal Glades, near Venomweb Vale.\r\n\r\nSomething is wrong. Abominations don't just slip through the Bulwark unnoticed.\r\n\r\nKeep this matter on a strictly need-to-know basis. That said, such a creature will not fall easily; you will need allies if you wish to be more than its next meal.\r\n\r\nSee this through, and you will be duly rewarded. Bring me its heart as proof of the deed.",
 },
 [869] = {
 ["o"] = "Bring 12 Raptor Heads to Gazrog at the Crossroads.",
@@ -777,29 +792,29 @@ ForeverDungeonJournalDB = {
 ["o"] = "Get the Console Key from Tinkerer Sniggles to use on the control console.",
 ["d"] = "With the apparatus deactivated, the control panel can be opened up and the samophlange removed from the console. With everything else in place, all that is left is to acquire the key to unlock the console.",
 },
-[5730] = {
-["o"] = "Speak to Thrall in Orgrimmar and tell him what you've learned.",
-["d"] = "You are one of my lieutenants! Prepare yourself, warrior. I will call upon you soon.\n\nMy time spent on the Searing Blade may be all but wasted now, but that does not mean that the Shadow Council's schemes elsewhere must suffer. I will do what I can to minimize the damage here in Ragefire Chasm. In the meantime, I will have my agents in the Barrens and Ashenvale begin work on our newest agenda. Return to me soon.",
+[6284] = {
+["o"] = "Kill Besseleth and bring Besseleth's Fang to Maggran at Sun Rock Retreat.",
+["d"] = "Warning: Proceed into Sishir Canyon west of here at your own risk.\n\nBesseleth and her eight-legged children of the forest have claimed this canyon as their webbed lair.\n\nMaggran Earthbinder in Sun Rock Retreat has placed a bounty on Besseleth. Slay her and bring proof of your killing to Maggran; there you will receive your reward for disposing this eight-legged menace.",
 },
 [356] = {
 ["o"] = "Kill 8 Bleeding Horrors and 8 Wandering Spirits, then report back to Linnea at her camp.",
 ["d"] = "The defenders on The Bulwark protecting Tirisfal from the Plaguelands are on constant alert. But sometimes Scourge will slip past them.\n\nOur success at the Bulwark depends on a one-front battle - we cannot allow an attack from the rear, nor can we allow our defenders' supply line to be cut.\n\nAssist the Bulwark. Patrol east and slay any Scourge you find. Spend particular effort at the Balnir Farmstead to the east. It has become a haven for interloping Scourge.",
 },
-[1825] = {
-["o"] = "Speak with Thun'grim Firegaze in the Barrens.",
-["d"] = "Thun'grim Firegaze, an orc blacksmith of renown, has heard of your continued deeds of valor in service of the Horde.  He would like to fashion for you a suit of armor, and bids you speak with him immediately.\n\nThun'grim is camped east of the Crossroads in the Barrens.",
+[92401] = {
+["o"] = "Investigate the disappearance of Edward Heartweaver in the Ruins of Lordaeron.",
+["d"] = "It's my husband Edward...\r\n\r\nHe has not returned from his weekly journey to the graveyard in the Lordaeron ruins. Our son was lost when Arthas razed the city, and my dear Edward is still filled with guilt and sorrow that we never found his body. I've tried to warn him against searching those overrun ruins, but he refuses to give up. I try not to worry, but it's been days.\r\n\r\nThere are things there I cannot contend with but if you are willing, I need to know the fate of my husband.",
 },
-[888] = {
-["o"] = "Retrieve the Shipment of Boots and Telescopic Lens for Gazlowe in Ratchet.",
-["d"] = "While I'd like to recover all my goods, I'm sure that's not possible. Still, there's a few things that I absolutely must have!\n\nAs you see, my observatory is ready to go, but it needs the smaller of the two lenses. The first arrived by caravan from Durotar, but the second was bound by ship, and never arrived. Also, I never got my boot shipment from Drizzlik in Booty Bay!\n\nHead down to the pirate camp and see if you can find them.",
+[1838] = {
+["o"] = "Bring to Thun'grim Firegaze 15 Smoky Iron Ingots, 10 Powdered Azurite, 10 Iron Bars and a Vial of Phlogiston.",
+["d"] = "I have heard tales of your strength and valor, and wish to make for you a suit of armor, a companion to aid you as tales of your great deeds grow.\n\nBut the fashioning of this armor will be a quest unto itself, N.  I will need your help, and the help of other smiths of the Horde.\n\nHere, take this scroll.  I spent many nights, struggling with near-blind eyes, writing that which I need for the armor.  Bring me the items on this scroll and I will create for you the first piece of the suit.",
 },
 [92706] = {
 ["o"] = "Bring Bruuz's Dorsal Fin to Gazlowe in Ratchet.",
 ["d"] = "Calling all anglers!\r\n\r\nA giant shark has been circling the waters near the shipping dock, attacking sailors and small boats. Dockworkers have given it the nickname \"Bruuz\". A hefty reward will be given to whoever brings me its fin!\r\n\r\n-- Gazlowe",
 },
-[873] = {
-["o"] = "Bring the Heart of Isha Awak to Mahren Skyseer.",
-["d"] = "The grand Isha Awak is lord of these waters.  Great is his strength, and solemn his pride.  The humans on the coast fear him, for he has consumed many of their number.\n\nBut I do not fear him.  I am grateful he is here.  He is a worthy challenge, and honorable prey.\n\nIf you are ready, then swim out and search for Isha Awak, the Deep Doom.\n\nHis spirit dwells in his heart, and to hear its beat is to know your fate.",
+[6503] = {
+["o"] = "Kill 9 Ashenvale Outrunners, then return to Kuray'bin at Splintertree Outpost.",
+["d"] = "We received reports that Ashenvale outrunners left Silverwing Outpost not long ago, and now sneak near our territories in the forest.  We don't want them gathering intelligence on our defenses!\n\nSneak through the forests south of our post here and east of the Alliance outpost of Silverwing.  Find and slay the outrunners, then return to me.",
 },
 [870] = {
 ["o"] = "Report back to Tonga Runetotem with your findings.",
@@ -809,34 +824,19 @@ ForeverDungeonJournalDB = {
 ["o"] = "Return the Samophlange to Sputtervalve in Ratchet.",
 ["d"] = "Pulling open the face of the control console reveals a dense jumble of wires, tubing and other strange mechanical objects--most of which seem to serve no practical purpose. Pushing them aside and digging deeper into the console, you find the samophlange. A tug removes it from its housing.",
 },
-[6441] = {
-["o"] = "Collect 16 Satyr Horns for Pixel in Splintertree Post.",
-["d"] = "Heya! I've been traveling through Ashenvale, heading towards Ratchet, and decided to make a stop here at Splintertree. I'm always looking for an opportunity, and it seems that satyr horns are in high demand in Ratchet these days.\n\nAfter asking around here, it seems that the satyrs in Night Run, Satyrnaar, and Xavian all have the type of horns I am looking for. I'm no match for those satyrs... but you look like you might be!\n\nTell you what, you collect the horns for me and I'll make it worth your time.",
+[25] = {
+["o"] = "Dispatch 12 Befouled Water Elementals at Mystral Lake, due east of the Talondeep Path and southwest of Splintertree Post.\n\nScout the gazebo on Mystral Lake that overlooks the nearby Alliance outpost.\n\nReturn to Mastok Wrilehiss at Splintertree Post, Ashenvale.",
+["d"] = "If you want to be useful, then why don't you do something about the situation near Talondeep Path?\n\nThe transports between Ashenvale and Stonetalon are at a standstill because of the lake coming alive and attacking anything that gets close... which means anyone on the path.  What'd be even more useful than just putting the hammer down on the water elementals there is someone scouting the gazebo on Mystral Lake - the one that has a solid view of the Alliance outpost there.\n\nYou up for being useful?",
 },
-[914] = {
-["o"] = "Bring the Gems of Cobrahn, Anacondra, Pythas and Serpentis to Nara Wildmane in Thunder Bluff.",
-["d"] = "The druids in the Wailing Caverns, the Druids of the Fang, are an aberration.  They were part of an order of noble druids whose plan was to heal the Barrens, but now seek to remake that land to match their own, twisted dreams.\n\nThe Druids of the Fang have four leaders, and each possesses a dream gem.  Even now their faces haunt me!  Defeat the leaders and bring me their gems, and the Barrens may again know peace.\n\nGo, N.  You will find them lurking deep within the Wailing Caverns.",
+[6442] = {
+["o"] = "Bring 20 Wrathtail Heads to Marukai along the Zoram Strand.",
+["d"] = "There is evil lurking here along the coast, troll.\n\nIt is the resting place of the doomed city of Zoram, long destroyed and submerged beneath the seas.  Lost, and nearly forgotten.\n\nNow, the naga have returned, and for what reason we do not know.  But reason matters little; we must defend the land we have worked so hard to claim as our own.\n\nReturn to me with 20 of their heads! Throw the naga back to the depths!",
 },
-[1492] = {
-["o"] = "Bring the Secure Crate to Wharfmaster Dizzywig in Ratchet.",
-["d"] = "I have need to send a crate of potions, reagents and other items to my associates in the Old World. Little time I have to actually see them to the dock at Ratchet, and the last caravan has already left.\n\nIf you could, please take this to Wharfmaster Dizzywig. He will ensure that it is placed on the next boat to Blackwater Cove.",
-},
-},
-},
-["lootFilter"] = {
-["enabled"] = false,
-["classOnly"] = false,
-["recipes"] = false,
-["schools"] = {
-},
-["matchAll"] = true,
-["resists"] = {
-},
-["weaponTypes"] = {
-},
-["stats"] = {
-},
-["armorTypes"] = {
+[6921] = {
+["o"] = "Bring the Fathom Core to Je'neu Sancrea at Zoram'gar Outpost, Ashenvale.",
+["d"] = "The Twilight's Hammer has moved into the Moonshrine Ruins of Blackfathom Deeps.  Their presence can only serve to coerce the elements into working against us.  If left unchecked, this region will be theirs for good.\n\nN, go into Blackfathom and find the ruin's fathom stone; it should be somewhere close in the water.  In it is a fathom core - a device that when properly read it will relate a history of all elemental activity.  If I have it, I and the Earthen Ring can maybe do something to stop them!",
 },
 },
+},
+["lastBoss"] = 13,
 }
