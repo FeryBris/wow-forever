@@ -5,13 +5,13 @@ AzeriteUI5_DB = {
 ["warriorEndcap"] = "warswords",
 ["warriorEndcapY"] = -3,
 ["hunterPreview"] = false,
-["paladinPreview"] = false,
-["warriorCastEndcapScale"] = 0.8,
-["roguePreview"] = false,
+["druidPreview"] = false,
 ["warriorPreview"] = true,
+["paladinPreview"] = false,
+["roguePreview"] = false,
 ["shamanPreview"] = false,
 ["legacyHUD"] = false,
-["druidPreview"] = false,
+["warriorCastEndcapScale"] = 0.8,
 ["magePreview"] = false,
 },
 },
@@ -525,15 +525,13 @@ nil,
 },
 },
 },
-["VehicleExit"] = {
+["RaidFrame25"] = {
 ["profiles"] = {
 ["Azerite"] = {
-["customPositionInitialized"] = true,
 ["savedPosition"] = {
 nil,
--249.32421875,
-249.3234710693359,
-["scale"] = 1.146104622502105,
+57.30521774291992,
+-48.130859375,
 ["lockAnchorPoint"] = false,
 },
 },
@@ -627,13 +625,15 @@ nil,
 },
 },
 },
-["RaidFrame25"] = {
+["VehicleExit"] = {
 ["profiles"] = {
 ["Azerite"] = {
+["customPositionInitialized"] = true,
 ["savedPosition"] = {
 nil,
-57.30521774291992,
--48.130859375,
+-249.32421875,
+249.3234710693359,
+["scale"] = 1.146104622502105,
 ["lockAnchorPoint"] = false,
 },
 },
