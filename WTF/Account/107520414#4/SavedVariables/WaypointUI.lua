@@ -7,9 +7,9 @@ WaypointDB_Global = {
 ["CustomMapPinsEnabled"] = true,
 ["AlwaysShow"] = true,
 ["WaypointDistanceTextAlpha"] = 0.7000000000000001,
-["PathfindingProvider"] = 1,
-["lastLoadedVersion"] = 10705,
 ["PrefMetric"] = true,
+["lastLoadedVersion"] = 10705,
+["PathfindingProvider"] = 1,
 }
 WaypointDB_Global_Persistent = {
 }
