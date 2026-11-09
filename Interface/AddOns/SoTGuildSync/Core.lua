@@ -4,7 +4,9 @@
 
 local ADDON_NAME, ns = ...
 
-ns.VERSION = C_AddOns.GetAddOnMetadata(ADDON_NAME, "Version")
+-- Hardcoded, not read from the TOC: the client caches TOC metadata until a
+-- full restart, so after /reload it would report a stale version.
+ns.VERSION = "0.3.0"
 
 local PREFIX = "|cff69ccf0SoT Guild Sync|r: "
 
@@ -215,12 +217,20 @@ SlashCmdList.SOTGUILDSYNC = function(msg)
 	if fn then
 		fn(msg)
 	else
-		ns.Print("commands: /sotguild probe (read one sample of every guild API), /sotguild status")
+		ns.Print("commands: /sotguild status, /sotguild export (save now), /sotguild probe (diagnostics)")
 	end
 end
 
 ns.commands.status = function()
 	local db = SoTGuildSyncDB or {}
+	local e = db.export
+	ns.Print("version " .. ns.VERSION)
+	if e then
+		ns.Print(("last export: %s (%s), %d members, %d event log rows"):format(
+			date("%Y-%m-%d %H:%M", e.updatedAt), tostring(e.trigger), #e.members, #e.eventLog))
+	else
+		ns.Print("no export yet (guild master only; saves on login, updates and logout)")
+	end
 	local p = db.probe
 	if p and p.meta then
 		ns.Print(("last probe: %s by %s, bank %s"):format(
