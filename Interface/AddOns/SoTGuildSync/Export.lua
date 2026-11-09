@@ -179,8 +179,21 @@ local function CollectEventLog()
 end
 
 ---------------------------------------------------------------------------
-function ns.Export(trigger)
-	if not IsInGuild() or not IsGuildLeader() then
+-- Set by the first successful export this session. At logout the client may
+-- already report "not in guild / not leader" (first export, 2026-11-09: the
+-- logout save never landed), so the final save trusts this instead.
+local wasGuildMaster = false
+
+function ns.Export(trigger, final)
+	if final then
+		if not wasGuildMaster then
+			return false
+		end
+	elseif not IsInGuild() or not IsGuildLeader() then
+		return false
+	end
+	-- Never replace a good export with an empty roster (data torn down at logout).
+	if (GetNumGuildMembers() or 0) == 0 then
 		return false
 	end
 	local guildName, _, _, guildRealm = GetGuildInfo("player")
@@ -209,6 +222,7 @@ function ns.Export(trigger)
 	SoTGuildSyncDB.export = data
 	SoTGuildSyncDB.json = ns.EncodeJSON(data)
 	lastSave = time()
+	wasGuildMaster = true
 	return true, data
 end
 
@@ -244,11 +258,29 @@ ns.On("GUILD_ROSTER_UPDATE", ThrottledExport)
 ns.On("GUILD_EVENT_LOG_UPDATE", ThrottledExport)
 -- Synchronous final save from already-loaded data (no async queries possible
 -- here). PLAYER_LEAVING_WORLD also covers /reload (WotLK addon's approach).
-ns.On("PLAYER_LOGOUT", function()
-	ns.Export("logout")
-end)
+-- Records what the client reports at that moment, so the next SavedVariables
+-- show why a final save did or didn't happen.
+local function FinalSave(event)
+	local ok, saved = pcall(ns.Export, event, true)
+	SoTGuildSyncDB = SoTGuildSyncDB or {}
+	SoTGuildSyncDB.finalSaveDiag = SoTGuildSyncDB.finalSaveDiag or {}
+	SoTGuildSyncDB.finalSaveDiag[event] = {
+		at = time(),
+		ok = ok,
+		saved = ok and saved or false,
+		error = not ok and tostring(saved) or nil,
+		isInGuild = IsInGuild(),
+		isGuildLeader = IsGuildLeader(),
+		numMembers = GetNumGuildMembers(),
+		numEvents = GetNumGuildEvents(),
+	}
+end
+
 ns.On("PLAYER_LEAVING_WORLD", function()
-	ns.Export("leaving")
+	FinalSave("PLAYER_LEAVING_WORLD")
+end)
+ns.On("PLAYER_LOGOUT", function()
+	FinalSave("PLAYER_LOGOUT")
 end)
 
 ns.commands.export = function()
