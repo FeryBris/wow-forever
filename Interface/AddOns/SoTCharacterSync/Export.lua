@@ -403,6 +403,7 @@ function ns.CollectCharacter()
 		levelUps = levelUps,
 		updatedAt = time(),
 		-- Forever additions
+		client = "forever", -- which game this came from; the website will import wotlk too
 		guid = S(UnitGUID("player")),
 		classId = S(classId),
 		raceId = S(raceId),

@@ -6,7 +6,7 @@ local ADDON_NAME, ns = ...
 
 -- Hardcoded, not read from the TOC: the client caches TOC metadata until a
 -- full restart, so after /reload it would report a stale version.
-ns.VERSION = "0.3.2"
+ns.VERSION = "0.3.3"
 
 local PREFIX = "|cff69ccf0SoT Guild Sync|r: "
 

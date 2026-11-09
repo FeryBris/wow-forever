@@ -219,6 +219,8 @@ function ns.Export(trigger, final)
 	local total, online = GetNumGuildMembers()
 	local faction = GetGuildFactionGroup() -- 0 = Horde (measured run 1), 1 = Alliance
 	local data = {
+		-- Which game this came from; the website will import wotlk too.
+		client = "forever",
 		version = ns.VERSION,
 		trigger = trigger,
 		updatedAt = time(),
