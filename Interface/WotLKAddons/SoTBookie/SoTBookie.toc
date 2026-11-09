@@ -1,0 +1,12 @@
+## Interface: 30300
+## Title: |cff69ccf0SoT|r Bookie
+## Notes: Guildovni sazky - vypis, vyber stranu, vyrovnej se. /bet
+## Author: Wydlica
+## Version: 1.0.1
+## SavedVariables: SoTBookieDB
+
+embeds.xml
+Core.lua
+Comm.lua
+UI.lua
+Minimap.lua

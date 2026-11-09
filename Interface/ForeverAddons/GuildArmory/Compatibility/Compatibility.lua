@@ -1,0 +1,3407 @@
+--[[----------------------------------------------------------------------------
+    Compatibility — SAEMTLICHE versionsabhaengigen API-Aufrufe, und nur hier.
+
+    ============================================================================
+    GEMESSENE FAKTEN (WoW: Forever Beta, Build 1.60.1 / 69913, 18.09.2026,
+    sechs Probe-Laeufe auf drei Charakteren) — keine Annahmen:
+
+      Interface-Nummer         16001
+      API-Grundlage            RETAIL-Client mit Vanilla-Inhalten
+                               (WOW_PROJECT_ID == WOW_PROJECT_MAINLINE)
+      Combat Log fuer Addons   NICHT verfuegbar (37 Kaempfe, 0 Ereignisse;
+                               CombatLogGetCurrentEventInfo fehlt)
+      Combat Log als DATEI     VERFUEGBAR (gemessen 22.09.2026): /combatlog und
+                               LoggingCombat funktionieren, die Datei ist
+                               vollstaendig — Format 22, ADVANCED_LOG_ENABLED,
+                               7994 Zeilen mit UNIT_DIED und ZONE_CHANGE.
+                               Das Addon kann sie nicht lesen (Addons lesen
+                               keine Dateien), das Begleitprogramm schon.
+                               Die beiden Zeilen hier widersprechen sich also
+                               NICHT: blind im Spiel, lesbar von aussen.
+      Auren                    nur C_UnitAuras; UnitAura/UnitBuff fehlen
+      Addon-Nachrichten        nur C_ChatInfo; globale Fassung fehlt
+      Gruppe                   GetNumGroupMembers ja, GetNumRaidMembers nein
+      Spezialisierungen        GetNumSpecializations() == 1 je Klasse
+                               -> Spec traegt keine Information ueber die Klasse
+                                  hinaus; Rolle NICHT daraus ableiten
+      Talente                  modernes Trait-System, C_Traits.GenerateImportString
+                               liefert den Loadout-String (ab ~Stufe 11)
+      GetAverageItemLevel      FEHLERHAFT: teilt Summe durch konstant 16 statt
+                               durch belegte Plaetze (13/16, 21/16, 68/16, 82/16)
+                               -> Itemlevel wird hier selbst berechnet
+      GetInventoryItemLink     funktioniert, liefert Item-Links
+      C_Item.GetDetailedItemLevelInfo(link)   funktioniert
+      Lokalisierung            Client wechselt Sprache; Namen nie fest verdrahten
+      MAX_RAID_MEMBERS         40
+
+    ============================================================================
+    DIE REGEL, DIE AUS DIESEN MESSUNGEN FOLGT:
+
+    Der Forever-Client traegt die komplette Retail-API mit sich — inklusive
+    C_Garrison, C_ArtifactUI, C_DelvesUI, die es im Spiel nicht gibt. Die
+    EXISTENZ einer Funktion beweist deshalb NICHTS. Jede Faehigkeit in `GA.has`,
+    die ueber blosse Existenz hinausgeht, wird am RUECKGABEWERT geprueft
+    (siehe Compat.Measure). Viermal hat diese Regel einen Fehler verhindert,
+    einmal zu spaet gegriffen.
+
+    ============================================================================
+    NOCH NICHT GEMESSEN (RaidBrain_Probe misst sie beim naechsten Lauf):
+
+      Pluendermeister          GetLootMethod / GiveMasterLoot / GetMasterLootCandidate
+                               Retail hat Master Loot seit BfA entfernt, Vanilla
+                               hatte ihn. Fuer das LootCouncil die entscheidende
+                               Frage: Nur mit Master Loot kann ein Addon zuweisen.
+      Handel                   GetTradeTargetItemLink & Co. fuer die manuelle
+                               Uebergabe mit Bestaetigung
+      Gilde                    GetGuildRosterInfo / C_GuildInfo
+      Tooltip-Hooks            TooltipDataProcessor (modern) vs HookScript
+      Inspect                  NotifyInspect + INSPECT_READY
+
+    Fuer jeden dieser Bereiche gibt es hier bereits einen Wrapper mit
+    Feature-Detection. Was fehlt, liefert nil und setzt das passende `GA.has`-
+    Flag — das UI bietet die Funktion dann gar nicht erst an.
+------------------------------------------------------------------------------]]
+
+local _, GA = ...
+
+local Compat = {}
+GA.Core.Compat = Compat
+
+local has = GA.has
+
+local function isFunction(value) return type(value) == "function" end
+local function isTable(value) return type(value) == "table" end
+
+--- Einmal angelegt statt bei jedem Aufruf: Compat.IsReadable laeuft in
+--- Tooltip-Rueckrufen, also bei jeder Mausbewegung.
+local function concatProbe(value) return value .. "" end
+local function compareProbe(a, b) return a == b end
+
+--- Dasselbe fuer Zahlen: rechnen UND vergleichen.
+---
+--- Verschleierte Werte gibt es nicht nur als Zeichenkette. Gemessen am
+--- 24.09.2026 an UnitHealth: type() sagt "number", und die erste Rechnung
+--- wirft "a secret number value". Wer nur rechnet, laesst den Vergleich
+--- durch — und umgekehrt.
+local function numberProbe(a, b)
+    local sum = a + b
+    return sum > 0 and a <= b
+end
+
+--- Laesst sich dieser Wert ueberhaupt lesen?
+---
+--- EIN "SECRET VALUE" SIEHT AUS WIE EIN STRING UND IST KEINER.
+---
+--- Der Retail-Client gibt manche Angaben verschleiert heraus: type() sagt
+--- "string", aber jede Umwandlung wirft
+---
+---   attempt to perform string conversion on a secret string value
+---   (execution tainted by 'GuildArmory')
+---
+--- Gemessen am Unit-Token eines Tooltips (20.09.2026) und an der GUID aus
+--- den Tooltipdaten (21.09.2026) — string.match darauf genuegt schon.
+---
+--- Es gibt keine Abfrage dafuer. Der einzige belastbare Test ist, die
+--- Umwandlung zu versuchen und den Fehler aufzufangen. Ein nicht lesbarer
+--- Wert ist KEIN Fehler im Addon: Er heisst nur, dass es fuer diese eine
+--- Einheit nichts zu holen gibt.
+---
+--- GEPRUEFT WERDEN ZWEI OPERATIONEN, NICHT EINE. Am 21.09.2026 kam erst
+--- "attempt to perform string conversion", eine Stunde spaeter "attempt to
+--- compare a secret string value" aus LOOT_READY. Eine Probe, die nur das
+--- Verketten versucht, haette den zweiten Fall durchgelassen und Sicherheit
+--- vorgetaeuscht.
+function Compat.IsReadable(value)
+    if value == nil then return false end
+    if type(value) ~= "string" then return true end
+    if not pcall(concatProbe, value) then return false end
+    return (pcall(compareProbe, value, ""))
+end
+
+--- Ist das eine Zahl, mit der sich rechnen und vergleichen laesst?
+---
+--- IsReadable oben laesst JEDE Zahl durch — es wurde fuer verschleierte
+--- Zeichenketten gebaut. Verschleierte ZAHLEN gibt es auf dieser Linie
+--- aber genauso (UnitHealth, gemessen 24.09.2026: type sagt "number",
+--- Rechnen und Vergleichen werfen). Am 27.09. hat die Sonde fuer die
+--- Ankleidepuppe daran geworfen: Die Rassenkennung aus UnitRace kam als
+--- Zahl, und ein %d in string.format brachte sie zum Platzen.
+---
+--- Dieselbe Probe wie beim Lebensbalken: einmal rechnen, einmal vergleichen.
+--- @return boolean
+function Compat.IsReadableNumber(value)
+    if type(value) ~= "number" then return false end
+    return (pcall(numberProbe, value, 0))
+end
+
+--- Sind das dieselbe GUID?
+---
+--- EIN VERGLEICH IST KEINE HARMLOSE OPERATION.
+---
+--- Gemeldet 21.09.2026 aus LOOT_READY und LOOT_OPENED: "attempt to compare a
+--- secret string value". Hier stand ein schlichtes `UnitGUID("target") ==
+--- guid`, und der Rueckgabewert von UnitGUID ist auf diesem Client
+--- verschleiert.
+---
+--- FALSCH IST DIE RICHTIGE ANTWORT, wenn der Vergleich nicht geht: Die eine
+--- Stelle, die das braucht, fuellt dann den Namen des Gegners nicht aus —
+--- genau das, was sie ohnehin tun soll, wenn sie sich nicht sicher ist.
+--- Einen Namen zu raten waere schlechter als keiner.
+function Compat.SameGUID(a, b)
+    if type(a) ~= "string" or type(b) ~= "string" then return false end
+    local ok, equal = pcall(compareProbe, a, b)
+    return (ok and equal) and true or false
+end
+
+-- ================================================================== Existenz --
+-- Nur, was durch Existenz allein entscheidbar ist. Der Rest in Measure().
+
+has.groupApi       = isFunction(_G.GetNumGroupMembers)                          -- true
+has.auras          = isTable(_G.C_UnitAuras) and isFunction(_G.C_UnitAuras.GetAuraDataByIndex)
+has.chatInfo       = isTable(_G.C_ChatInfo) and isFunction(_G.C_ChatInfo.SendAddonMessage)
+has.timer          = isTable(_G.C_Timer) and isFunction(_G.C_Timer.After)
+has.classColorApi  = isTable(_G.C_ClassColor)
+has.itemApi        = isTable(_G.C_Item) and isFunction(_G.C_Item.GetItemInfo)
+has.itemLevelApi   = isTable(_G.C_Item) and isFunction(_G.C_Item.GetDetailedItemLevelInfo)
+has.inventoryLinks = isFunction(_G.GetInventoryItemLink)
+has.inspect        = isFunction(_G.NotifyInspect) and isFunction(_G.CanInspect)
+has.traits         = isTable(_G.C_Traits) and isTable(_G.C_ClassTalents)
+has.tooltipProcessor = isTable(_G.TooltipDataProcessor)
+    and isFunction(_G.TooltipDataProcessor.AddTooltipPostCall)
+has.guildRoster    = isFunction(_G.GetNumGuildMembers) and isFunction(_G.GetGuildRosterInfo)
+has.combatLockdown = isFunction(_G.InCombatLockdown)
+
+--- Loot: Existenz der Funktionen. Ob Pluendermeister im Spiel WAEHLBAR ist,
+--- entscheidet erst Measure() ueber GetLootMethod — siehe Dateikopf.
+has.masterLootApi  = isFunction(_G.GiveMasterLoot) and isFunction(_G.GetMasterLootCandidate)
+has.lootSlots      = isFunction(_G.GetNumLootItems) and isFunction(_G.GetLootSlotLink)
+has.tradeApi       = isFunction(_G.GetTradeTargetItemLink) and isFunction(_G.GetTradePlayerItemLink)
+
+-- Gemessen 18.09.2026: existieren, aber ohne verwertbare Information (s.o.)
+has.specs          = isFunction(_G.GetInspectSpecialization)
+has.multipleSpecs  = false   -- wird in Measure() gesetzt
+
+-- ================================================================== Messung ---
+
+--- Prueft die Faehigkeiten, die sich nur am Rueckgabewert erkennen lassen.
+--- Wird von Core\Events nach PLAYER_LOGIN aufgerufen — vorher liefern viele
+--- Funktionen noch nichts.
+function Compat.Measure()
+    -- Mehr als eine Spec je Klasse? Gemessen: nein. Bleibt trotzdem eine
+    -- Messung, damit ein Patch das ohne Codeaenderung umdrehen kann.
+    if isFunction(_G.GetNumSpecializations) then
+        local ok, count = pcall(GetNumSpecializations)
+        has.multipleSpecs = ok and tonumber(count) ~= nil and tonumber(count) > 1
+    end
+
+    -- Pluendermeister: Nicht "gibt es GiveMasterLoot", sondern "ist 'master'
+    -- eine Lootmethode, die der Client kennt". GetLootMethod liefert ausserhalb
+    -- einer Gruppe "freeforall"; ob "master" waehlbar ist, zeigt sich erst in
+    -- einer Gruppe. Bis dahin gilt die Existenz der API als Vorbehalt.
+    has.lootMethodApi = isFunction(_G.GetLootMethod)
+        or (isTable(_G.C_PartyInfo) and isFunction(_G.C_PartyInfo.GetLootMethod))
+
+    -- Tooltip-Hook: modern ueber TooltipDataProcessor und Enum.TooltipDataType.
+    has.tooltipEnum = isTable(_G.Enum) and isTable(_G.Enum.TooltipDataType)
+        and _G.Enum.TooltipDataType.Item ~= nil
+
+    GA.Core.Callbacks:Fire("COMPAT_MEASURED")
+end
+
+--- Kurzfassung fuer Diagnose und Einstellungen.
+function Compat.Describe()
+    local lines = {}
+    for _, key in ipairs({
+        "groupApi", "auras", "chatInfo", "timer", "itemApi", "itemLevelApi",
+        "inventoryLinks", "inspect", "traits", "tooltipProcessor", "guildRoster",
+        "combatLockdown", "masterLootApi", "lootSlots", "tradeApi", "lootMethodApi",
+        "multipleSpecs",
+    }) do
+        lines[#lines + 1] = string.format("  %-18s %s", key, tostring(has[key]))
+    end
+    return table.concat(lines, "\n")
+end
+
+-- ================================================================== Kampf -----
+
+--- Waehrend des Combat-Lockdowns sind geschuetzte Frames tabu. Alles, was
+--- Frames anlegt oder umhaengt, prueft hier und verschiebt sonst.
+function Compat.InCombat()
+    if has.combatLockdown then return InCombatLockdown() and true or false end
+    return false
+end
+
+-- ================================================================== Gruppe ----
+
+function Compat.GetNumGroupMembers()
+    if has.groupApi then return GetNumGroupMembers() or 0 end
+    return 0
+end
+
+function Compat.IsInRaid()
+    if isFunction(_G.IsInRaid) then return IsInRaid() and true or false end
+    return false
+end
+
+function Compat.IsInGroup()
+    if isFunction(_G.IsInGroup) then return IsInGroup() and true or false end
+    return Compat.GetNumGroupMembers() > 0
+end
+
+--- "raid3" bzw. "party2" / "player" fuer Index i.
+function Compat.GetGroupUnit(index)
+    if Compat.IsInRaid() then return "raid" .. index end
+    if index == 1 then return "player" end
+    return "party" .. (index - 1)
+end
+
+-- ================================================================== Gilde -----
+
+--- Anzahl Gildenmitglieder (gesamt, online). Loest bei Bedarf eine
+--- Aktualisierung aus; die Antwort kommt asynchron ueber GUILD_ROSTER_UPDATE.
+function Compat.RequestGuildRoster()
+    if isTable(_G.C_GuildInfo) and isFunction(_G.C_GuildInfo.GuildRoster) then
+        pcall(_G.C_GuildInfo.GuildRoster)
+    elseif isFunction(_G.GuildRoster) then
+        pcall(GuildRoster)
+    end
+end
+
+function Compat.IsInGuild()
+    if isFunction(_G.IsInGuild) then return IsInGuild() and true or false end
+    return false
+end
+
+--- @return number total, number online
+function Compat.GetNumGuildMembers()
+    if not has.guildRoster then return 0, 0 end
+    local ok, total, online = pcall(GetNumGuildMembers)
+    if not ok then return 0, 0 end
+    return tonumber(total) or 0, tonumber(online) or 0
+end
+
+--- Ein Gildenmitglied nach Index. Feldreihenfolge von GetGuildRosterInfo:
+--- name, rankName, rankIndex, level, classDisplayName, zone, publicNote,
+--- officerNote, isOnline, status, classFile, achievementPoints, achievementRank,
+--- isMobile, canSoR, repStanding, guid
+--- @return table|nil
+function Compat.GetGuildMember(index)
+    if not has.guildRoster then return nil end
+
+    local ok, name, rankName, rankIndex, level, classDisplay, zone, publicNote,
+          officerNote, isOnline, _, classFile, _, _, _, _, _, guid =
+        pcall(GetGuildRosterInfo, index)
+
+    if not ok or not name then return nil end
+
+    return {
+        name = name,
+        rankName = rankName,
+        rankIndex = rankIndex,
+        level = level,
+        className = classDisplay,
+        class = classFile,
+        zone = zone,
+        publicNote = publicNote,
+        officerNote = officerNote,
+        online = isOnline and true or false,
+        guid = guid,
+    }
+end
+
+--- Eigener Gildenname und -rang.
+--- @return string|nil guildName, string|nil rankName, number|nil rankIndex
+function Compat.GetOwnGuildInfo()
+    if not isFunction(_G.GetGuildInfo) then return nil end
+    local ok, guildName, rankName, rankIndex = pcall(GetGuildInfo, "player")
+    if not ok then return nil end
+    return guildName, rankName, rankIndex
+end
+
+-- ================================================================== Items -----
+
+--- Iteminfo ueber die moderne oder die alte Schnittstelle.
+--- Beide koennen nil liefern, wenn das Item noch nicht im Cache ist — dann
+--- kommt spaeter GET_ITEM_INFO_RECEIVED / ITEM_DATA_LOAD_RESULT.
+--- @return table|nil { name, link, quality, itemLevel, requiredLevel, type,
+---                     subType, stackCount, equipLoc, icon, sellPrice, classID,
+---                     subclassID }
+function Compat.GetItemInfo(itemLinkOrID)
+    if not itemLinkOrID then return nil end
+
+    local fn = (has.itemApi and _G.C_Item.GetItemInfo) or _G.GetItemInfo
+    if not isFunction(fn) then return nil end
+
+    local ok, name, link, quality, itemLevel, requiredLevel, itemType, itemSubType,
+          stackCount, equipLoc, icon, sellPrice, classID, subclassID, bindType =
+        pcall(fn, itemLinkOrID)
+
+    if not ok or not name then return nil end
+
+    return {
+        name = name, link = link, quality = quality, itemLevel = itemLevel,
+        requiredLevel = requiredLevel, type = itemType, subType = itemSubType,
+        stackCount = stackCount, equipLoc = equipLoc, icon = icon,
+        sellPrice = sellPrice, classID = classID, subclassID = subclassID,
+        -- 0 = bindet nie, 1 = beim Aufheben, 2 = beim Anlegen, 3 = bei
+        -- Benutzung, 4 = Questgegenstand.
+        bindType = tonumber(bindType),
+    }
+end
+
+--- Bindet dieser Gegenstand erst beim Anlegen?
+Compat.BIND_ON_EQUIP = 2
+
+--- Der Link eines einzelnen Beutelplatzes.
+function Compat.GetBagItemLink(bag, slot)
+    local container = _G.C_Container
+    local fn = (isTable(container) and container.GetContainerItemLink)
+        or _G.GetContainerItemLink
+    if not isFunction(fn) then return nil end
+
+    local ok, link = pcall(fn, bag, slot)
+    return (ok and link) or nil
+end
+
+--- Ist dieser Gegenstand im Beutel bereits seelengebunden?
+---
+--- DIE BINDUNGSART IST EINE EIGENSCHAFT DES GEGENSTANDS, NICHT DES STUECKS.
+---
+--- GetItemInfo sagt "bindet beim Anlegen" — auch dann, wenn genau dieses
+--- Exemplar laengst angelegt WAR und damit gebunden ist. Wer nur bindType
+--- liest, bietet der Gilde Gegenstaende an, die niemand mehr weitergeben
+--- kann.
+---
+--- @return boolean|nil  nil = laesst sich auf diesem Client nicht feststellen
+function Compat.IsItemBound(bag, slot)
+    if not isTable(_G.C_Item) or not isFunction(_G.C_Item.IsBound) then return nil end
+    if not isTable(_G.ItemLocation) or not isFunction(_G.ItemLocation.CreateFromBagAndSlot) then
+        return nil
+    end
+
+    local okLoc, location = pcall(_G.ItemLocation.CreateFromBagAndSlot, bag, slot)
+    if not okLoc or not location then return nil end
+
+    local okBound, bound = pcall(_G.C_Item.IsBound, location)
+    if not okBound then return nil end
+    return bound and true or false
+end
+
+--- Zweite Quelle fuer die Bindung: die Beutelauskunft.
+---
+--- WARUM ZWEI. C_Item.IsBound gibt es, aber es schweigt nicht bei jedem
+--- Stueck gleich — gemessen: ein bereits gebundenes gruenes Teil kam als
+--- "unbekannt" heraus und wurde deshalb der Gilde angeboten. Ein Angebot,
+--- das niemand annehmen kann, ist schlimmer als kein Angebot: Jemand
+--- laeuft dafuer quer durch die Welt.
+---
+--- GetContainerItemInfo fuehrt dasselbe als Feld isBound. Stimmen beide
+--- nicht ueberein, gewinnt "gebunden" — die Seite, auf der man niemanden
+--- umsonst losschickt.
+--- @return boolean|nil
+function Compat.IsItemBoundByContainer(bag, slot)
+    local container = _G.C_Container
+    local fn = (isTable(container) and container.GetContainerItemInfo)
+        or _G.GetContainerItemInfo
+    if not isFunction(fn) then return nil end
+
+    local ok, info = pcall(fn, bag, slot)
+    if not ok or not isTable(info) then return nil end
+    if info.isBound == nil then return nil end
+    return info.isBound and true or false
+end
+
+--- Beide Quellen zusammen. nil heisst wirklich: keine von beiden weiss es.
+--- @return boolean|nil
+function Compat.ItemIsBound(bag, slot)
+    local a = Compat.IsItemBound(bag, slot)
+    if a == true then return true end
+
+    local b = Compat.IsItemBoundByContainer(bag, slot)
+    if b == true then return true end
+
+    -- Ab hier ist keine der beiden "true". Nur wenn wenigstens EINE
+    -- ausdruecklich "nein" sagt, ist es ein Nein.
+    if a == false or b == false then return false end
+    return nil
+end
+
+--- Tatsaechliches Itemlevel eines Items (beruecksichtigt Aufwertungen).
+--- Gemessen 18.09.2026: C_Item.GetDetailedItemLevelInfo(link) funktioniert.
+--- @return number|nil
+function Compat.GetItemLevelOf(itemLink)
+    if not itemLink then return nil end
+
+    if has.itemLevelApi then
+        local ok, level = pcall(_G.C_Item.GetDetailedItemLevelInfo, itemLink)
+        if ok and tonumber(level) and tonumber(level) > 0 then return tonumber(level) end
+    end
+
+    local info = Compat.GetItemInfo(itemLink)
+    if info and tonumber(info.itemLevel) and info.itemLevel > 0 then
+        return info.itemLevel
+    end
+
+    return nil
+end
+
+--- Zerlegt einen Item-Link in seine Bestandteile.
+--- Format: item:itemID:enchantID:gem1:gem2:gem3:gem4:suffixID:uniqueID:level:...
+--- Das Format ist seit Jahren stabil und in allen Client-Linien gleich.
+--- @return table|nil { itemID, enchantID, gems = {..}, suffixID, uniqueID, raw }
+function Compat.ParseItemLink(link)
+    if type(link) ~= "string" then return nil end
+
+    local itemString = string.match(link, "item:([%-%d:]+)")
+    if not itemString then return nil end
+
+    local parts = {}
+    for part in string.gmatch(itemString .. ":", "([^:]*):") do
+        parts[#parts + 1] = part
+    end
+
+    local function num(index)
+        local value = tonumber(parts[index])
+        return (value and value ~= 0) and value or nil
+    end
+
+    local gems = {}
+    for index = 3, 6 do
+        local gem = num(index)
+        if gem then gems[#gems + 1] = gem end
+    end
+
+    return {
+        itemID = num(1),
+        enchantID = num(2),
+        gems = gems,
+        suffixID = num(7),
+        uniqueID = num(8),
+        raw = itemString,
+    }
+end
+
+--- Liest eine Item-ID aus dem, was ein Mensch in ein Eingabefeld tut.
+---
+--- WARUM DAS HIER NOETIG IST: Ein Addon kann keine HTTP-Anfragen stellen — der
+--- WoW-Client stellt dafuer keine Schnittstelle bereit. Wowhead zur Laufzeit zu
+--- befragen ist also unmoeglich, von keinem Addon. Was geht, ist das, was
+--- Wowhead-Links ohnehin mitbringen: Die Item-ID steht in der URL.
+---
+---   https://www.wowhead.com/item=19019/thunderfury      -> 19019
+---   https://www.wowhead.com/de/classic/item=19019       -> 19019
+---   |cff...|Hitem:19019:0:...|h[Donnerzorn]|h|r         -> 19019
+---   item:19019:0:0                                      -> 19019
+---   19019                                               -> 19019
+---
+--- Ein NAME wird hier ausdruecklich NICHT aufgeloest: Dafuer gibt es keinen
+--- verlaesslichen Weg im Client. Den uebernimmt Database/ItemIndex mit dem,
+--- was dieser Client schon gesehen hat.
+--- @return number|nil itemID, string|nil art ("link" | "wowhead" | "id")
+function Compat.ParseItemInput(text)
+    if type(text) ~= "string" then return nil end
+    text = string.gsub(text, "^%s+", "")
+    text = string.gsub(text, "%s+$", "")
+    if text == "" then return nil end
+
+    -- 1. Itemlink oder Item-String. Der Doppelpunkt unterscheidet ihn
+    --    eindeutig von der Wowhead-Schreibweise mit Gleichheitszeichen.
+    local fromLink = string.match(text, "item:(%d+)")
+    if fromLink then return tonumber(fromLink), "link" end
+
+    -- 2. Wowhead und alles, was "item=<zahl>" schreibt. Sprach- und
+    --    Spielversionspfade (/de/, /classic/, /cata/) sind egal, gesucht wird
+    --    nur das Stueck, auf das es ankommt.
+    local fromUrl = string.match(text, "item=(%d+)")
+    if fromUrl then return tonumber(fromUrl), "wowhead" end
+
+    -- 3. Blanke Zahl.
+    local fromNumber = string.match(text, "^(%d+)$")
+    if fromNumber then return tonumber(fromNumber), "id" end
+
+    return nil
+end
+
+--- Bittet den Client, die Daten einer Item-ID nachzuladen. Ohne das liefert
+--- GetItemInfo fuer eine getippte ID beim ersten Mal nichts.
+--- @return boolean angefordert
+function Compat.RequestItemData(itemID)
+    itemID = tonumber(itemID)
+    if not itemID then return false end
+
+    local item = _G.C_Item
+    if isTable(item) and isFunction(item.RequestLoadItemDataByID) then
+        local ok = pcall(item.RequestLoadItemDataByID, itemID)
+        if ok then return true end
+    end
+
+    -- Rueckfall: Ein GetItemInfo-Aufruf stoesst das Nachladen ebenfalls an.
+    -- Das Ergebnis kommt dann ueber GET_ITEM_INFO_RECEIVED.
+    Compat.GetItemInfo(itemID)
+    return false
+end
+
+--- Ist die Iteminfo schon im Client? Nur dann liefert GetItemInfo einen Namen.
+function Compat.IsItemDataCached(itemID)
+    itemID = tonumber(itemID)
+    if not itemID then return false end
+
+    local item = _G.C_Item
+    if isTable(item) and isFunction(item.IsItemDataCachedByID) then
+        local ok, cached = pcall(item.IsItemDataCachedByID, itemID)
+        if ok then return cached and true or false end
+    end
+
+    local info = Compat.GetItemInfo(itemID)
+    return info ~= nil and info.name ~= nil
+end
+
+-- ================================================================== Ausruestung
+
+--- Ausruestungsplaetze mit Namen. Hemd (4) und Wappenrock (19) sind dabei,
+--- zaehlen aber nicht ins Itemlevel (ITEM_LEVEL_SLOTS).
+Compat.EQUIPMENT_SLOTS = {
+    { id = 1,  key = "HEAD",     label = "Kopf" },
+    { id = 2,  key = "NECK",     label = "Hals" },
+    { id = 3,  key = "SHOULDER", label = "Schultern" },
+    { id = 15, key = "BACK",     label = "Ruecken" },
+    { id = 5,  key = "CHEST",    label = "Brust" },
+    { id = 4,  key = "SHIRT",    label = "Hemd" },
+    { id = 19, key = "TABARD",   label = "Wappenrock" },
+    { id = 9,  key = "WRIST",    label = "Handgelenke" },
+    { id = 10, key = "HANDS",    label = "Haende" },
+    { id = 6,  key = "WAIST",    label = "Taille" },
+    { id = 7,  key = "LEGS",     label = "Beine" },
+    { id = 8,  key = "FEET",     label = "Fuesse" },
+    { id = 11, key = "FINGER1",  label = "Ring 1" },
+    { id = 12, key = "FINGER2",  label = "Ring 2" },
+    { id = 13, key = "TRINKET1", label = "Schmuck 1" },
+    { id = 14, key = "TRINKET2", label = "Schmuck 2" },
+    { id = 16, key = "MAINHAND", label = "Waffenhand" },
+    { id = 17, key = "OFFHAND",  label = "Schildhand" },
+    { id = 18, key = "RANGED",   label = "Distanz" },
+}
+
+--- Plaetze, die ins Itemlevel eingehen: alle ausser Hemd und Wappenrock.
+local ITEM_LEVEL_SLOTS = { 1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18 }
+
+--- Item-Link eines Ausruestungsplatzes, oder nil wenn leer.
+--- Fuer "player" immer; fuer andere Einheiten nur nach abgeschlossenem Inspect.
+function Compat.GetEquippedLink(unit, slotID)
+    if not has.inventoryLinks then return nil end
+    local ok, link = pcall(GetInventoryItemLink, unit or "player", slotID)
+    if not ok then return nil end
+    return link
+end
+
+--- Durchschnittliches Itemlevel, SELBST berechnet.
+---
+--- GetAverageItemLevel ist in Forever fehlerhaft (siehe Dateikopf): Es teilt
+--- die Summe durch konstant 16. Auf Stufe 11 meldete es 4.25, waehrend drei
+--- gemessene Plaetze im Schnitt 8.0 hatten. Deshalb: je Platz den Link holen,
+--- Itemlevel bestimmen, summieren, durch die belegten Plaetze teilen.
+--- @return number|nil average, number count
+function Compat.ComputeItemLevel(unit)
+    unit = unit or "player"
+    local sum, count = 0, 0
+
+    for _, slot in ipairs(ITEM_LEVEL_SLOTS) do
+        local link = Compat.GetEquippedLink(unit, slot)
+        if link then
+            local level = Compat.GetItemLevelOf(link)
+            if level then
+                sum = sum + level
+                count = count + 1
+            end
+        end
+    end
+
+    if count == 0 then return nil, 0 end
+    return math.floor(sum / count + 0.5), count
+end
+
+-- ================================================================== Inspect ---
+
+--- Fordert ein Inspect an. Antwort kommt asynchron ueber INSPECT_READY(guid).
+--- Reichweite ~28 Yard, nur eine offene Anfrage, Drosselung durch den Server.
+--- @return boolean angefordert
+function Compat.RequestInspect(unit)
+    if not has.inspect then return false end
+    if Compat.InCombat() then return false end
+
+    local okCan, can = pcall(CanInspect, unit)
+    if not okCan or not can then return false end
+
+    local ok = pcall(NotifyInspect, unit)
+    return ok and true or false
+end
+
+function Compat.ClearInspect()
+    if isFunction(_G.ClearInspectPlayer) then pcall(ClearInspectPlayer) end
+end
+
+-- ================================================================== Spec ------
+
+--- Spezialisierungs-ID. Eigene ueber PlayerUtil, fremde nur nach Inspect.
+--- Gemessen: GetNumSpecializations() == 1 — eine Spec je Klasse. Der Wert wird
+--- gespeichert, aber NICHT zur Rollenableitung benutzt.
+function Compat.GetSpecializationID(unit)
+    unit = unit or "player"
+
+    if unit == "player" then
+        local playerUtil = _G.PlayerUtil
+        if isTable(playerUtil) and isFunction(playerUtil.GetCurrentSpecID) then
+            local ok, id = pcall(playerUtil.GetCurrentSpecID)
+            if ok and tonumber(id) and tonumber(id) > 0 then return tonumber(id) end
+        end
+    end
+
+    if has.specs then
+        local ok, id = pcall(GetInspectSpecialization, unit)
+        if ok and tonumber(id) and tonumber(id) > 0 then return tonumber(id) end
+    end
+
+    return nil
+end
+
+--- Loadout eines inspizierten Charakters. C_Traits.GenerateInspectImportString
+--- ist gemessen vorhanden (19.09.2026); ob es fuer Forever-Charaktere einen
+--- String liefert, zeigt erst der erste Inspect.
+function Compat.GetInspectLoadoutString(unit)
+    if not has.traits then return nil end
+    local traits = _G.C_Traits
+    if not isFunction(traits.GenerateInspectImportString) then return nil end
+    local ok, value = pcall(traits.GenerateInspectImportString, unit)
+    if not ok or type(value) ~= "string" or value == "" then return nil end
+    return value
+end
+
+--- Talent-Loadout als kanonischer Import-String (gemessen: funktioniert).
+function Compat.GetTalentLoadoutString()
+    if not has.traits then return nil end
+    local classTalents, traits = _G.C_ClassTalents, _G.C_Traits
+    if not isFunction(classTalents.GetActiveConfigID) or not isFunction(traits.GenerateImportString) then
+        return nil
+    end
+
+    local ok, configID = pcall(classTalents.GetActiveConfigID)
+    if not ok or not configID then return nil end
+
+    local okString, value = pcall(traits.GenerateImportString, configID)
+    if not okString or type(value) ~= "string" or value == "" then return nil end
+    return value
+end
+
+-- ================================================================== Loot ------
+
+--- Namen aus Enum.LootMethod auf die klassischen Bezeichner abgebildet.
+--- Abgebildet werden NAMEN, nicht Zahlen: Die Zahlen kommen aus der Enum-Tabelle
+--- des Clients selbst, damit hier nichts geraten wird.
+---
+--- GEMESSEN 19.09.2026 — Forever schreibt die Namen anders, als die Retail-
+--- Dokumentation vermuten laesst:
+---   Freeforall=0  Roundrobin=1  Masterlooter=2  Group=3  Needbeforegreed=4  Personal=5
+--- Ein erster Versuch mit "MasterLoot" und "FreeForAll" traf davon nichts.
+--- Deshalb wird der Name normalisiert (klein, nur Buchstaben) und beide
+--- Schreibweisen stehen in der Tabelle.
+local ENUM_NAME_TO_METHOD = {
+    freeforall      = "freeforall",
+    roundrobin      = "roundrobin",
+    masterlooter    = "master",       -- Forever
+    masterloot      = "master",       -- Retail-Schreibweise
+    master          = "master",
+    group           = "group",        -- Forever
+    grouploot       = "group",
+    needbeforegreed = "needbeforegreed",
+    personal        = "personalloot", -- Forever
+    personalloot    = "personalloot",
+}
+
+--- "MasterLoot", "Masterlooter", "MASTER_LOOT" -> "masterloot"/"masterlooter"
+local function normalizeEnumName(name)
+    return string.lower(string.gsub(tostring(name), "[^%a]", ""))
+end
+
+--- Zahl -> Bezeichner, einmal aus Enum.LootMethod aufgebaut.
+local lootMethodByValue
+
+local function buildLootMethodMap()
+    if lootMethodByValue ~= nil then return lootMethodByValue end
+
+    local enum = isTable(_G.Enum) and _G.Enum.LootMethod
+    if not isTable(enum) then
+        -- Ohne Enum wird NICHT geraten: Eine falsch geratene Zahl wuerde eine
+        -- Gruppenwurf-Runde als Pluendermeister ausweisen. Dann bleibt die
+        -- Methode unbekannt, und IsMasterLooter() nimmt den direkten Weg.
+        lootMethodByValue = false
+        return false
+    end
+
+    lootMethodByValue = {}
+    local mapped = 0
+    for name, value in pairs(enum) do
+        local method = ENUM_NAME_TO_METHOD[normalizeEnumName(name)]
+        if method and type(value) == "number" then
+            lootMethodByValue[value] = method
+            mapped = mapped + 1
+        end
+    end
+
+    -- Wenn die Enum da ist, aber kein einziger Name passt, stimmt die Annahme
+    -- ueber die Schreibweise nicht mehr. Das laut sagen, statt es zu verschlucken:
+    -- genau so ist am 19.09.2026 "Masterlooter" gegen "MasterLoot" aufgefallen.
+    if mapped == 0 then
+        local names = {}
+        for name in pairs(enum) do names[#names + 1] = tostring(name) end
+        table.sort(names)
+        if GA.Core.Debug then
+            GA.Core.Debug:Warn("Enum.LootMethod unbekannt benannt (%s) — bitte melden.",
+                table.concat(names, ", "))
+        end
+    end
+
+    return lootMethodByValue
+end
+
+--- Rohwert, so wie der Client ihn liefert — fuer Diagnose und Probe.
+--- @return any method, number|nil masterLooterPartyID, number|nil masterLooterRaidID
+function Compat.GetRawLootMethod()
+    -- Gemessen 19.09.2026: Die globale GetLootMethod FEHLT in Forever, nur
+    -- C_PartyInfo.GetLootMethod existiert. Der erste Wrapper lief ins Leere
+    -- und meldete "unbekannt", obwohl die Information da war.
+    local fn = (isTable(_G.C_PartyInfo) and _G.C_PartyInfo.GetLootMethod) or _G.GetLootMethod
+    if not isFunction(fn) then return nil end
+    local ok, method, partyID, raidID = pcall(fn)
+    if not ok then return nil end
+    return method, partyID, raidID
+end
+
+--- Aktuelle Lootmethode als Bezeichner: "freeforall" | "roundrobin" | "master" |
+--- "group" | "needbeforegreed" | "personalloot" — oder nil, wenn unbekannt.
+---
+--- GEMESSEN 19.09.2026 (Schlachtzug, 2 Spieler):
+---   C_PartyInfo.GetLootMethod() -> 2 | 0 | 1
+--- Forever liefert eine ZAHL, nicht den klassischen Text. Der erste Wrapper
+--- verglich gegen "master" und lag damit immer falsch — der Pluendermeister-Pfad
+--- waere nie angelaufen. Deshalb wird hier ueber Enum.LootMethod uebersetzt.
+--- @return string|nil method, number|nil masterLooterPartyID, number|nil masterLooterRaidID
+function Compat.GetLootMethod()
+    local raw, partyID, raidID = Compat.GetRawLootMethod()
+    if raw == nil then return nil end
+
+    if type(raw) == "string" then return raw, partyID, raidID end
+
+    if type(raw) == "number" then
+        local map = buildLootMethodMap()
+        if map then return map[raw], partyID, raidID end
+        return nil, partyID, raidID
+    end
+
+    return nil, partyID, raidID
+end
+
+--- Ist der Spieler gerade Pluendermeister? Nur dann darf das Addon zuweisen.
+---
+--- Zuerst die direkte Frage: IsMasterLooter() ist in Forever vorhanden und
+--- beantwortet genau das — ohne Umweg ueber Enum-Werte und Index-Vergleiche.
+--- Der zweite Weg greift nur, wenn es die Funktion nicht gibt.
+function Compat.IsMasterLooter()
+    if isFunction(_G.IsMasterLooter) then
+        local ok, value = pcall(_G.IsMasterLooter)
+        if ok and type(value) == "boolean" then return value end
+        if ok and value ~= nil then return value and true or false end
+    end
+
+    local method, partyID, raidID = Compat.GetLootMethod()
+    if method ~= "master" then return false end
+
+    -- Im Schlachtzug zeigt raidID auf den Pluendermeister, in der Gruppe partyID;
+    -- 0 im jeweils anderen Feld heisst "trifft hier nicht zu".
+    if Compat.IsInRaid() then
+        if not raidID or raidID == 0 then return false end
+        local unit = "raid" .. raidID
+        return UnitExists(unit) and UnitIsUnit(unit, "player") or false
+    end
+
+    -- partyID 0 bedeutet in der Gruppe: der Spieler selbst.
+    return partyID == 0
+end
+
+--- Weist einen Loot-Slot einem Kandidaten zu. NUR als Pluendermeister und nur
+--- solange das Loot-Fenster offen ist. Geschuetzte Funktion: Aufruf muss aus
+--- einem Klick heraus erfolgen (Hardware-Event), nie automatisch.
+--- @return boolean angestossen
+function Compat.GiveMasterLoot(slot, candidateIndex)
+    if not has.masterLootApi then return false end
+    if not Compat.IsMasterLooter() then return false end
+    local ok = pcall(GiveMasterLoot, slot, candidateIndex)
+    return ok and true or false
+end
+
+--- Kandidatenname fuer Master Loot an Index i, oder nil.
+function Compat.GetMasterLootCandidate(slot, index)
+    if not has.masterLootApi then return nil end
+    local ok, name = pcall(GetMasterLootCandidate, slot, index)
+    if not ok then return nil end
+    return name
+end
+
+--- Offene Loot-Slots als Liste { slot, link, quality, quantity, name }.
+--- Nur gueltig zwischen LOOT_OPENED/LOOT_READY und LOOT_CLOSED.
+function Compat.GetLootSlots()
+    if not has.lootSlots then return {} end
+
+    local ok, count = pcall(GetNumLootItems)
+    if not ok or not count then return {} end
+
+    local slots = {}
+    for slot = 1, count do
+        local okLink, link = pcall(GetLootSlotLink, slot)
+        local okInfo, _, name, quantity, _, quality = pcall(GetLootSlotInfo, slot)
+        if okLink and link then
+            slots[#slots + 1] = {
+                slot = slot, link = link,
+                name = okInfo and name or nil,
+                quantity = okInfo and quantity or 1,
+                quality = okInfo and quality or nil,
+            }
+        end
+    end
+    return slots
+end
+
+--- Zerlegt eine Einheiten-GUID. Format (Retail):
+---   Creature-0-<server>-<instanz>-<zone>-<npcID>-<spawn>
+---   Player-<server>-<id>
+--- @return string|nil art ("Creature", "Player", "Vehicle", "Pet", ...)
+--- @return number|nil npcID  nur bei Kreaturen
+function Compat.ParseGUID(guid)
+    if type(guid) ~= "string" then return nil end
+
+    -- Schon string.match wirft, wenn der Client die GUID verschleiert
+    -- herausgibt. Hier abgefangen und nicht beim Aufrufer: Dann ist JEDER
+    -- Weg zur GUID geschuetzt, nicht nur der, an dem es zuerst auffiel.
+
+    if not Compat.IsReadable(guid) then return nil end
+
+    local kind = string.match(guid, "^(%a+)%-")
+    if not kind then return nil end
+    if kind == "Creature" or kind == "Vehicle" or kind == "Pet" then
+        local npcID = string.match(guid, "^%a+%-%d+%-%d+%-%d+%-%d+%-(%d+)%-")
+        return kind, tonumber(npcID)
+    end
+    return kind, nil
+end
+
+--- Woher stammt ein Loot-Slot? Das ist die EINZIGE belastbare Quelle fuer die
+--- Frage "welcher Gegner hat das fallen lassen" — das Combat Log ist fuer
+--- Addons in Forever nicht lesbar (gemessen: 0 Ereignisse in 37 Kaempfen).
+---
+--- GetLootSourceInfo liefert Paare (GUID, Anzahl); bei zusammengefasstem Loot
+--- koennen es mehrere Leichen sein. Genommen wird die erste — und der Name
+--- kommt NUR dann mit, wenn das Ziel wirklich diese GUID ist. Sonst bleibt er
+--- leer, statt den Namen des gerade anvisierten Gegners zu erfinden.
+--- @return table|nil { guid, npcID, name }
+function Compat.GetLootSource(slot)
+    if not isFunction(_G.GetLootSourceInfo) then return nil end
+
+    local ok, guid = pcall(GetLootSourceInfo, slot)
+    if not ok or type(guid) ~= "string" then return nil end
+
+    local kind, npcID = Compat.ParseGUID(guid)
+    local name
+    -- Compat.SameGUID statt "==": Der Rueckgabewert von UnitGUID ist auf
+    -- diesem Client verschleiert, und schon der Vergleich wirft.
+    if isFunction(_G.UnitGUID) then
+        local ok, targetGuid = pcall(_G.UnitGUID, "target")
+        if ok and Compat.SameGUID(targetGuid, guid) then
+            name = UnitName("target")
+        end
+    end
+
+    return { guid = guid, kind = kind, npcID = npcID, name = name }
+end
+
+--- Qualitaetsschwelle der Gruppe (ab der gewuerfelt bzw. zugewiesen wird).
+function Compat.GetLootThreshold()
+    if not isFunction(_G.GetLootThreshold) then return nil end
+    local ok, value = pcall(GetLootThreshold)
+    return ok and tonumber(value) or nil
+end
+
+--- Alle Master-Loot-Kandidaten eines Slots als { index, name }.
+--- Blizzard laesst Luecken in der Liste (abgemeldete Spieler), deshalb wird
+--- bis MAX_RAID_MEMBERS durchgezaehlt statt bis zum ersten nil.
+function Compat.GetMasterLootCandidates(slot)
+    if not has.masterLootApi then return {} end
+
+    local limit = tonumber(_G.MAX_RAID_MEMBERS) or 40
+    local candidates = {}
+    for index = 1, limit do
+        local ok, name = pcall(GetMasterLootCandidate, slot, index)
+        if ok and name then
+            candidates[#candidates + 1] = { index = index, name = name }
+        end
+    end
+    return candidates
+end
+
+-- ================================================================== Handel ----
+
+--- Items im Handelsfenster. `side` = "player" (was ich gebe) oder "target".
+--- Nur gueltig zwischen TRADE_SHOW und TRADE_CLOSED.
+function Compat.GetTradeItems(side)
+    if not has.tradeApi then return {} end
+
+    local getLink = (side == "target") and _G.GetTradeTargetItemLink or _G.GetTradePlayerItemLink
+    local items = {}
+
+    -- Sieben Handelsplaetze; der siebte ist "nicht handelbar / wird nicht gehandelt".
+    for index = 1, 6 do
+        local ok, link = pcall(getLink, index)
+        if ok and link then items[#items + 1] = { index = index, link = link } end
+    end
+    return items
+end
+
+--- Alles, was in den Taschen liegt.
+---
+--- Zwei Wege, weil C_Container die moderne Fassung ist und die globalen
+--- Funktionen die aeltere. Geprueft wird ueber den TYP des Ergebnisses, nicht
+--- ueber die Existenz des Namens — auf Forever existiert vieles, was nichts
+--- liefert.
+---
+--- @return table { { bag, slot, itemID, link, count } }
+function Compat.GetBagItems()
+    local container = _G.C_Container
+    local getLink = (isTable(container) and container.GetContainerItemLink)
+        or _G.GetContainerItemLink
+    local getSlots = (isTable(container) and container.GetContainerNumSlots)
+        or _G.GetContainerNumSlots
+    if not isFunction(getLink) or not isFunction(getSlots) then return {} end
+
+    local items = {}
+    -- 0 = Rucksack, 1..4 angelegte Taschen. Bis 5 zaehlen schadet nicht: Ein
+    -- nicht vorhandener Behaelter liefert 0 Plaetze.
+    for bag = 0, 5 do
+        local okSlots, slots = pcall(getSlots, bag)
+        if okSlots and slots and slots > 0 then
+            for slot = 1, slots do
+                local okLink, link = pcall(getLink, bag, slot)
+                if okLink and link then
+                    local parsed = Compat.ParseItemLink(link)
+                    if parsed and parsed.itemID then
+                        items[#items + 1] = { bag = bag, slot = slot,
+                                              itemID = parsed.itemID, link = link }
+                    end
+                end
+            end
+        end
+    end
+    return items
+end
+
+--- Wie viel Geld hat dieser Charakter, in Kupfer?
+--- @return number|nil  nil = nicht messbar
+function Compat.GetMoney()
+    if not isFunction(_G.GetMoney) then return nil end
+    local ok, copper = pcall(GetMoney)
+    if not ok or type(copper) ~= "number" then return nil end
+    return copper
+end
+
+--- Groesse der vier angelegten Taschen. Der Rucksack zaehlt NICHT mit: Er
+--- laesst sich nicht tauschen, und ein Erfolg ueber etwas, das jeder von
+--- Anfang an hat, waere keiner.
+--- @return table|nil { [1..4] = Plaetze }
+function Compat.GetBagSizes()
+    local container = _G.C_Container
+    local getSlots = (isTable(container) and container.GetContainerNumSlots)
+        or _G.GetContainerNumSlots
+    if not isFunction(getSlots) then return nil end
+
+    local sizes = {}
+    for bag = 1, 4 do
+        local ok, slots = pcall(getSlots, bag)
+        sizes[bag] = (ok and tonumber(slots)) or 0
+    end
+    return sizes
+end
+
+--- Die gelernten HAUPTberufe dieses Charakters.
+---
+--- LEER IST HIER NICHT NULL, SONDERN "WEISS NICHT".
+---
+--- GetProfessions liefert Indizes ins Zauberbuch. Gibt es beide nicht
+--- zurueck, kann das zweierlei heissen: Der Charakter hat keinen Beruf
+--- gelernt — oder der Client fuellt die Funktion auf einem Server mit
+--- Vanilla-Inhalt gar nicht. Von aussen sind die beiden Faelle nicht zu
+--- unterscheiden, und "0 von 1 Berufen" waere im zweiten Fall schlicht
+--- falsch. Deshalb kommt dann nil zurueck, und die Oberflaeche schreibt
+--- "noch nicht messbar", bis der erste Beruf auftaucht.
+---
+--- Sekundaerberufe (Kochen, Erste Hilfe, Angeln) bleiben draussen: Der
+--- Katalog spricht von Hauptberufen.
+---
+--- @return table|nil { { name, rank, maxRank } }
+function Compat.GetProfessions()
+    if not isFunction(_G.GetProfessions) or not isFunction(_G.GetProfessionInfo) then
+        return nil
+    end
+
+    local ok, first, second = pcall(GetProfessions)
+    if not ok then return nil end
+    if type(first) ~= "number" and type(second) ~= "number" then return nil end
+
+    local out = {}
+    for _, index in ipairs({ first, second }) do
+        if type(index) == "number" then
+            local okInfo, name, _, rank, maxRank = pcall(GetProfessionInfo, index)
+            if okInfo and type(name) == "string" and type(rank) == "number" then
+                out[#out + 1] = { name = name, rank = rank, maxRank = tonumber(maxRank) or 0 }
+            end
+        end
+    end
+    return out
+end
+
+--- Laeuft die Aufzeichnung ins Combat Log gerade?
+--- @return boolean|nil  nil = der Client kennt die Funktion nicht
+function Compat.IsCombatLogging()
+    if not isFunction(_G.LoggingCombat) then return nil end
+    local ok, running = pcall(_G.LoggingCombat)
+    if not ok then return nil end
+    return running and true or false
+end
+
+--- Schaltet die Aufzeichnung ein oder aus.
+---
+--- GEPRUEFT AM RUECKGABEWERT, nicht am Aufruf: LoggingCombat(true) kann
+--- durchlaufen und nichts tun. Zurueck kommt der Zustand NACHHER — also wird
+--- er noch einmal gelesen und verglichen.
+---
+--- @return boolean|nil zustand danach, nil wenn es nicht geht
+function Compat.SetCombatLogging(on)
+    if not isFunction(_G.LoggingCombat) then return nil end
+    local ok = pcall(_G.LoggingCombat, on and true or false)
+    if not ok then return nil end
+    return Compat.IsCombatLogging()
+end
+
+--- Wo bin ich gerade?
+---
+--- GetInstanceInfo liefert (name, type, difficultyID, ...). `type` ist
+--- "none" ausserhalb, sonst "party", "raid", "pvp", "arena", "scenario".
+--- Geprueft wird der RUECKGABEWERT, nicht die Existenz: Die Funktion gibt es
+--- auf Forever, aber ob sie fuer jede Zone etwas Sinnvolles liefert, ist eine
+--- andere Frage.
+---
+--- @return table { inside, kind, name, difficultyID }
+function Compat.GetInstance()
+    if not isFunction(_G.GetInstanceInfo) then
+        return { inside = false, kind = nil }
+    end
+
+    local ok, name, kind, difficultyID = pcall(GetInstanceInfo)
+    if not ok or type(kind) ~= "string" or kind == "none" then
+        return { inside = false, kind = nil }
+    end
+
+    return {
+        inside = true,
+        kind = kind,
+        name = (type(name) == "string" and name ~= "") and name or nil,
+        difficultyID = tonumber(difficultyID),
+    }
+end
+
+--- Liest eine Wurfmeldung aus einer Systemzeile.
+---
+--- DER WURF KOMMT VOM SERVER. CHAT_MSG_SYSTEM traegt, was der Server
+--- geschickt hat — Name, Ergebnis und Spanne. Ein Addon kann das nicht
+--- faelschen, und genau deshalb ist Wuerfeln ueberhaupt als Verteilweg
+--- brauchbar. Es ist dieselbe Eigenschaft wie beim Absendernamen einer
+--- Addon-Nachricht (Communication/Sync).
+---
+--- Gelesen wird ueber RANDOM_ROLL_RESULT ("%s wuerfelt %d (%d-%d)"), nicht
+--- ueber einen eingebauten deutschen oder englischen Satz: Sonst haengt die
+--- Erkennung an der Clientsprache.
+---
+--- @return string|nil name, number|nil wurf, number|nil min, number|nil max
+function Compat.ParseRoll(message)
+    if type(message) ~= "string" then return nil end
+
+    local format = _G.RANDOM_ROLL_RESULT
+    if type(format) ~= "string" then return nil end
+
+    local pattern = string.gsub(format, "([%^%$%(%)%%%.%[%]%*%+%-%?])", "%%%1")
+    pattern = string.gsub(pattern, "%%%%s", "(.-)")
+    pattern = string.gsub(pattern, "%%%%d", "(%%d+)")
+
+    local name, roll, min, max = string.match(message, "^" .. pattern .. "$")
+    if not name or not roll then return nil end
+
+    return name, tonumber(roll), tonumber(min), tonumber(max)
+end
+
+--- Name des Handelspartners, oder nil.
+function Compat.GetTradePartner()
+    if isFunction(_G.UnitName) then
+        local ok, name = pcall(UnitName, "NPC")
+        if ok and name then return name end
+    end
+    return nil
+end
+
+-- ================================================================== Tooltip ---
+
+--- Haengt eine Funktion an Item-Tooltips. Modern ueber TooltipDataProcessor,
+--- sonst ueber HookScript. `handler(tooltip, itemLink)` wird aufgerufen,
+--- sobald ein Item angezeigt wird.
+--- @return boolean eingehaengt
+function Compat.HookItemTooltip(handler)
+    if has.tooltipProcessor and has.tooltipEnum then
+        local ok = pcall(_G.TooltipDataProcessor.AddTooltipPostCall,
+            _G.Enum.TooltipDataType.Item,
+            function(tooltip, data)
+                if tooltip ~= _G.GameTooltip and tooltip ~= _G.ItemRefTooltip then return end
+                local link = data and data.hyperlink
+                if not link and tooltip.GetItem then
+                    local _, itemLink = tooltip:GetItem()
+                    link = itemLink
+                end
+                if link then handler(tooltip, link) end
+            end)
+        if ok then return true end
+    end
+
+    -- Aeltere Linie: direkt an den Frame haengen.
+    if isTable(_G.GameTooltip) and isFunction(_G.GameTooltip.HookScript) then
+        local ok = pcall(_G.GameTooltip.HookScript, _G.GameTooltip, "OnTooltipSetItem",
+            function(tooltip)
+                local _, link = tooltip:GetItem()
+                if link then handler(tooltip, link) end
+            end)
+        return ok and true or false
+    end
+
+    return false
+end
+
+-- ================================================================== Auren -----
+
+--- Einheitlicher Aurenzugriff. Gemessen: nur C_UnitAuras existiert.
+function Compat.GetAura(unit, index, filter)
+    if has.auras then
+        local ok, data = pcall(_G.C_UnitAuras.GetAuraDataByIndex, unit, index, filter)
+        if not ok or not data then return nil end
+        return data
+    end
+    return nil
+end
+
+-- ================================================================== Comm ------
+
+function Compat.RegisterAddonPrefix(prefix)
+    if has.chatInfo then
+        local ok, result = pcall(_G.C_ChatInfo.RegisterAddonMessagePrefix, prefix)
+        return ok and result
+    end
+    return false
+end
+
+--- Schreibt in einen Chatkanal. Anders als Addon-Nachrichten ist das fuer
+--- Menschen sichtbar — und in Forever moeglicherweise auch nach Discord, wenn
+--- die Gilde eine Bruecke eingerichtet hat. Das ist der einzige Weg, auf dem
+--- ein Addon ueberhaupt etwas nach draussen bringt: Netzwerkzugriff hat es
+--- keinen (siehe Core/Export.lua).
+--- @return boolean gesendet
+function Compat.SendChatMessage(text, channel, target)
+    if not isFunction(_G.SendChatMessage) then return false end
+    if type(text) ~= "string" or text == "" then return false end
+
+    -- IM PROBEBETRIEB VERLAESST NICHTS DIESEN CLIENT.
+    --
+    -- Die eine Stelle, durch die jede Zeile geht, die das Addon in einen
+    -- Chat schreibt — Ankuendigungen, Wuerfe, Rotation, Tauschangebote.
+    -- Ein erfundener Gegenstand, der im Gildenchat verkuendet wird, ist
+    -- nicht wieder einzufangen; die Gilde sieht ihn und richtet sich
+    -- danach. Deshalb sitzt der Riegel hier und nicht in acht Aufrufern.
+    local Sandbox = GA.Modules and GA.Modules.Sandbox
+    if Sandbox and Sandbox.active then
+        Sandbox.blocked.chat = Sandbox.blocked.chat + 1
+        return false, "sandbox"
+    end
+
+    -- Chatnachrichten sind auf 255 Zeichen begrenzt; laengere schneidet der
+    -- Client ab. Lieber selbst kuerzen und es kenntlich machen.
+    if #text > 250 then text = string.sub(text, 1, 247) .. "..." end
+
+    local ok = pcall(_G.SendChatMessage, text, channel or "GUILD", nil, target)
+    return ok and true or false
+end
+
+--- @return boolean gesendet  (false auch bei Drosselung — der Aufrufer wiederholt)
+function Compat.SendAddonMessage(prefix, message, channel, target)
+    if not has.chatInfo then return false end
+    local ok, result = pcall(_G.C_ChatInfo.SendAddonMessage, prefix, message, channel, target)
+    -- Neuere Clients geben einen Enum-Status zurueck (0 = Erfolg), aeltere true.
+    if not ok then return false end
+    if result == true or result == 0 or result == nil then return true end
+    return false
+end
+
+-- ================================================================== Zeit ------
+
+function Compat.After(seconds, callback)
+    if has.timer then return _G.C_Timer.After(seconds, callback) end
+
+    local frame = CreateFrame("Frame")
+    local elapsed = 0
+    frame:SetScript("OnUpdate", function(self, delta)
+        elapsed = elapsed + delta
+        if elapsed >= seconds then
+            self:SetScript("OnUpdate", nil)
+            callback()
+        end
+    end)
+    return frame
+end
+
+function Compat.Now()
+    if isFunction(_G.GetServerTime) then return GetServerTime() end
+    return time()
+end
+
+-- ================================================================== Player -----
+
+--- GUID, Name, Realm, Klasse des eigenen Charakters — die Identitaet, an der
+--- alles haengt. GUID ist der Schluessel (ueberlebt Umbenennung und Transfer).
+function Compat.GetPlayerIdentity()
+    return Compat.GetUnitIdentity("player")
+end
+
+--- Dieselbe Identitaet fuer eine beliebige Einheit (Ziel, Inspect). Realm ist
+--- bei Fremden vom eigenen Server leer — dann gilt der eigene Realm.
+--- AUF DATEIEBENE, NICHT IN GetUnitIdentity. Dort waere es eine neue
+--- Closure bei jedem Aufruf, und GetUnitIdentity laeuft bei jedem
+--- Auffrischen des Dashboards, bei jedem Abgleich, bei jedem Inspizieren.
+--- Ein paar Bytes je Durchgang sind genau die Form, die in 0.1.9 zweistellige
+--- Megabyte erzeugt hat.
+local function ohneLeerzeichen(text)
+    return (string.gsub(text or "", "%s+", ""))
+end
+
+function Compat.GetUnitIdentity(unit)
+    unit = unit or "player"
+    if not UnitExists(unit) then return {} end
+
+    local name, zweiter = UnitName(unit)
+    local className, classFile = UnitClass(unit)
+    -- RASSE ALS KENNUNG UND GESCHLECHT — fuer die Ankleidepuppe (27.09.2026).
+    -- Ein Modell braucht beides; ohne Geschlecht waere die Figur geraten, und
+    -- geraten wird hier nicht. UnitSex sagt 2 oder 3; alles andere ist
+    -- "unbekannt" und bleibt nil.
+    local raceName, raceFile, raceID = UnitRace(unit)
+    local okSex, sex = pcall(_G.UnitSex, unit)
+    -- LESBAR, NICHT NUR VOM TYP HER EINE ZAHL. Ein verschleierter Wert
+    -- besteht type() und wirft beim ersten Rechnen — gemessen am 27.09. an
+    -- genau dieser Rassenkennung, in der Sonde. Der Vergleich mit 2 und 3
+    -- darf erst laufen, wenn die Zahl es aushaelt.
+    if not okSex or not Compat.IsReadableNumber(sex) or (sex ~= 2 and sex ~= 3) then sex = nil end
+    if not Compat.IsReadableNumber(raceID) then raceID = nil end
+
+    -- DER ZWEITE RUECKGABEWERT VON UnitName IST HIER KEIN REALM.
+    --
+    -- GEMESSEN 25.09.2026, an der eigenen Oberflaeche: Das Dashboard zeigte
+    --
+    --     Total
+    --     Level 20  Windshaper Skyborne Shaman
+    --     <Is Not Alone>  Guild Master  ·  Tumult
+    --
+    -- Die letzte Zeile ist der Realm. Der Realm heisst "Classic Beta PvE 2";
+    -- "Tumult" ist der zweite Teil des Namens "Total Tumult". UnitName
+    -- zerlegt den Namen also am Leerzeichen und legt die zweite Haelfte in
+    -- den Realmplatz — daran ist auch das Veroeffentlichen gescheitert, weil
+    -- das Paket nur "Total" trug, waehrend der Server "Total Tumult"
+    -- schickt.
+    --
+    -- WORAN ES SICH ERKENNEN LAESST: Ein Spieler ist immer auf seinem
+    -- eigenen Realm. Steht dort etwas, das nicht der eigene Realm ist,
+    -- gehoert es zum Namen.
+    --
+    -- WAS DAS KOSTET: Bei einem echten Spieler von einem FREMDEN Realm waere
+    -- der Wert ein Realmname und wuerde hier faelschlich an den Namen
+    -- gehaengt. Forever hat einen Realm ohne Verbund — dieselbe Grundlage,
+    -- auf der das Fluestern ueber Realmgrenzen schon aufgegeben wurde (siehe
+    -- Communication/Comm.lua). Taucht der Fall auf, wird er gemessen und
+    -- dann behandelt, nicht vorher geraten.
+    local eigenerRealm = (isFunction(_G.GetRealmName) and GetRealmName()) or ""
+    local realm = eigenerRealm
+
+    if zweiter and zweiter ~= "" then
+        if ohneLeerzeichen(zweiter) == ohneLeerzeichen(eigenerRealm) then
+            realm = eigenerRealm
+        elseif name and name ~= "" then
+            name = name .. " " .. zweiter
+        end
+    end
+
+    local guildName, guildRank, guildRankIndex
+    if isFunction(_G.GetGuildInfo) then
+        local ok, g, r, i = pcall(GetGuildInfo, unit)
+        if ok then guildName, guildRank, guildRankIndex = g, r, i end
+    end
+
+    -- KEIN VERSCHLEIERTER WERT IN DIE DATENBANK.
+    --
+    -- Eine GUID, die sich nicht vergleichen laesst, ist als Schluessel
+    -- wertlos — und sie wuerde dort liegen bleiben und bei jedem spaeteren
+    -- Vergleich werfen, weit weg von der Stelle, an der sie hereinkam. An
+    -- der Grenze abgefangen ist sie ein fehlendes Feld, und das kann der
+    -- Aufrufer behandeln.
+    local okGuid, unitGuid = pcall(_G.UnitGUID, unit)
+    if not okGuid or not Compat.IsReadable(unitGuid) then unitGuid = nil end
+
+    return {
+        guid = unitGuid,
+        name = name,
+        realm = realm,
+        class = classFile,
+        className = className,
+        race = raceFile,
+        raceName = raceName,
+        raceID = raceID,
+        sex = sex,
+        level = UnitLevel(unit),
+        guildName = guildName,
+        guildRank = guildRank,
+        guildRankIndex = guildRankIndex,
+    }
+end
+
+--- Kann diese Einheit inspiziert werden? Spieler, nicht man selbst, in
+--- Reichweite (CanInspect prueft die ~28 Yard), nicht im Kampf.
+function Compat.CanInspectUnit(unit)
+    if not has.inspect then return false, "api" end
+    if not UnitExists(unit) then return false, "notarget" end
+    if not UnitIsPlayer(unit) then return false, "notplayer" end
+    if UnitIsUnit(unit, "player") then return false, "self" end
+    if Compat.InCombat() then return false, "combat" end
+    local ok, can = pcall(CanInspect, unit)
+    if not ok or not can then return false, "range" end
+    return true
+end
+
+--- Mit wem handelst du gerade?
+---
+--- Der Handelspartner ist die Einheit "NPC" — so heisst sie in WoW, auch
+--- wenn ein Spieler dahintersteht. Faellt das aus, steht der Name noch im
+--- Handelsfenster selbst.
+--- @return string|nil
+function Compat.GetTradePartner()
+    local ok, name = pcall(_G.UnitName, "NPC")
+    if ok and type(name) == "string" and name ~= "" then return name end
+
+    local label = _G.TradeFrameRecipientNameText
+    if label and label.GetText then
+        local ok2, text = pcall(label.GetText, label)
+        if ok2 and type(text) == "string" and text ~= "" then return text end
+    end
+
+    return nil
+end
+
+--- Steht das Handelsfenster offen?
+function Compat.IsTradeOpen()
+    local frame = _G.TradeFrame
+    if not frame or not frame.IsShown then return false end
+    local ok, shown = pcall(frame.IsShown, frame)
+    return ok and shown and true or false
+end
+
+--- Legt einen Gegenstand aus der Tasche in einen Handelsplatz.
+---
+--- AUFHEBEN UND ABLEGEN, NICHT "BENUTZEN".
+---
+--- C_Container.UseContainerItem legt einen Gegenstand in den Handel, wenn
+--- das Fenster offen ist — und LEGT IHN AN oder VERBRAUCHT IHN, wenn nicht.
+--- Der Unterschied haengt an einem Fensterzustand, den diese Funktion nicht
+--- selbst herstellt. Bei einem Trank waere der Irrtum folgenlos, bei einer
+--- Waffe nicht.
+---
+--- PickupContainerItem und ClickTradeButton sagen dagegen genau, was sie
+--- tun. Steht das Fenster nicht offen, passiert nichts weiter, als dass ein
+--- Gegenstand am Mauszeiger haengt — und den legt ClearCursor zurueck.
+--- @return boolean
+function Compat.PlaceInTrade(bag, slot, tradeSlot)
+    if not Compat.IsTradeOpen() then return false end
+
+    local container = _G.C_Container
+    local pickup = (isTable(container) and container.PickupContainerItem)
+        or _G.PickupContainerItem
+    if not isFunction(pickup) or not isFunction(_G.ClickTradeButton) then return false end
+
+    local ok = pcall(pickup, bag, slot)
+    if not ok then return false end
+
+    local placed = pcall(_G.ClickTradeButton, tradeSlot)
+    if not placed and isFunction(_G.ClearCursor) then pcall(_G.ClearCursor) end
+    return placed and true or false
+end
+
+--- Wuerfelt sichtbar im Chat.
+---
+--- RandomRoll ist dasselbe wie /roll: Der SERVER wuerfelt, und das Ergebnis
+--- steht als Systemzeile im Chat, die jeder im Raid mitliest. Ein vom Addon
+--- gezogener Zufall waere bequemer und wertlos — niemand koennte ihn
+--- nachrechnen, und bei Lootstreit ist genau das der Punkt.
+--- @return boolean
+function Compat.RandomRoll(min, max)
+    if not isFunction(_G.RandomRoll) then return false end
+    return pcall(_G.RandomRoll, tonumber(min) or 1, tonumber(max) or 100) and true or false
+end
+
+--- Steht diese Person in MEINER Gruppe oder meinem Schlachtzug?
+---
+--- GEFRAGT WIRD DAS SPIEL, NICHT EINE EIGENE LISTE. UnitInRaid und
+--- UnitInParty gehen ueber den Namen als Einheiten-Token; wer nicht dabei
+--- ist, hat keinen. Eine selbst gefuehrte Mitgliederliste koennte
+--- veralten — diese Auskunft nicht.
+--- @return boolean
+function Compat.IsInMyGroup(name)
+    if type(name) ~= "string" or name == "" then return false end
+
+    -- Ohne Realm: So heissen die Einheiten-Token.
+    local kurz = string.match(name, "^([^%-]+)") or name
+
+    if isFunction(_G.UnitInRaid) then
+        local ok, index = pcall(_G.UnitInRaid, kurz)
+        if ok and index then return true end
+    end
+
+    if isFunction(_G.UnitInParty) then
+        local ok, drin = pcall(_G.UnitInParty, kurz)
+        if ok and drin then return true end
+    end
+
+    return false
+end
+
+--- Fuehrst DU diese Gilde?
+---
+--- DREI ANTWORTEN, WIE UEBERALL: ja, nein, weiss nicht.
+---
+--- IsGuildLeader ist der direkte Weg. Fehlt er, bleibt der Rang: Index 0
+--- ist der Gildenmeister. Sagt auch der nichts, ist die Antwort NICHT
+--- "nein", sondern nil — und der Aufrufer entscheidet, was er damit tut.
+--- Ein "nein" aus Unwissenheit wuerde hier jeden aussperren.
+--- @return boolean|nil
+function Compat.IsGuildLeader()
+    if not Compat.IsInGuild() then return false end
+
+    if isFunction(_G.IsGuildLeader) then
+        local ok, leader = pcall(_G.IsGuildLeader)
+        if ok and leader ~= nil then return leader and true or false end
+    end
+
+    local identity = Compat.GetUnitIdentity("player")
+    local index = identity and identity.guildRankIndex
+    if type(index) == "number" then return index == 0 end
+
+    return nil
+end
+
+--- Alle Anwesenden der eigenen Gruppe oder des Schlachtzugs.
+---
+--- GEFRAGT WIRD DAS SPIEL, EINHEIT FUER EINHEIT. Eine eigene Liste
+--- koennte veralten; diese Auskunft ist der Stand von jetzt.
+---
+--- DER EIGENE CHARAKTER IST DABEI. Wer selbst im Raid steht, war auch
+--- anwesend — ihn auszulassen waere eine stille Ausnahme, die bei jeder
+--- Anwesenheitsbuchung auffiele.
+--- @return table  { { name, guid, class } }
+function Compat.GetGroupMembers()
+    local out = {}
+    local gesehen = {}
+
+    for index = 1, Compat.GetNumGroupMembers() do
+        local identity = Compat.GetUnitIdentity(Compat.GetGroupUnit(index))
+        if identity and identity.name and not gesehen[identity.name] then
+            gesehen[identity.name] = true
+            out[#out + 1] = { name = identity.name, guid = identity.guid,
+                              class = identity.class }
+        end
+    end
+
+    -- In einer Gruppe (nicht im Schlachtzug) zaehlt "party1..4" den
+    -- eigenen Charakter nicht mit.
+    local eigen = Compat.GetPlayerIdentity()
+    if eigen.name and not gesehen[eigen.name] then
+        out[#out + 1] = { name = eigen.name, guid = eigen.guid, class = eigen.class }
+    end
+
+    return out
+end
+
+-- ================================================================== Lager -----
+--
+-- Was das Lagerfeuer-System braucht. Alles hier ist NEU AUF FOREVER und in
+-- keinem Probelauf bestaetigt: Die Gegenstaende (Katalog in Camp/Catalog.lua)
+-- gehoeren zu einem Server-Inhalt, den es auf keinem anderen Client gibt, und
+-- die Wegpunkt-Schnittstelle stammt aus einer spaeteren Ausbaustufe des Spiels
+-- als der Inhalt, auf dem dieser Client laeuft.
+--
+-- Deshalb gilt hier besonders streng, was ueberall gilt: Geprueft wird der
+-- RUECKGABEWERT, nicht der Name. `/ga camp why` nennt fuer jede dieser
+-- Funktionen, was sie auf diesem Client tatsaechlich geliefert hat.
+
+--- Alle Berufe dieses Charakters — Haupt- UND Nebenberufe.
+---
+--- NICHT Compat.GetProfessions. Die liefert absichtlich nur Hauptberufe und
+--- ohne Kennung, weil der Erfolgskatalog nur danach fragt. Das Lager braucht
+--- es andersherum: Erste Hilfe und Angeln gehoeren dazu, und zugeordnet wird
+--- ueber die KENNUNG der Fertigkeitslinie, nicht ueber den Namen — ein Name
+--- ist uebersetzt, eine Kennung nicht.
+---
+--- GetProfessionInfo liefert an siebter Stelle die Fertigkeitslinie.
+---
+--- @return table|nil { { line, name, rank } } — nil = nicht messbar
+function Compat.GetProfessionLines()
+    if not isFunction(_G.GetProfessions) or not isFunction(_G.GetProfessionInfo) then
+        return nil
+    end
+
+    local ok, first, second, archaeology, fishing, cooking, firstAid = pcall(GetProfessions)
+    if not ok then return nil end
+
+    local indices = { first, second, archaeology, fishing, cooking, firstAid }
+    local out, gesehen = {}, false
+
+    for _, index in ipairs(indices) do
+        if type(index) == "number" then
+            gesehen = true
+            local okInfo, name, _, rank, _, _, _, line = pcall(GetProfessionInfo, index)
+            if okInfo and type(line) == "number" and line > 0 then
+                out[#out + 1] = {
+                    line = line,
+                    name = type(name) == "string" and name or nil,
+                    rank = tonumber(rank) or 0,
+                }
+            end
+        end
+    end
+
+    -- LEER IST NICHT NULL. Hat GetProfessions ueberhaupt keinen Index
+    -- geliefert, kann das heissen: keine Berufe gelernt — oder die Funktion
+    -- ist auf diesem Client nicht gefuellt. Von aussen nicht zu
+    -- unterscheiden, also nil statt einer leeren Liste.
+    if not gesehen then return nil end
+    return out
+end
+
+--- Wie viele Stueck dieses Gegenstands traegt dieser Charakter?
+--- @return number|nil  nil = der Client beantwortet die Frage nicht
+function Compat.GetItemCountByID(itemID)
+    itemID = tonumber(itemID)
+    if not itemID then return nil end
+
+    local item = _G.C_Item
+    local count = (isTable(item) and isFunction(item.GetItemCount) and item.GetItemCount)
+        or _G.GetItemCount
+    if not isFunction(count) then return nil end
+
+    local ok, anzahl = pcall(count, itemID)
+    if not ok or type(anzahl) ~= "number" then return nil end
+    return anzahl
+end
+
+--- Welchen Zauber wirkt "Benutzen" auf diesem Gegenstand?
+---
+--- Der Weg von einem aufgestellten Lagerfeuer zurueck zum Gegenstand:
+--- UNIT_SPELLCAST_SUCCEEDED nennt nur die Zauberkennung.
+--- @return number|nil
+function Compat.GetItemSpell(itemID)
+    itemID = tonumber(itemID)
+    if not itemID then return nil end
+
+    local item = _G.C_Item
+    local spell = (isTable(item) and isFunction(item.GetItemSpell) and item.GetItemSpell)
+        or _G.GetItemSpell
+    if not isFunction(spell) then return nil end
+
+    local ok, _, spellID = pcall(spell, itemID)
+    if not ok then return nil end
+    spellID = tonumber(spellID)
+    if not spellID or spellID <= 0 then return nil end
+    return spellID
+end
+
+--- Das Symbol eines Gegenstands, ohne dass sein Name geladen sein muss.
+--- @return number|string|nil
+function Compat.GetItemIcon(itemID)
+    itemID = tonumber(itemID)
+    if not itemID then return nil end
+
+    local item = _G.C_Item
+    local icon = (isTable(item) and isFunction(item.GetItemIconByID) and item.GetItemIconByID)
+        or _G.GetItemIcon
+    if not isFunction(icon) then return nil end
+
+    local ok, texture = pcall(icon, itemID)
+    if not ok or texture == nil then return nil end
+    if not Compat.IsReadable(texture) then return nil end
+    return texture
+end
+
+--- Laeuft dieser Buff gerade auf dem eigenen Charakter?
+---
+--- DIE ABLAUFZEIT KOMMT IN SERVERZEIT ZURUECK, nicht in der Laufzeit dieses
+--- Clients. GetTime() zaehlt seit dem Start DIESES Spiels — zwei Clients
+--- haben da nie dieselbe Zahl. Verschickt wird die Zeit aber, und am anderen
+--- Ende muss sie etwas bedeuten.
+---
+--- @return table|nil { duration, expires }  expires = Serverzeit
+function Compat.GetPlayerBuff(spellID)
+    spellID = tonumber(spellID)
+    if not spellID then return nil end
+
+    local auras = _G.C_UnitAuras
+    if not isTable(auras) or not isFunction(auras.GetPlayerAuraBySpellID) then return nil end
+
+    -- Der Client kann Auren verschleiern. Fragt man trotzdem, kommen Werte
+    -- heraus, die wie Zahlen aussehen und bei der ersten Rechnung werfen.
+    local secrets = _G.C_Secrets
+    if isTable(secrets) and isFunction(secrets.ShouldAurasBeSecret) then
+        local okSecret, geheim = pcall(secrets.ShouldAurasBeSecret)
+        if okSecret and geheim then return nil end
+    end
+
+    local ok, data = pcall(auras.GetPlayerAuraBySpellID, spellID)
+    if not ok or not isTable(data) then return nil end
+
+    local duration, expires = data.duration, data.expirationTime
+    if type(duration) ~= "number" or type(expires) ~= "number" then return nil end
+    if duration <= 0 or expires <= 0 then return nil end
+
+    local okNow, jetzt = pcall(_G.GetTime)
+    if not okNow or type(jetzt) ~= "number" then return nil end
+
+    -- math.max, weil eine gerade abgelaufene Aura eine negative Restzeit
+    -- liefern kann.
+    return {
+        duration = math.floor(duration + 0.5),
+        expires = Compat.Now() + math.floor(math.max(0, expires - jetzt) + 0.5),
+    }
+end
+
+--- In welcher Zone steht dieser Charakter?
+--- @return string|nil
+function Compat.GetZone()
+    if not isFunction(_G.GetRealZoneText) then return nil end
+    local ok, zone = pcall(GetRealZoneText)
+    if not ok or type(zone) ~= "string" or zone == "" then return nil end
+    return zone
+end
+
+--- Wo auf der Karte steht dieser Charakter?
+--- @return number|nil mapID, number|nil x, number|nil y  (x, y in 0..1)
+function Compat.GetMapPosition()
+    local map = _G.C_Map
+    if not isTable(map) or not isFunction(map.GetBestMapForUnit)
+        or not isFunction(map.GetPlayerMapPosition) then
+        return nil
+    end
+
+    local okMap, mapID = pcall(map.GetBestMapForUnit, "player")
+    if not okMap then return nil end
+    mapID = tonumber(mapID)
+    if not mapID or mapID <= 0 then return nil end
+
+    local okPos, position = pcall(map.GetPlayerMapPosition, mapID, "player")
+    if not okPos or not position or not isFunction(position.GetXY) then return nil end
+
+    local okXY, x, y = pcall(position.GetXY, position)
+    if not okXY or type(x) ~= "number" or type(y) ~= "number" then return nil end
+    if x < 0 or x > 1 or y < 0 or y > 1 then return nil end
+
+    return mapID, x, y
+end
+
+--- Gibt es diese Karte ueberhaupt?
+--- @return boolean
+function Compat.MapExists(mapID)
+    mapID = tonumber(mapID)
+    if not mapID then return false end
+
+    local map = _G.C_Map
+    if not isTable(map) or not isFunction(map.GetMapInfo) then return false end
+
+    local ok, info = pcall(map.GetMapInfo, mapID)
+    return (ok and isTable(info)) and true or false
+end
+
+--- Laesst sich auf dieser Karte ein Wegpunkt setzen?
+---
+--- Die Wegpunkte stammen aus einer spaeteren Ausbaustufe des Spiels als der
+--- Inhalt, auf dem dieser Client laeuft. Dass es die Funktionen gibt, heisst
+--- hier ausdruecklich NICHT, dass sie etwas tun.
+--- @return boolean
+function Compat.CanSetWaypoint(mapID)
+    mapID = tonumber(mapID)
+    if not mapID then return false end
+
+    local map = _G.C_Map
+    if not isTable(map) or not isFunction(map.SetUserWaypoint)
+        or not isFunction(map.CanSetUserWaypointOnMap)
+        or not isFunction(_G.CreateVector2D) then
+        return false
+    end
+
+    local ok, erlaubt = pcall(map.CanSetUserWaypointOnMap, mapID)
+    return (ok and erlaubt) and true or false
+end
+
+--- Setzt den Wegpunkt des Spielers.
+--- @return boolean gesetzt
+function Compat.SetWaypoint(mapID, x, y)
+    if not Compat.CanSetWaypoint(mapID) then return false end
+    x, y = tonumber(x), tonumber(y)
+    if not x or not y or x < 0 or x > 1 or y < 0 or y > 1 then return false end
+
+    local okVector, vector = pcall(_G.CreateVector2D, x, y)
+    if not okVector or not vector then return false end
+
+    local ok, gesetzt = pcall(_G.C_Map.SetUserWaypoint,
+        { uiMapID = tonumber(mapID), position = vector })
+    -- SetUserWaypoint gibt auf manchen Fassungen gar nichts zurueck. Dann
+    -- gilt der Aufruf als gelungen, solange er nicht geworfen hat — mehr ist
+    -- von dieser Seite nicht zu erfahren.
+    if not ok then return false end
+    if gesetzt == false then return false end
+    return true
+end
+
+--- Verfolgt den gesetzten Wegpunkt im Navigationspfeil.
+--- @return boolean
+function Compat.TrackWaypoint()
+    local track = _G.C_SuperTrack
+    if not isTable(track) or not isFunction(track.SetSuperTrackedUserWaypoint) then
+        return false
+    end
+    return pcall(track.SetSuperTrackedUserWaypoint, true) and true or false
+end
+
+--- Der Verweis auf den gesetzten Wegpunkt, wie er in den Chat passt.
+--- @return string|nil
+function Compat.GetWaypointLink()
+    local map = _G.C_Map
+    if not isTable(map) or not isFunction(map.GetUserWaypointHyperlink) then return nil end
+
+    local ok, link = pcall(map.GetUserWaypointHyperlink)
+    if not ok or type(link) ~= "string" or link == "" then return nil end
+    return link
+end
+
+-- ================================================================== Berufe ---
+--
+-- Rezepte lesen. DAS GEHT NUR BEI GEOEFFNETEM BERUFSFENSTER — C_TradeSkillUI
+-- beschreibt nicht "meine Berufe", sondern "das Fenster, das gerade offen
+-- ist". Ist keines offen, liefert GetAllRecipeIDs eine leere Liste, und die
+-- ist nicht von "dieser Beruf kann nichts" zu unterscheiden.
+--
+-- Deshalb gibt jede Funktion hier nil zurueck, wenn das Fenster nicht bereit
+-- ist, und niemals eine leere Liste. Wer den Unterschied verschluckt,
+-- loescht beim naechsten Einloggen die Rezepte aller Charaktere.
+
+--- Ist das Berufsfenster bereit, Auskunft zu geben?
+---
+--- Zwei Fragen, nicht eine: Das Fenster kann offen sein und die Liste noch
+--- nicht geladen. Fehlt IsTradeSkillReady, gilt das Vorhandensein einer
+--- Fertigkeitslinie als Ersatz — mehr ist dann nicht zu erfahren.
+--- @return boolean
+function Compat.IsTradeSkillReady()
+    local api = _G.C_TradeSkillUI
+    if not isTable(api) then return false end
+
+    if isFunction(api.IsTradeSkillReady) then
+        local ok, bereit = pcall(api.IsTradeSkillReady)
+        if ok and bereit == false then return false end
+        if ok and bereit == true then return true end
+    end
+
+    return Compat.GetOpenTradeSkill() ~= nil
+end
+
+--- Welcher Beruf steht gerade im Fenster?
+---
+--- @return table|nil { line, name, rank, maxRank }
+function Compat.GetOpenTradeSkill()
+    local api = _G.C_TradeSkillUI
+    if not isTable(api) then return nil end
+
+    -- Der moderne Weg. Liefert Kennung, Anzeigename, Rang und Hoechstrang.
+    if isFunction(api.GetTradeSkillLine) then
+        local ok, line, name, rank, maxRank = pcall(api.GetTradeSkillLine)
+        if ok and type(line) == "number" and line > 0 then
+            return {
+                line = line,
+                name = type(name) == "string" and name or nil,
+                rank = tonumber(rank) or 0,
+                maxRank = tonumber(maxRank) or 0,
+            }
+        end
+    end
+
+    -- Rueckfall: der Grundberuf, ohne Rangangabe.
+    if isFunction(api.GetBaseProfessionInfo) then
+        local ok, info = pcall(api.GetBaseProfessionInfo)
+        if ok and isTable(info) then
+            local line = tonumber(info.professionID or info.parentProfessionID)
+            if line and line > 0 then
+                return {
+                    line = line,
+                    name = type(info.professionName) == "string" and info.professionName or nil,
+                    rank = tonumber(info.skillLevel) or 0,
+                    maxRank = tonumber(info.maxSkillLevel) or 0,
+                }
+            end
+        end
+    end
+
+    return nil
+end
+
+--- Was stellt dieses Rezept her?
+---
+--- ZWEI ARTEN VON REZEPT, und sie muessen auseinandergehalten werden:
+--- Die meisten ergeben einen GEGENSTAND. Verzauberungen ergeben keinen —
+--- dort ist das Rezept selbst das Ergebnis. Wer nur nach Gegenstaenden
+--- sucht, verliert die Verzauberkunst vollstaendig.
+---
+--- @return number|nil itemID  nil = dieses Rezept stellt keinen Gegenstand her
+function Compat.GetRecipeItem(recipeID)
+    recipeID = tonumber(recipeID)
+    if not recipeID then return nil end
+
+    local api = _G.C_TradeSkillUI
+    if not isTable(api) then return nil end
+
+    if isFunction(api.GetRecipeOutputItemData) then
+        local ok, data = pcall(api.GetRecipeOutputItemData, recipeID)
+        if ok and isTable(data) then
+            local itemID = tonumber(data.itemID)
+            if itemID and itemID > 0 then return itemID end
+            -- Manche Fassungen fuellen nur den Verweis.
+            if type(data.hyperlink) == "string" then
+                local parsed = Compat.ParseItemLink(data.hyperlink)
+                if parsed and parsed.itemID then return parsed.itemID end
+            end
+        end
+    end
+
+    if isFunction(api.GetRecipeItemLink) then
+        local ok, link = pcall(api.GetRecipeItemLink, recipeID)
+        if ok and type(link) == "string" then
+            local parsed = Compat.ParseItemLink(link)
+            if parsed and parsed.itemID then return parsed.itemID end
+        end
+    end
+
+    return nil
+end
+
+--- Alle GELERNTEN Rezepte des offenen Berufsfensters.
+---
+--- @return table|nil { { recipe, item } }  nil = Fenster nicht bereit
+function Compat.GetLearnedRecipes()
+    local api = _G.C_TradeSkillUI
+    if not isTable(api) or not isFunction(api.GetAllRecipeIDs) then return nil end
+    if not Compat.IsTradeSkillReady() then return nil end
+
+    local ok, ids = pcall(api.GetAllRecipeIDs)
+    if not ok or not isTable(ids) then return nil end
+
+    -- LEER IST HIER NICHT NULL. Ein gerade geoeffnetes Fenster liefert
+    -- kurzzeitig eine leere Liste, bevor der Server geantwortet hat. Diese
+    -- leere Liste als "keine Rezepte" zu speichern, loescht den Beruf.
+    if #ids == 0 then return nil end
+
+    local out = {}
+    for _, recipeID in ipairs(ids) do
+        recipeID = tonumber(recipeID)
+        if recipeID then
+            local gelernt = true
+            if isFunction(api.GetRecipeInfo) then
+                local okInfo, info = pcall(api.GetRecipeInfo, recipeID)
+                -- NUR EIN AUSDRUECKLICHES false SCHLIESST AUS. Fehlt das
+                -- Feld, ist das keine Auskunft — und ein Rezept, das im
+                -- eigenen Fenster steht, ist im Zweifel gelernt.
+                if okInfo and isTable(info) and info.learned == false then
+                    gelernt = false
+                end
+            end
+            if gelernt then
+                out[#out + 1] = { recipe = recipeID, item = Compat.GetRecipeItem(recipeID) }
+            end
+        end
+    end
+
+    if #out == 0 then return nil end
+    return out
+end
+
+--- Der Name eines Zaubers — fuer Rezepte ohne Gegenstand.
+--- @return string|nil
+function Compat.GetSpellName(spellID)
+    spellID = tonumber(spellID)
+    if not spellID then return nil end
+
+    local spell = _G.C_Spell
+    if isTable(spell) and isFunction(spell.GetSpellInfo) then
+        local ok, info = pcall(spell.GetSpellInfo, spellID)
+        if ok and isTable(info) and type(info.name) == "string" and info.name ~= "" then
+            return info.name
+        end
+    end
+
+    if isFunction(_G.GetSpellInfo) then
+        local ok, name = pcall(_G.GetSpellInfo, spellID)
+        if ok and type(name) == "string" and name ~= "" then return name end
+    end
+
+    return nil
+end
+
+-- ================================================================== Karte ----
+--
+-- Blizzards Weltkarte ist kein Frame, auf den man einfach etwas legt. Was
+-- gebraucht wird, sind zwei Dinge: die Flaeche, auf der die Karte gezeichnet
+-- ist (dort haengen die Nadeln), und die Kennung der Karte, die GERADE
+-- angezeigt wird — nicht die, auf der der Spieler steht. Wer beides
+-- verwechselt, setzt Nadeln von Sturmwind in die Brachlandkarte.
+
+--- Die Flaeche, auf der die Weltkarte gezeichnet wird.
+---
+--- Mehrere Wege, weil der Aufbau sich zwischen den Linien unterscheidet und
+--- auf Forever nicht gemessen ist. Geprueft wird, ob das Ergebnis ein Frame
+--- MIT GROESSE ist — ein vorhandenes Feld allein sagt nichts.
+--- @return table|nil
+--- NUR DAS KIND, NIEMALS DER BEHAELTER.
+---
+--- ScrollContainer ist das SICHTFENSTER, ScrollContainer.Child die darin
+--- skalierte und verschobene Karte. Kartenanteile beziehen sich auf das
+--- Kind; wer sie auf das Sichtfenster rechnet, trifft nur solange, wie
+--- beide zufaellig gleich gross sind.
+---
+--- Gemeldet am 24.09.2026: Die Nadeln sassen richtig, solange das Questlog
+--- ZUGEKLAPPT war, und sprangen weg, sobald es aufging. Genau dann wird die
+--- Karte enger skaliert — das Sichtfenster bleibt, das Kind schrumpft.
+---
+--- Faellt das Kind aus, kommt nichts zurueck. Ein falscher Rahmen ist
+--- schlimmer als keiner: Nadeln an der falschen Stelle sehen aus wie
+--- Auskunft.
+--- @return table|nil
+function Compat.GetMapCanvas()
+    local map = _G.WorldMapFrame
+    if not isTable(map) then return nil end
+
+    local child = isTable(map.ScrollContainer) and map.ScrollContainer.Child
+    if not isTable(child) or not isFunction(child.GetWidth) then return nil end
+
+    local ok, breite = pcall(child.GetWidth, child)
+    if not ok or type(breite) ~= "number" or breite <= 1 then return nil end
+    return child
+end
+
+--- Rechnet eine Position von einer Karte auf eine andere um.
+---
+--- WOZU: Gespeichert wird die Position auf der ZONENKARTE — Durotar, das
+--- Brachland. Wer die Kontinentkarte aufzieht, sieht Kalimdor, und dort ist
+--- "0,46 / 0,50 in Durotar" keine Aussage. Ohne Umrechnung bleibt die
+--- Kontinentkarte leer, obwohl alle Daten da sind.
+---
+--- Der Weg fuehrt ueber die Weltkoordinate: Zonenkarte -> Welt -> Zielkarte.
+--- Beide Richtungen kann nur das Spiel, und beide koennen fehlschlagen —
+--- etwa fuer Instanzen, die auf keiner Aussenkarte liegen.
+---
+--- @return number|nil x, number|nil y  auf der Zielkarte, 0..1
+function Compat.TranslateMapPosition(fromMapID, x, y, toMapID)
+    fromMapID, toMapID = tonumber(fromMapID), tonumber(toMapID)
+    x, y = tonumber(x), tonumber(y)
+    if not fromMapID or not toMapID or not x or not y then return nil end
+    if fromMapID == toMapID then return x, y end
+
+    local map = _G.C_Map
+    if not isTable(map) or not isFunction(map.GetWorldPosFromMapPos)
+        or not isFunction(map.GetMapPosFromWorldPos)
+        or not isFunction(_G.CreateVector2D) then
+        return nil
+    end
+
+    local okVector, quelle = pcall(_G.CreateVector2D, x, y)
+    if not okVector or not quelle then return nil end
+
+    -- DIE RUECKGABEN WERDEN GESUCHT, NICHT GEZAEHLT.
+    --
+    -- Gemeldet am 24.09.2026, zwoelfmal in einer Sitzung:
+    --
+    --   attempt to index local 'zielPunkt' (a number value)
+    --   zielPunkt=1456
+    --   (*temporary)={ x=5.127027, y=-1.732718 }
+    --
+    -- GetMapPosFromWorldPos liefert ZWEI Werte, die Kartenkennung zuerst und
+    -- den Punkt danach. Ich hatte einen angenommen und bin auf einer Zahl
+    -- gelandet. Wie viele es sind und in welcher Reihenfolge, steht in keiner
+    -- Dokumentation, die fuer diesen Client gilt — also wird nicht gezaehlt,
+    -- sondern der erste Wert genommen, der aussieht wie ein Punkt.
+    --- Welcher der beiden Rueckgabewerte ist der Punkt? Der, der einer ist.
+    local function punkt(a, b)
+        if isTable(a) and isFunction(a.GetXY) then return a end
+        if isTable(b) and isFunction(b.GetXY) then return b end
+        return nil
+    end
+
+    local okWorld, w1, w2 = pcall(map.GetWorldPosFromMapPos, fromMapID, quelle)
+    if not okWorld then return nil end
+    local weltPunkt = punkt(w1, w2)
+    -- Die Kennung ist der jeweils andere Wert.
+    local continent = (weltPunkt == w1) and w2 or w1
+    if not weltPunkt or type(continent) ~= "number" then return nil end
+
+    local okZiel, z1, z2 = pcall(map.GetMapPosFromWorldPos, continent, weltPunkt, toMapID)
+    if not okZiel then return nil end
+    local zielPunkt = punkt(z1, z2)
+    if not zielPunkt then return nil end
+
+    local okXY, zx, zy = pcall(zielPunkt.GetXY, zielPunkt)
+    if not okXY or type(zx) ~= "number" or type(zy) ~= "number" then return nil end
+
+    -- AUSSERHALB IST KEIN TREFFER. Die Umrechnung liefert auch Werte jenseits
+    -- der Kartenraender, wenn der Ort gar nicht darauf liegt — eine Nadel am
+    -- Rand waere dann eine Behauptung ueber einen Ort, der woanders ist.
+    if zx < 0 or zx > 1 or zy < 0 or zy > 1 then return nil end
+    return zx, zy
+end
+
+--- Welche Karte zeigt das Fenster gerade?
+---
+--- NICHT die Karte, auf der der Spieler steht. Wer die Weltkarte aufzieht und
+--- nach Kalimdor blaettert, soll dort keine Nadeln aus dem eigenen Tal sehen.
+--- @return number|nil
+function Compat.GetDisplayedMapID()
+    local map = _G.WorldMapFrame
+    if not isTable(map) or not isFunction(map.GetMapID) then return nil end
+
+    local ok, mapID = pcall(map.GetMapID, map)
+    if not ok then return nil end
+    mapID = tonumber(mapID)
+    if not mapID or mapID <= 0 then return nil end
+    return mapID
+end
+
+--- Ist die Weltkarte offen?
+--- @return boolean
+function Compat.IsWorldMapShown()
+    local map = _G.WorldMapFrame
+    if not isTable(map) or not isFunction(map.IsShown) then return false end
+    local ok, shown = pcall(map.IsShown, map)
+    return (ok and shown) and true or false
+end
+
+-- ================================================================ Gesundheit -
+
+--- Leben einer Einheit.
+---
+--- AUF FOREVER LIEFERT DAS NICHTS, und das ist gemessen, nicht vermutet
+--- (24.09.2026, ueber beide Wege):
+---
+---   Lebenswerte lesbar:                 rechnen WIRFT, vergleichen WIRFT
+---   Leben ueber Blizzards eigene Leiste: PlayerFrame.healthbar, ebenso
+---
+--- Der Lebensbalken, fuer den diese Funktion gebaut wurde, ist deshalb wieder
+--- ausgebaut. SIE BLEIBT TROTZDEM STEHEN, und zwar aus einem Grund:
+---
+--- Sie ist der einzige richtige Weg an Lebenswerte, und secrets.test.js
+--- erzwingt, dass niemand daran vorbeigeht. Wer spaeter eine Raidanzeige
+--- baut, laeuft hier hinein statt in 324 Fehlermeldungen je Sitzung. Faellt
+--- die Funktion weg, faellt der Waechter mit ihr.
+---
+--- @return number|nil aktuell, number|nil maximal  nil = auf diesem Client immer
+function Compat.GetUnitHealth(unit)
+    unit = unit or "player"
+    if not isFunction(_G.UnitHealth) or not isFunction(_G.UnitHealthMax) then
+        return nil
+    end
+
+    local okCur, current = pcall(_G.UnitHealth, unit)
+    local okMax, maximum = pcall(_G.UnitHealthMax, unit)
+    if not okCur or not okMax then return nil end
+
+    -- type() HILFT HIER NICHT. Gemessen am 24.09.2026 an einem fremden
+    -- Addon, das genau daran 324-mal in einer Sitzung gescheitert ist:
+    --
+    --   attempt to perform arithmetic on local 'currentHealth'
+    --   (a secret number value)
+    --
+    -- Der Wert IST eine Zahl, type() sagt "number", und trotzdem wirft die
+    -- erste Rechnung. Die Typpruefung faengt nur Tabellen und nil ab; den
+    -- eigentlichen Fall faengt allein die Probe darunter.
+    if type(current) ~= "number" or type(maximum) ~= "number" then return nil end
+
+    -- ZWEI OPERATIONEN, NICHT EINE.
+    --
+    -- Dieselbe Lehre wie bei Compat.IsReadable fuer Zeichenketten: Dort kam
+    -- erst "attempt to perform string conversion", eine Stunde spaeter
+    -- "attempt to compare a secret string value". Eine Probe, die nur das
+    -- eine versucht, taeuscht Sicherheit vor.
+    --
+    -- Hier stand zuerst nur die Rechnung — und direkt danach drei
+    -- Vergleiche ausserhalb jedes Schutzes. Waere der Vergleich getrennt
+    -- eingeschraenkt, haette der Balken genau dort geworfen, bei jedem
+    -- Treffer neu.
+    if not pcall(numberProbe, current, maximum) then return nil end
+
+    if maximum <= 0 then return nil end
+    if current < 0 then current = 0 end
+    if current > maximum then current = maximum end
+    return current, maximum
+end
+
+
+
+-- ============================================================== Berufe-Link --
+--
+-- Das Spiel kann das, was dieses Addon sonst nachbauen muesste: Ein
+-- Berufe-Link oeffnet beim Empfaenger Blizzards eigenes Berufsfenster, mit
+-- Kategorien, Symbolen und Reagenzien. Nichts davon muss nachgezeichnet
+-- werden, und nichts davon kann veralten.
+--
+-- WAS ER NICHT KANN: offline. Der Link ist eine Abfrage beim Server nach den
+-- Daten dieses Charakters — ist die Person weg, kommt nichts. Deshalb bleibt
+-- die selbst gefuehrte Rezeptliste daneben stehen, statt ersetzt zu werden.
+
+--- Der Berufe-Link des offenen Berufsfensters.
+---
+--- @return string|nil  der vollstaendige Link, samt Farbe und Klammern
+function Compat.GetTradeSkillLink()
+    local api = _G.C_TradeSkillUI
+    if not isTable(api) or not isFunction(api.GetTradeSkillListLink) then return nil end
+    if not Compat.IsTradeSkillReady() then return nil end
+
+    local ok, link = pcall(api.GetTradeSkillListLink)
+    if not ok or type(link) ~= "string" or link == "" then return nil end
+    if not string.find(link, "Htrade:", 1, true) then return nil end
+    return link
+end
+
+--- Ist das ueberhaupt ein Berufe-Link?
+---
+--- GEPRUEFT WIRD DER INHALT, NICHT DIE HERKUNFT. Er kommt aus einer
+--- Addon-Nachricht, also von einem anderen Client — was dort steht, hat
+--- jemand anderes geschrieben. Ein Verweis, der nicht wie ein Berufe-Link
+--- aussieht, wird verworfen, statt ihn dem Spiel zum Oeffnen vorzuwerfen.
+--- @return boolean
+function Compat.IsTradeSkillLink(link)
+    if type(link) ~= "string" then return false end
+    if #link < 12 or #link > 400 then return false end
+    -- Trennzeichen des eigenen Nachrichtenformats haben darin nichts zu
+    -- suchen; kaeme eines vor, waere die Nachricht ohnehin schon zerlegt.
+    if string.find(link, "[~;]") then return false end
+    if not string.find(link, "|Htrade:", 1, true) then return false end
+    return string.find(link, "|h", 1, true) ~= nil
+end
+
+--- Oeffnet einen Berufe-Link.
+---
+--- SetItemRef will den KERN des Verweises, nicht die sichtbare Form: also
+--- `trade:...` ohne Farbe, ohne |H und ohne Klammertext. Wer den ganzen Link
+--- hineingibt, bekommt nichts und keine Meldung.
+--- JEDER AUSGANG NENNT SEINEN GRUND.
+---
+--- "Der Knopf funktioniert nicht" (gemeldet 25.09.2026) ist von aussen nicht
+--- aufzuklaeren: Er kann an vier verschiedenen Stellen aufhoeren, und alle
+--- vier sahen gleich aus — es passierte nichts. Ein Grund macht aus
+--- Herumprobieren eine Messung, und er kostet nichts, wenn alles geht.
+---
+--- Den EIGENEN Beruf oeffnen — ohne Link.
+---
+--- GEMELDET 25.09.2026: "ich kann selbst bei mir nicht open profession
+--- druecken." Beim eigenen Charakter ist der Umweg ueber einen Link ohnehin
+--- unsinnig: Er ist eine Abfrage beim Server nach fremden Daten, und die
+--- eigenen liegen im eigenen Client. Der Link kann auf dem Weg kaputtgehen,
+--- der Server kann schweigen — bei sich selbst gibt es nichts davon.
+---
+--- Zwei Wege, weil ungemessen ist, welcher auf dieser Linie traegt. Der
+--- Rueckgabewert nennt den gelaufenen.
+--- @return boolean abgeschickt, string|nil grundOderWeg
+function Compat.OpenOwnProfession(lineID, name)
+    local laden = (isTable(_G.C_AddOns) and _G.C_AddOns.LoadAddOn) or _G.LoadAddOn
+    if isFunction(laden) then pcall(laden, "Blizzard_TradeSkillUI") end
+
+    local api = _G.C_TradeSkillUI
+    if lineID and isTable(api) and isFunction(api.OpenTradeSkill) then
+        if pcall(api.OpenTradeSkill, lineID) then
+            return true, "C_TradeSkillUI.OpenTradeSkill(lineID)"
+        end
+    end
+
+    -- Der Berufsname ist ein Zauber; ihn zu wirken oeffnet das Fenster. Das
+    -- geht nur aus einem echten Knopfdruck heraus — von dort kommt dieser
+    -- Aufruf auch.
+    if name and name ~= "" and isFunction(_G.CastSpellByName) then
+        if pcall(_G.CastSpellByName, name) then
+            return true, "CastSpellByName"
+        end
+    end
+
+    return false, "kein Weg vorhanden"
+end
+
+--- PRUEFEN, OHNE ZU OEFFNEN.
+---
+--- Getrennt, weil ein Bericht ueber zwanzig Links sonst zwanzig Fenster
+--- aufreisst. Es ist dieselbe Kette von Bedingungen, nur ohne den letzten
+--- Schritt.
+--- @return boolean brauchbar, string|nil grund
+function Compat.CheckTradeSkillLink(link)
+    if type(link) ~= "string" or link == "" then return false, "kein Link gespeichert" end
+    if not Compat.IsTradeSkillLink(link) then
+        return false, string.format("kein Berufe-Link (%d Zeichen): %s",
+            #link, string.sub(link, 1, 40))
+    end
+    if not isFunction(_G.SetItemRef) then return false, "SetItemRef fehlt" end
+    if not string.match(link, "|H(trade:[^|]+)|h") then
+        return false, "kein |Htrade:...|h im Link"
+    end
+    return true
+end
+
+--- GEMESSEN 25.09.2026, ueber /ga craft link:
+---
+---     Total Tumult / Alchemy (ok)
+---     我喜歡 火車 / Verzauberkunst (ok)
+---
+--- Die Links sind also heil — die Pruefung geht bis zum Schluss durch, und
+--- trotzdem ging kein Fenster auf. Der Bruch liegt HINTER der Pruefung, und
+--- dafuer gibt es zwei bekannte Gruende:
+---
+---   1. Blizzards Berufsfenster wird bei Bedarf nachgeladen. Ist es nicht
+---      da, laeuft SetItemRef ins Leere — ohne Fehler, ohne Rueckgabewert.
+---      Genau die Sorte Stille, die gemeldet wurde.
+---   2. Es gibt zwei Wege, und welcher auf dieser Linie traegt, ist
+---      ungemessen. C_TradeSkillUI.OpenTradeSkill ist der genaue,
+---      SetItemRef der allgemeine.
+---
+--- Deshalb: erst laden, dann den genauen Weg, dann den allgemeinen — und der
+--- Rueckgabewert sagt, WELCHER gelaufen ist. Beim naechsten Bericht steht
+--- damit da, ob es am Weg lag oder am Server.
+--- @return boolean abgeschickt, string|nil grundOderWeg
+function Compat.OpenTradeSkillLink(link)
+    local brauchbar, grund = Compat.CheckTradeSkillLink(link)
+    if not brauchbar then return false, grund end
+
+    local kern = string.match(link, "|H(trade:[^|]+)|h")
+
+    -- ERST DAS FENSTER NACHLADEN. Blizzard_TradeSkillUI kommt erst, wenn
+    -- jemand einen Beruf oeffnet; wer vorher einen Link anklickt, klickt
+    -- gegen nichts.
+    local laden = (isTable(_G.C_AddOns) and _G.C_AddOns.LoadAddOn) or _G.LoadAddOn
+    if isFunction(laden) then pcall(laden, "Blizzard_TradeSkillUI") end
+
+    local api = _G.C_TradeSkillUI
+    if isTable(api) and isFunction(api.OpenTradeSkill) then
+        local okApi = pcall(api.OpenTradeSkill, link)
+        if okApi then return true, "C_TradeSkillUI.OpenTradeSkill" end
+    end
+
+    if not isFunction(_G.SetItemRef) then return false, "kein Weg vorhanden" end
+
+    -- Der dritte Parameter ist die Maustaste; SetItemRef erwartet sie, und
+    -- ohne sie werfen manche Fassungen.
+    local ok, err = pcall(_G.SetItemRef, kern, link, "LeftButton")
+    if not ok then return false, "SetItemRef wirft: " .. tostring(err):sub(1, 60) end
+
+    -- WAHR HEISST HIER "ABGESCHICKT", NICHT "OFFEN". Ob das Fenster aufgeht,
+    -- entscheidet der Server: Er muss die Daten des anderen Charakters
+    -- herausgeben, und das tut er nur, solange der angemeldet ist. Diese
+    -- Funktion kann das nicht wissen und behauptet es deshalb nicht.
+    return true, "SetItemRef"
+end
+
+-- ================================================================ Speicher ---
+
+--- Der Speicher, den WoW diesem Addon zuschreibt, in Kilobyte.
+---
+--- WARUM DAS UEBERHAUPT GEBRAUCHT WIRD
+---
+--- Gemeldet wurde mehrfach eine steigende Zahl (18, 19, 20 MB) — und dann
+--- fiel sie von selbst auf 5 zurueck. Das ist der Sammler, und es ist der
+--- ganze Unterschied zwischen "laeuft voll" und "arbeitet": Belegtes faellt
+--- nicht. Solange niemand nachmisst, sieht beides gleich aus, und man baut
+--- Dinge um, die nie das Problem waren.
+---
+--- DREI NAMEN FUER DIESELBE FUNKTION. Auf den neueren Linien liegt sie unter
+--- C_AddOns, auf den aelteren global; und ob sie einen Namen oder nur einen
+--- Index nimmt, ist je nach Fassung verschieden. Deshalb beide Wege, und der
+--- Index wird notfalls gesucht.
+--- @return number|nil kilobyte
+function Compat.GetAddonMemoryKB(addonName)
+    local update = (isTable(_G.C_AddOns) and _G.C_AddOns.UpdateAddOnMemoryUsage)
+        or _G.UpdateAddOnMemoryUsage
+    local read = (isTable(_G.C_AddOns) and _G.C_AddOns.GetAddOnMemoryUsage)
+        or _G.GetAddOnMemoryUsage
+    if not isFunction(update) or not isFunction(read) then return nil end
+
+    -- OHNE Update ist der Wert der von irgendwann vorher. Er kostet einen
+    -- Durchlauf ueber alle Addons und gehoert deshalb in einen Befehl, nicht
+    -- in eine Schleife.
+    if not pcall(update) then return nil end
+
+    local ok, kb = pcall(read, addonName)
+    if ok and type(kb) == "number" and kb > 0 then return kb end
+
+    -- Der Index als zweiter Weg: Manche Fassungen nehmen keinen Namen.
+    local zaehlen = (isTable(_G.C_AddOns) and _G.C_AddOns.GetNumAddOns) or _G.GetNumAddOns
+    local info = (isTable(_G.C_AddOns) and _G.C_AddOns.GetAddOnInfo) or _G.GetAddOnInfo
+    if not isFunction(zaehlen) or not isFunction(info) then return nil end
+
+    local okZahl, anzahl = pcall(zaehlen)
+    if not okZahl or type(anzahl) ~= "number" then return nil end
+
+    for index = 1, anzahl do
+        local okInfo, name = pcall(info, index)
+        if okInfo and name == addonName then
+            local okKb, wert = pcall(read, index)
+            if okKb and type(wert) == "number" then return wert end
+            return nil
+        end
+    end
+    return nil
+end
+
+--- Der gesamte Lua-Speicher des Clients in Kilobyte, und das Sammeln.
+---
+--- collectgarbage("count") ist die einzige Zahl, die NICHT je Addon
+--- geschaetzt ist. Sie gilt fuer alles zusammen — aber ihr Fallen beim
+--- Sammeln beantwortet genau die Frage, um die es geht.
+--- @return number|nil kilobyte
+function Compat.GetLuaMemoryKB()
+    if not isFunction(_G.collectgarbage) then return nil end
+    local ok, kb = pcall(_G.collectgarbage, "count")
+    if not ok or type(kb) ~= "number" then return nil end
+    return kb
+end
+
+--- @return boolean gesammelt
+function Compat.CollectGarbage()
+    if not isFunction(_G.collectgarbage) then return false end
+    return pcall(_G.collectgarbage, "collect") and true or false
+end
+
+--- Die Hoechststufe dieser Spiellinie.
+---
+--- NICHT FEST VERDRAHTET. Forever hat 60, und genau deshalb steht die Zahl
+--- nicht im Code: Sie waere bei der naechsten Erweiterung falsch, und der
+--- Fehler faellt nur jemandem auf, der zufaellig auf der alten Hoechststufe
+--- steht.
+---
+--- Zwei Wege, weil GetMaxPlayerLevel die neuere Auskunft ist und
+--- MAX_PLAYER_LEVEL die aeltere Konstante. Geprueft wird das Ergebnis.
+--- @return number|nil
+function Compat.GetMaxPlayerLevel()
+    if isFunction(_G.GetMaxPlayerLevel) then
+        local ok, stufe = pcall(_G.GetMaxPlayerLevel)
+        if ok and type(stufe) == "number" and stufe > 0 then return stufe end
+    end
+    if type(_G.MAX_PLAYER_LEVEL) == "number" and _G.MAX_PLAYER_LEVEL > 0 then
+        return _G.MAX_PLAYER_LEVEL
+    end
+    return nil
+end
+
+--- Der Name eines Berufs, in DER SPRACHE DIESES CLIENTS.
+---
+--- WOZU (27.09.2026 gemeldet): In der Berufeliste stand "Kochkunst" neben
+--- "Cooking" — derselbe Beruf, zweimal. Der Name kommt naemlich vom
+--- SCANNENDEN Client und ist in dessen Sprache; wer ihn weiterreicht,
+--- reicht eine fremde Spracheinstellung weiter.
+---
+--- Die Kennung der Berufslinie ist dagegen sprachlos. Aus ihr den Namen zu
+--- holen ist die einzige Fassung, die auf jedem Client dasselbe ergibt —
+--- naemlich das, was dort im Spiel steht.
+---
+--- @return string|nil  nil = dieser Client gibt den Namen nicht her; dann
+---                     ist der mitgeschickte immer noch besser als nichts
+function Compat.GetProfessionName(lineID)
+    lineID = tonumber(lineID)
+    if not lineID then return nil end
+
+    local api = _G.C_TradeSkillUI
+    if not isTable(api) or not isFunction(api.GetTradeSkillDisplayName) then return nil end
+
+    local ok, name = pcall(api.GetTradeSkillDisplayName, lineID)
+    if not ok or type(name) ~= "string" or name == "" then return nil end
+    return name
+end
+
+--- Das Symbol eines Berufs, aus der Kennung der Berufslinie.
+---
+--- Zwei Wege, in dieser Reihenfolge: C_TradeSkillUI.GetTradeSkillTexture
+--- kennt jede Linie, auch fremde — wenn der Client die Funktion hat. Sonst
+--- GetProfessionInfo, das nur die EIGENEN Berufe beschreibt, aber ihr
+--- Symbol mitliefert (zweiter Rueckgabewert, siebter ist die Linie).
+---
+--- GEPRUEFT WIRD DER RUECKGABEWERT: eine Zahl (FileID) oder ein nicht leerer
+--- Pfad. Eine Funktion, die da ist und nil liefert, ist kein Symbol.
+---
+--- @return number|string|nil  nil = dieser Client gibt keins her; die Zeile
+---                            zeigt dann keins, statt eines geratenen
+function Compat.GetProfessionIcon(lineID)
+    lineID = tonumber(lineID)
+    if not lineID then return nil end
+
+    local function brauchbar(icon)
+        return type(icon) == "number" or (type(icon) == "string" and icon ~= "")
+    end
+
+    local api = _G.C_TradeSkillUI
+    if isTable(api) and isFunction(api.GetTradeSkillTexture) then
+        local ok, icon = pcall(api.GetTradeSkillTexture, lineID)
+        if ok and brauchbar(icon) then return icon end
+    end
+
+    if isFunction(_G.GetProfessions) and isFunction(_G.GetProfessionInfo) then
+        local ok, first, second, archaeology, fishing, cooking, firstAid = pcall(GetProfessions)
+        if ok then
+            for _, index in ipairs({ first, second, archaeology, fishing, cooking, firstAid }) do
+                if type(index) == "number" then
+                    local okInfo, _, icon, _, _, _, _, line = pcall(GetProfessionInfo, index)
+                    if okInfo and line == lineID and brauchbar(icon) then return icon end
+                end
+            end
+        end
+    end
+
+    return nil
+end
+
+-- ================================================================== Questlog --
+--
+-- ZWEI WEGE, BEIDE UNGEMESSEN AUF FOREVER (28.09.2026). Der neuere Client
+-- hat C_QuestLog mit Tabellen je Eintrag; der aeltere GetQuestLogTitle mit
+-- neun Rueckgabewerten. Welcher hier traegt, sagt /ga probe ("questLog").
+-- Beide werden versucht, der erste, der etwas HERGIBT, gewinnt — nicht der
+-- erste, der existiert.
+
+--- Die Questart als eigenes Kennwort, gleich auf beiden Wegen.
+local QUEST_TAG_BY_ID = {
+    [1] = "GROUP", [81] = "DUNGEON", [62] = "RAID", [88] = "RAID", [89] = "RAID",
+    [85] = "HEROIC", [41] = "PVP",
+}
+local QUEST_TAG_BY_NAME = {
+    group = "GROUP", gruppe = "GROUP", dungeon = "DUNGEON", elite = "ELITE",
+    raid = "RAID", schlachtzug = "RAID", pvp = "PVP", heroic = "HEROIC", heroisch = "HEROIC",
+}
+
+local function questTag(questID, tagName)
+    if type(tagName) == "string" and tagName ~= "" then
+        local key = QUEST_TAG_BY_NAME[string.lower(tagName)]
+        if key then return key end
+    end
+    local api = _G.C_QuestLog
+    if questID and isTable(api) and isFunction(api.GetQuestTagInfo) then
+        local ok, info = pcall(api.GetQuestTagInfo, questID)
+        if ok and isTable(info) then
+            local key = QUEST_TAG_BY_ID[tonumber(info.tagID or 0)]
+            if key then return key end
+            if type(info.tagName) == "string" then
+                return QUEST_TAG_BY_NAME[string.lower(info.tagName)]
+            end
+        end
+    end
+    return nil
+end
+
+--- Das eigene Questlog: eine Liste aus { index, questID, title, level,
+--- tag, header, complete }. header = die Ueberschrift darueber (auf
+--- Vanilla die Zone).
+---
+--- @return table|nil list, string|nil way  nil = kein Weg gibt etwas her
+function Compat.GetQuestLog()
+    local api = _G.C_QuestLog
+    if isTable(api) and isFunction(api.GetNumQuestLogEntries) and isFunction(api.GetInfo) then
+        local ok, count = pcall(api.GetNumQuestLogEntries)
+        if ok and type(count) == "number" and count > 0 then
+            local out, header = {}, nil
+            for index = 1, count do
+                local okInfo, info = pcall(api.GetInfo, index)
+                if okInfo and isTable(info) then
+                    if info.isHeader then
+                        header = info.title
+                    elseif tonumber(info.questID) and tonumber(info.questID) > 0 then
+                        out[#out + 1] = {
+                            index = index, questID = tonumber(info.questID),
+                            title = info.title, level = tonumber(info.level),
+                            tag = questTag(tonumber(info.questID), nil),
+                            header = header, complete = info.isComplete and true or false,
+                        }
+                    end
+                end
+            end
+            if #out > 0 then return out, "C_QuestLog" end
+        end
+    end
+
+    if isFunction(_G.GetNumQuestLogEntries) and isFunction(_G.GetQuestLogTitle) then
+        local ok, count = pcall(GetNumQuestLogEntries)
+        if ok and type(count) == "number" and count > 0 then
+            local out, header = {}, nil
+            for index = 1, count do
+                local okT, title, level, tagName, isHeader, _, isComplete, _, questID =
+                    pcall(GetQuestLogTitle, index)
+                if okT and type(title) == "string" then
+                    if isHeader then
+                        header = title
+                    else
+                        out[#out + 1] = {
+                            index = index, questID = tonumber(questID),
+                            title = title, level = tonumber(level),
+                            tag = questTag(tonumber(questID), tagName),
+                            header = header, complete = isComplete and true or false,
+                        }
+                    end
+                end
+            end
+            if #out > 0 then return out, "GetQuestLogTitle" end
+        end
+    end
+    return nil
+end
+
+--- Die Ziele einer Quest aus dem eigenen Log: { { text, finished } }.
+--- @return table|nil  nil = nicht lesbar
+function Compat.GetQuestObjectives(index, questID)
+    local api = _G.C_QuestLog
+    if questID and isTable(api) and isFunction(api.GetQuestObjectives) then
+        local ok, list = pcall(api.GetQuestObjectives, questID)
+        if ok and isTable(list) and #list > 0 then
+            local out = {}
+            for _, entry in ipairs(list) do
+                if isTable(entry) and type(entry.text) == "string" and entry.text ~= "" then
+                    out[#out + 1] = { text = entry.text, finished = entry.finished and true or false }
+                end
+            end
+            if #out > 0 then return out end
+        end
+    end
+
+    if index and isFunction(_G.GetNumQuestLeaderBoards) and isFunction(_G.GetQuestLogLeaderBoard) then
+        local ok, count = pcall(GetNumQuestLeaderBoards, index)
+        if ok and type(count) == "number" and count > 0 then
+            local out = {}
+            for i = 1, count do
+                local okB, text, _, finished = pcall(GetQuestLogLeaderBoard, i, index)
+                if okB and type(text) == "string" and text ~= "" then
+                    out[#out + 1] = { text = text, finished = finished and true or false }
+                end
+            end
+            if #out > 0 then return out end
+        end
+    end
+    return nil
+end
+
+--- Der Questlink. Der neuere Client nimmt die Questkennung, der aeltere den
+--- Platz im Log; beides wird versucht, und nur ein Link zaehlt.
+function Compat.GetQuestLink(index, questID)
+    if not isFunction(_G.GetQuestLink) then return nil end
+    for _, arg in ipairs({ questID, index }) do
+        if arg then
+            local ok, link = pcall(GetQuestLink, arg)
+            if ok and type(link) == "string" and string.find(link, "|Hquest:", 1, true) then
+                return link
+            end
+        end
+    end
+    return nil
+end
+
+--- Haengt einen Alt-Klick an die Quests im Questlog. Der Rueckruf bekommt
+--- (questID, index) — was der geklickte Knopf davon hergibt.
+---
+--- Zwei Rahmen, je Linie einer: QuestMapLogTitleButton (die Karte mit
+--- Questlog), QuestLogTitleButton (das alte Questlog). Welcher traegt, sagt
+--- der Rueckgabewert — und /ga probe.
+--- @return string|nil  der Weg, der sich anhaengen liess
+function Compat.HookQuestLogClicks(callback)
+    if not isFunction(_G.hooksecurefunc) or not isFunction(_G.IsAltKeyDown) then return nil end
+
+    local function onClick(button)
+        local okAlt, alt = pcall(IsAltKeyDown)
+        if not okAlt or not alt or not isTable(button) then return end
+        local questID = tonumber(button.questID)
+        local index = tonumber(button.questLogIndex)
+        if not index and isFunction(button.GetID) then
+            local okId, id = pcall(button.GetID, button)
+            if okId and tonumber(id) and tonumber(id) > 0 then index = tonumber(id) end
+        end
+        if questID or index then callback(questID, index) end
+    end
+
+    for _, name in ipairs({ "QuestMapLogTitleButton_OnClick", "QuestLogTitleButton_OnClick" }) do
+        if isFunction(_G[name]) then
+            local ok = pcall(hooksecurefunc, name, onClick)
+            if ok then return name end
+        end
+    end
+    return nil
+end
+
+--- Laedt jemanden in die Gruppe ein. Geschuetzt: nur aus einem Klick heraus.
+--- @return boolean ok, string|nil reason
+function Compat.InviteUnit(name)
+    if type(name) ~= "string" or name == "" then return false, "noname" end
+    local party = _G.C_PartyInfo
+    if isTable(party) and isFunction(party.InviteUnit) then
+        local ok = pcall(party.InviteUnit, name)
+        if ok then return true, "C_PartyInfo" end
+    end
+    if isFunction(_G.InviteUnit) then
+        local ok = pcall(InviteUnit, name)
+        if ok then return true, "InviteUnit" end
+    end
+    return false, "noapi"
+end
+
+--- Oeffnet die Chatzeile mit "/w Name " — wie ein Klick auf einen Namen.
+function Compat.OpenWhisper(name)
+    if type(name) ~= "string" or name == "" then return false end
+    if isFunction(_G.ChatFrame_SendTell) then
+        return pcall(ChatFrame_SendTell, name) and true or false
+    end
+    if isFunction(_G.ChatFrame_OpenChat) then
+        return pcall(ChatFrame_OpenChat, "/w " .. name .. " ") and true or false
+    end
+    return false
+end
+
+-- ============================================================ Gildenverwaltung
+--
+-- Was Blizzards Gildenfenster tut, tun diese Funktionen — soweit der Client
+-- sie OFFEN anbietet. Rangrechte bearbeiten und die Gildenbank sind es
+-- nicht; dafuer bleibt Blizzards Fenster (OpenBlizzardGuildFrame). Alles
+-- hier ist UNGEMESSEN auf Forever (28.09.2026): /ga probe "guildManage"
+-- sagt, was da ist und was die Can*-Fragen antworten.
+
+--- Ruft eine Ja/Nein-Funktion des Clients. nil = gibt es nicht oder wirft.
+local function askBool(fn)
+    if not isFunction(fn) then return nil end
+    local ok, value = pcall(fn)
+    if not ok then return nil end
+    return value and true or false
+end
+
+function Compat.CanEditMOTD() return askBool(_G.CanEditMOTD) end
+function Compat.CanEditGuildInfo() return askBool(_G.CanEditGuildInfo) end
+function Compat.CanEditPublicNote() return askBool(_G.CanEditPublicNote) end
+--- Die Offiziersnotiz hat auf der neueren Linie ein eigenes Namensfeld.
+--- GEMESSEN 28.09.2026: CanEditMOTD, CanEditPublicNote, CanGuildPromote
+--- antworteten, CanEditOfficerNote nicht ("OffNotiz=?") — die Funktion
+--- heisst dort C_GuildInfo.CanEditOfficerNote. Erst das alte Feld, dann
+--- das neue; die Sonde sagt, welches traegt.
+local function askGuildInfo(name)
+    local alt = askBool(_G[name])
+    if alt ~= nil then return alt end
+    local api = _G.C_GuildInfo
+    return isTable(api) and askBool(api[name]) or nil
+end
+function Compat.CanEditOfficerNote() return askGuildInfo("CanEditOfficerNote") end
+function Compat.CanViewOfficerNote() return askGuildInfo("CanViewOfficerNote") end
+function Compat.CanGuildPromote() return askBool(_G.CanGuildPromote) end
+function Compat.CanGuildDemote() return askBool(_G.CanGuildDemote) end
+function Compat.CanGuildRemove() return askBool(_G.CanGuildRemove) end
+function Compat.CanGuildInvite() return askBool(_G.CanGuildInvite) end
+
+--- Auf welcher Flanke ein sicherer Knopf sein Makro ausfuehrt.
+---
+--- GEMESSEN 28.09.2026: "AnyUp" allein tat auf diesem Client nichts. Die
+--- neuere Vorlage des Spiels liest die Einstellung ActionButtonUseKeyDown
+--- und laesst einen Klick, der auf der anderen Flanke kommt, still fallen.
+--- Also: die Einstellung lesen und GENAU DIE Flanke anmelden — nie beide,
+--- denn eine aeltere Vorlage ohne diese Pruefung liefe dann zweimal.
+---
+--- @return string  "AnyDown" oder "AnyUp"
+--- @return string  woher: "cvar=1", "cvar=0" oder "keine cvar"
+function Compat.SecureClickMode()
+    local get = (type(_G.C_CVar) == "table" and type(_G.C_CVar.GetCVar) == "function" and _G.C_CVar.GetCVar)
+        or (type(_G.GetCVar) == "function" and _G.GetCVar) or nil
+    if not get then return "AnyUp", "keine cvar" end
+    local ok, value = pcall(get, "ActionButtonUseKeyDown")
+    if not ok or value == nil then return "AnyUp", "keine cvar" end
+    if tostring(value) == "1" then return "AnyDown", "cvar=1" end
+    return "AnyUp", "cvar=0"
+end
+
+--- Die Nachricht des Tages. Leer ist eine Auskunft, nil ist keine.
+function Compat.GetGuildMOTD()
+    if not isFunction(_G.GetGuildRosterMOTD) then return nil end
+    local ok, text = pcall(GetGuildRosterMOTD)
+    if not ok or type(text) ~= "string" then return nil end
+    return text
+end
+
+-- DIE NACHRICHT DES TAGES SETZT DIESES ADDON NICHT: GuildSetMOTD ist auf
+-- diesem Client aus Addon-Code geblockt (gemessen 28.09.2026), wie die
+-- Notizen. Das Roster fuehrt eine eigene, ueber die Gilde verteilte
+-- (Communication/GuildNotes, Schluessel "@motd").
+
+function Compat.GetGuildInfoText()
+    if not isFunction(_G.GetGuildInfoText) then return nil end
+    local ok, text = pcall(GetGuildInfoText)
+    if not ok or type(text) ~= "string" then return nil end
+    return text
+end
+
+function Compat.SetGuildInfoText(text)
+    if not isFunction(_G.SetGuildInfoText) then return false, "noapi" end
+    local ok = pcall(SetGuildInfoText, tostring(text or ""))
+    return ok, ok and "SetGuildInfoText" or "throws"
+end
+
+-- ============================================================ Club-Chat --
+--
+-- Der Gildenchat, wie das Spiel ihn SELBST aufbewahrt. Die neuere Linie
+-- fuehrt die Gilde als "Club" (C_Club) mit Kanaelen ("Streams"): einem
+-- fuer die Gilde, einem fuer die Offiziere. Blizzards Gildenfenster zeigt
+-- daraus den Verlauf — auch von vor dem Login. Dieselben Zeilen holt
+-- dieser Block: Bereiche (GetMessageRanges), darin die Nachrichten
+-- (GetMessagesInRange), aeltere auf Anfrage (RequestMoreMessagesBefore).
+-- Der Zeitstempel einer Nachricht kommt in MIKROSEKUNDEN seit 1970.
+-- Fehlt die Schnittstelle (aeltere Linien), gibt es nil und den Grund —
+-- kein Verlauf wird erfunden.
+
+local function classFileFromId(classID)
+    if not classID then return nil end
+    local api = _G.C_CreatureInfo
+    if isTable(api) and isFunction(api.GetClassInfo) then
+        local ok, info = pcall(api.GetClassInfo, classID)
+        if ok and isTable(info) and type(info.classFile) == "string" then return info.classFile end
+    end
+    if isFunction(_G.GetClassInfo) then
+        local ok, _, file = pcall(GetClassInfo, classID)
+        if ok and type(file) == "string" then return file end
+    end
+    return nil
+end
+
+--- Club und Kanal der eigenen Gilde.
+--- @param kind string "GUILD" | "OFFICER"
+--- @return number|nil clubId, number|nil streamId, string weg|grund
+local function guildStream(kind)
+    local club = _G.C_Club
+    if not isTable(club) or not isFunction(club.GetGuildClubId) or not isFunction(club.GetStreams) then
+        return nil, nil, "noapi"
+    end
+    local ok, clubId = pcall(club.GetGuildClubId)
+    if not ok or clubId == nil then return nil, nil, "noclub" end
+    local ok2, streams = pcall(club.GetStreams, clubId)
+    if not ok2 or not isTable(streams) then return nil, nil, "nostreams" end
+    local enum = isTable(_G.Enum) and isTable(_G.Enum.ClubStreamType) and _G.Enum.ClubStreamType or nil
+    local wanted = kind == "OFFICER" and (enum and enum.Officer or 2) or (enum and enum.Guild or 1)
+    for _, stream in ipairs(streams) do
+        if isTable(stream) and stream.streamType == wanted and stream.streamId ~= nil then
+            return clubId, stream.streamId, "C_Club"
+        end
+    end
+    return nil, nil, "nostream"
+end
+
+--- Ein Zeitstempel des Clubs in Sekunden. Die Einheit wird an der GROESSE
+--- erkannt, nicht geglaubt: 2026 hat rund 1,8e9 Sekunden, 1,8e12 Milli-,
+--- 1,8e15 Mikrosekunden. Doppelte Zeilen (28.09.2026) zeigten, dass die
+--- Stempel des Verlaufs und die des Mithoerens nicht zusammenlagen.
+function Compat.EpochToSeconds(epoch)
+    epoch = tonumber(epoch) or 0
+    if epoch > 1e14 then return math.floor(epoch / 1000000) end
+    if epoch > 1e11 then return math.floor(epoch / 1000) end
+    return math.floor(epoch)
+end
+
+--- Ob ein Text der Platzhalter des Spiels fuer "nicht geladen" ist —
+--- unabhaengig von Farbcodes, Leerraum, Steuerzeichen und Schreibung,
+--- denn byteweise "Unknown" blieb stehen (gemessen 28.09.2026).
+function Compat.IsChatPlaceholder(text)
+    if type(text) ~= "string" then return true end
+    local bare = text:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""):gsub("|H.-|h", ""):gsub("|h", "")
+    bare = bare:gsub("[%s%c]", "")
+    if bare == "" then return true end
+    bare = string.lower(bare)
+    if bare == "unknown" then return true end
+    local unknown = _G.UNKNOWN
+    if type(unknown) == "string" and bare == string.lower((unknown:gsub("[%s%c]", ""))) then return true end
+    return false
+end
+
+--- Ein Bereich ohne Nachrichten traegt Platzhalter statt Kennungen:
+--- oldest = 2^53, newest = 0 (gemessen 28.09.2026, /ga clubchat). Der
+--- ist keine Kennung und darf weder gelesen noch dem Server als "davor"
+--- geschickt werden. ABER: oldest = 0 mit echtem newest ist ein voller
+--- Bereich "vom Anfang an" (gemessen danach: 0/0 bis heute, 1924
+--- Nachrichten) — als Untergrenze gueltig, als Kennung zum Nachladen
+--- nicht.
+local function realMessageId(id)
+    local epoch = isTable(id) and tonumber(id.epoch) or nil
+    return epoch ~= nil and epoch > 0 and epoch < 9e15
+end
+
+local function lowerBoundOk(id)
+    local epoch = isTable(id) and tonumber(id.epoch) or nil
+    return epoch ~= nil and epoch >= 0 and epoch < 9e15
+end
+
+--- Die Zeilen eines Kanals, wie das Spiel sie haelt — aelteste zuerst.
+--- @return table|nil zeilen {id, ts, who, class, text}, string weg|grund
+--- @param limit number|nil  hoechstens so viele, die NEUESTEN (Vorgabe 300)
+function Compat.GetClubChatHistory(kind, limit)
+    local clubId, streamId, weg = guildStream(kind)
+    if not clubId then return nil, weg end
+    local club = _G.C_Club
+    if not isFunction(club.GetMessageRanges) or not isFunction(club.GetMessagesInRange) then return nil, "noapi" end
+    local okR, ranges = pcall(club.GetMessageRanges, clubId, streamId)
+    if not okR or not isTable(ranges) then return nil, "noranges" end
+    limit = limit or 300
+    -- VON HINTEN, MIT GRENZE. Gemessen 28.09.2026: 1924 Nachrichten, jede
+    -- mit einer Autor-Tabelle von zwanzig Feldern, bei jedem Zug neu vom
+    -- Client gebaut — ein Ruckler beim Oeffnen und 70 MB. Gebraucht werden
+    -- die neuesten paar hundert; aeltere Bereiche werden gar nicht erst
+    -- angefasst, sobald die Grenze steht.
+    local classCache = {}
+    local function classOf(classID)
+        if classID == nil then return nil end
+        local hit = classCache[classID]
+        if hit == nil then
+            hit = classFileFromId(classID) or false
+            classCache[classID] = hit
+        end
+        return hit or nil
+    end
+    local out = {}
+    for r = #ranges, 1, -1 do
+        if #out >= limit then break end
+        local range = ranges[r]
+        local okM, messages = false, nil
+        if isTable(range) and lowerBoundOk(range.oldestMessageId) and realMessageId(range.newestMessageId) then
+            okM, messages = pcall(club.GetMessagesInRange, clubId, streamId, range.oldestMessageId, range.newestMessageId)
+        end
+        if okM and isTable(messages) then
+            for i = #messages, 1, -1 do
+                if #out >= limit then break end
+                local m = messages[i]
+                local id = isTable(m) and isTable(m.messageId) and m.messageId or nil
+                -- "Unknown" ist kein Text, sondern der Platzhalter des Spiels
+                -- fuer einen Inhalt, den es nicht geladen hat; der bleibt draussen.
+                local content = isTable(m) and m.content or nil
+                if id and not m.destroyed and type(content) == "string" and tonumber(id.epoch)
+                    and not Compat.IsChatPlaceholder(content) then
+                    local author = isTable(m.author) and m.author or {}
+                    out[#out + 1] = {
+                        id = tostring(id.epoch) .. ":" .. tostring(id.position or 0),
+                        ts = Compat.EpochToSeconds(tonumber(id.epoch)),
+                        who = type(author.name) == "string" and author.name or "?",
+                        class = classOf(author.classID),
+                        text = content,
+                    }
+                end
+            end
+        end
+    end
+    table.sort(out, function(a, b) return a.ts < b.ts or (a.ts == b.ts and a.id < b.id) end)
+    return out, "C_Club"
+end
+
+--- DIE ROHEN NACHRICHTEN DES CLUB-SPEICHERS, Feld fuer Feld — fuer
+--- /ga clubchat, wenn die Anzeige etwas zeigt, das keine Zeile ist
+--- ("Unknown", 28.09.2026), und niemand weiss, aus welchem Feld es kam.
+--- Nichts wird gedeutet: jeder Schluessel, jeder Typ, jede Zeichenkette
+--- mit Laenge, verschachtelt eine Ebene tief.
+function Compat.DumpClubChat(kind, count)
+    local out = {}
+    local function say(fmt, ...) out[#out + 1] = string.format(fmt, ...) end
+    local function show(value)
+        local t = type(value)
+        if t == "string" then return string.format("%q (%d)", value, #value) end
+        return t .. ":" .. tostring(value)
+    end
+    local clubId, streamId, weg = guildStream(kind)
+    say("stream %s: club=%s stream=%s weg=%s UNKNOWN=%s", tostring(kind), tostring(clubId), tostring(streamId), tostring(weg), show(_G.UNKNOWN))
+    if not clubId then return out end
+    local club = _G.C_Club
+    local okR, ranges = pcall(club.GetMessageRanges, clubId, streamId)
+    say("ranges ok=%s n=%s", tostring(okR), isTable(ranges) and tostring(#ranges) or type(ranges))
+    if not okR or not isTable(ranges) then return out end
+    local shown = 0
+    for r = #ranges, 1, -1 do
+        local range = ranges[r]
+        local o, n = range.oldestMessageId, range.newestMessageId
+        say("range %d: oldest=%s/%s newest=%s/%s", r,
+            tostring(isTable(o) and o.epoch), tostring(isTable(o) and o.position),
+            tostring(isTable(n) and n.epoch), tostring(isTable(n) and n.position))
+        local okM, messages = pcall(club.GetMessagesInRange, clubId, streamId, o, n)
+        say("  messages ok=%s n=%s", tostring(okM), isTable(messages) and tostring(#messages) or show(messages))
+        if okM and isTable(messages) then
+            for i = #messages, 1, -1 do
+                if shown >= (count or 12) then break end
+                shown = shown + 1
+                local m = messages[i]
+                say("  [%d]", i)
+                if isTable(m) then
+                    for k, v in pairs(m) do
+                        if isTable(v) then
+                            local parts = {}
+                            for k2, v2 in pairs(v) do parts[#parts + 1] = tostring(k2) .. "=" .. show(v2) end
+                            table.sort(parts)
+                            say("    %s = { %s }", tostring(k), table.concat(parts, ", "))
+                        else
+                            say("    %s = %s", tostring(k), show(v))
+                        end
+                    end
+                else
+                    say("    %s", show(m))
+                end
+            end
+        end
+        if shown >= (count or 12) then break end
+    end
+    if isFunction(club.GetMessageInfo) and shown > 0 then
+        local range = ranges[#ranges]
+        local okI, info = pcall(club.GetMessageInfo, clubId, streamId, range.newestMessageId)
+        say("GetMessageInfo(newest) ok=%s content=%s", tostring(okI), isTable(info) and show(info.content) or show(info))
+    end
+    return out
+end
+
+--- Bittet das Spiel um aeltere Zeilen. Die Antwort kommt als Ereignis
+--- (CLUB_MESSAGE_HISTORY_RECEIVED); danach liest GetClubChatHistory mehr.
+--- Die Anfrage nennt die AELTESTE bekannte Kennung: Ohne sie laedt das
+--- Spiel nichts nach, und die aelteren Zeilen bleiben "Unknown".
+function Compat.RequestClubChatHistory(kind, count)
+    local clubId, streamId = guildStream(kind)
+    local club = _G.C_Club
+    if not clubId or not isFunction(club.RequestMoreMessagesBefore) then return false, "noapi" end
+    count = count or 200
+
+    -- WIE BLIZZARDS FENSTER, Schritt fuer Schritt — gemessen 28.09.2026:
+    -- Fokus allein liess den Speicher leer; mit Blizzards Fenster offen
+    -- war er voll (1919 Nachrichten). Sein Chat abonniert den Club, setzt
+    -- den Fokus und bittet um Nachrichten VOR DER NEUESTEN Kennung, nicht
+    -- vor der aeltesten. Alles davon, was der Client kennt, pcall-gesichert.
+    local steps = {}
+    if isFunction(club.SetClubPresenceSubscription) and pcall(club.SetClubPresenceSubscription, clubId) then
+        steps[#steps + 1] = "presence"
+    end
+    if isFunction(club.FocusStream) and pcall(club.FocusStream, clubId, streamId) then
+        steps[#steps + 1] = "focus"
+    end
+
+    local oldest, newest
+    if isFunction(club.GetMessageRanges) then
+        local ok, ranges = pcall(club.GetMessageRanges, clubId, streamId)
+        if ok and isTable(ranges) then
+            for _, range in ipairs(ranges) do
+                local o = isTable(range) and range.oldestMessageId or nil
+                local n = isTable(range) and range.newestMessageId or nil
+                if realMessageId(o) and (not oldest or tonumber(o.epoch) < tonumber(oldest.epoch)) then oldest = o end
+                if realMessageId(n) and (not newest or tonumber(n.epoch) > tonumber(newest.epoch)) then newest = n end
+            end
+        end
+    end
+    -- Leer: ohne Kennung bitten. Voll: vor der neuesten (die erste Ladung,
+    -- wie Blizzard) und vor der aeltesten (noch weiter zurueck).
+    if not newest then
+        if pcall(club.RequestMoreMessagesBefore, clubId, streamId, nil, count) then steps[#steps + 1] = "before:nil" end
+    else
+        if pcall(club.RequestMoreMessagesBefore, clubId, streamId, newest, count) then steps[#steps + 1] = "before:newest" end
+        if oldest and pcall(club.RequestMoreMessagesBefore, clubId, streamId, oldest, count) then steps[#steps + 1] = "before:oldest" end
+    end
+    Compat.clubRequestSteps = table.concat(steps, ",")
+    return #steps > 0, Compat.clubRequestSteps
+end
+
+--- Der Platz eines Mitglieds im Roster — die Notizfunktionen wollen ihn.
+--- Namen werden ohne Realm verglichen (siehe Util.ShortName).
+function Compat.FindGuildMemberIndex(name)
+    if not name or not has.guildRoster then return nil end
+    local wanted = string.lower(GA.Core.Util.ShortName(name))
+    local count = Compat.GetNumGuildMembers() or 0
+    for index = 1, count do
+        local ok, rosterName = pcall(GetGuildRosterInfo, index)
+        if ok and type(rosterName) == "string"
+            and string.lower(GA.Core.Util.ShortName(rosterName)) == wanted then
+            return index
+        end
+    end
+    return nil
+end
+
+-- GILDENNOTIZEN SCHREIBT DIESES ADDON NICHT. GEMESSEN 28.09.2026, drei
+-- Wege, alle vom Spiel geblockt: GuildRosterSetPublicNote fehlt;
+-- C_GuildInfo.SetNote geht durch und wird als ADDON_ACTION_BLOCKED
+-- verworfen; Blizzards eigenes Popup (SET_GUILDPLAYERNOTE) blockt beim
+-- Klick auf "Akzeptieren", weil die GUID aus Addon-Code kommt. Was
+-- bleibt, ist Blizzards Gildenfenster — und fuer das Roster eine eigene,
+-- ueber die Gilde verteilte Notiz (Communication/GuildNotes).
+
+--- Befoerdern, degradieren, entfernen — GEMESSEN 28.09.2026: GESCHUETZT.
+--- Aus Addon-Code geblockt ("blocked by Blizzard"), auch aus einem Klick,
+--- auch mit CanGuildPromote=ja. Der Weg ist ein SecureActionButton mit
+--- "/gpromote Name" als Makro (Widgets.SecureMacroButton); diese drei
+--- bleiben fuer Linien, auf denen der Aufruf offen ist, und fuer die
+--- Sonde.
+function Compat.GuildPromote(name)
+    if not name or not isFunction(_G.GuildPromote) then return false, "noapi" end
+    return pcall(GuildPromote, name), "GuildPromote"
+end
+
+function Compat.GuildDemote(name)
+    if not name or not isFunction(_G.GuildDemote) then return false, "noapi" end
+    return pcall(GuildDemote, name), "GuildDemote"
+end
+
+function Compat.GuildUninvite(name)
+    if not name or not isFunction(_G.GuildUninvite) then return false, "noapi" end
+    return pcall(GuildUninvite, name), "GuildUninvite"
+end
+
+--- Die Raenge der Gilde, Platz 1 = Gildenmeister (rankIndex 0).
+--- @return table|nil { name, ... }
+function Compat.GetGuildRanks()
+    if not isFunction(_G.GuildControlGetNumRanks) or not isFunction(_G.GuildControlGetRankName) then
+        return nil
+    end
+    local ok, count = pcall(GuildControlGetNumRanks)
+    if not ok or type(count) ~= "number" or count <= 0 then return nil end
+    local out = {}
+    for index = 1, count do
+        local okName, name = pcall(GuildControlGetRankName, index)
+        out[index] = (okName and type(name) == "string" and name ~= "") and name or tostring(index)
+    end
+    return out
+end
+
+--- Wie lange ein Mitglied weg ist, in Sekunden. nil = online oder unbekannt.
+function Compat.GetGuildMemberLastOnline(index)
+    if not index or not isFunction(_G.GetGuildRosterLastOnline) then return nil end
+    local ok, years, months, days, hours = pcall(GetGuildRosterLastOnline, index)
+    if not ok or type(hours) ~= "number" then return nil end
+    return ((tonumber(years) or 0) * 365 + (tonumber(months) or 0) * 30 + (tonumber(days) or 0)) * 86400
+        + hours * 3600
+end
+
+--- Oeffnet Blizzards Gildenfenster — je Linie eine andere Funktion.
+--- @return string|nil der Weg, der lief
+function Compat.OpenBlizzardGuildFrame()
+    for _, name in ipairs({ "ToggleGuildFrame", "ToggleCommunitiesFrame" }) do
+        if isFunction(_G[name]) then
+            if pcall(_G[name]) then return name end
+        end
+    end
+    if isFunction(_G.ToggleFriendsFrame) and pcall(ToggleFriendsFrame, 3) then return "ToggleFriendsFrame" end
+    return nil
+end
+
+--- Versteckt Blizzards Gildenfenster wieder — fuer die Umleitung der J-Taste.
+function Compat.HideBlizzardGuildFrame()
+    local geschlossen = false
+    for _, name in ipairs({ "GuildFrame", "CommunitiesFrame" }) do
+        local frame = _G[name]
+        if isTable(frame) and isFunction(frame.IsShown) then
+            local ok, shown = pcall(frame.IsShown, frame)
+            if ok and shown then
+                if isFunction(_G.HideUIPanel) and pcall(HideUIPanel, frame) then geschlossen = true
+                elseif isFunction(frame.Hide) and pcall(frame.Hide, frame) then geschlossen = true end
+            end
+        end
+    end
+    return geschlossen
+end
+
+--- Haengt sich an die Funktionen, die Blizzards Gildenfenster oeffnen.
+--- GEMESSEN 28.09.2026: Der Haken an ToggleGuildFrame allein fing die
+--- J-Taste auf diesem Client nicht — was die Taste ruft, ist je Linie
+--- anders. Darum breiter: mehr Funktionsnamen, und dazu das Fenster
+--- selbst (HookGuildFrameShow), das sich beim Erscheinen meldet, egal
+--- wer es geoeffnet hat.
+--- @return table die Namen der Funktionen, an denen der Haken sitzt
+function Compat.HookGuildFrameToggle(callback)
+    local hooked = {}
+    if not isFunction(_G.hooksecurefunc) then return hooked end
+    for _, name in ipairs({ "ToggleGuildFrame", "ToggleCommunitiesFrame", "GuildFrame_Toggle", "GuildFrame_LoadUI" }) do
+        if isFunction(_G[name]) and pcall(hooksecurefunc, name, callback) then
+            hooked[#hooked + 1] = name
+        end
+    end
+    return hooked
+end
+
+--- Die Namen, unter denen Blizzards Gildenfenster laeuft — je Linie anders.
+local GUILD_FRAMES = { "GuildFrame", "CommunitiesFrame" }
+local guildFrameHooked = {}
+
+--- Haengt sich an das Erscheinen von Blizzards Gildenfenster. Mehrfach
+--- aufrufbar (nach ADDON_LOADED der Blizzard-Module noch einmal): jeder
+--- Rahmen bekommt den Haken genau einmal.
+--- @return table die Namen der Rahmen, die JETZT einen Haken haben
+function Compat.HookGuildFrameShow(callback)
+    local hooked = {}
+    for _, name in ipairs(GUILD_FRAMES) do
+        local frame = _G[name]
+        if isTable(frame) and isFunction(frame.HookScript) and not guildFrameHooked[name] then
+            if pcall(frame.HookScript, frame, "OnShow", callback) then guildFrameHooked[name] = true end
+        end
+        if guildFrameHooked[name] then hooked[#hooked + 1] = name end
+    end
+    return hooked
+end
+
+--- Welche Gildenfenster-Rahmen es gerade gibt — fuer /ga probe.
+function Compat.GuildFrameNames()
+    local names = {}
+    for _, name in ipairs(GUILD_FRAMES) do
+        if isTable(_G[name]) then names[#names + 1] = name end
+    end
+    return names
+end
+
+--- DIE J-TASTE SELBST BELEGEN. Gemessen 28.09.2026: Der Haken am Fenster
+--- schliesst es erst, nachdem es einen Takt lang da war — es blitzt auf.
+--- Eine Override-Belegung der Tasten, die das Spiel fuer TOGGLEGUILDTAB
+--- kennt, laesst Blizzards Fenster gar nicht erst aufgehen: Sie klickt
+--- unseren Knopf. Nicht gespeichert, nicht im Kampf, wieder weg, wenn die
+--- Einstellung aus ist.
+--- @return boolean ok, string weg|grund
+local keyOwner
+function Compat.OverrideGuildKey(buttonName)
+    if not isFunction(_G.SetOverrideBindingClick) or not isFunction(_G.GetBindingKey)
+        or not isFunction(_G.ClearOverrideBindings) then
+        Compat.guildKeyOverride = "noapi"
+        return false, "noapi"
+    end
+    if Compat.InCombat() then return false, "combat" end
+    keyOwner = keyOwner or CreateFrame("Frame", "GuildArmoryGuildKeyOwner")
+    pcall(ClearOverrideBindings, keyOwner)
+    local keys = {}
+    local ok, k1, k2 = pcall(GetBindingKey, "TOGGLEGUILDTAB")
+    if ok then
+        if type(k1) == "string" and k1 ~= "" then keys[#keys + 1] = k1 end
+        if type(k2) == "string" and k2 ~= "" then keys[#keys + 1] = k2 end
+    end
+    if #keys == 0 then
+        Compat.guildKeyOverride = "nokey"
+        return false, "nokey"
+    end
+    local gesetzt = {}
+    for _, key in ipairs(keys) do
+        if pcall(SetOverrideBindingClick, keyOwner, true, key, buttonName) then gesetzt[#gesetzt + 1] = key end
+    end
+    if #gesetzt == 0 then
+        Compat.guildKeyOverride = "failed"
+        return false, "failed"
+    end
+    Compat.guildKeyOverride = table.concat(gesetzt, "+")
+    return true, Compat.guildKeyOverride
+end
+
+function Compat.ClearGuildKeyOverride()
+    if not keyOwner or Compat.InCombat() or not isFunction(_G.ClearOverrideBindings) then return false end
+    pcall(ClearOverrideBindings, keyOwner)
+    Compat.guildKeyOverride = nil
+    return true
+end
+
+--- Die Taste, die das Gildenfenster oeffnet — fuer /ga probe.
+function Compat.GuildFrameKey()
+    if not isFunction(_G.GetBindingKey) then return nil end
+    for _, action in ipairs({ "TOGGLEGUILDTAB", "TOGGLESOCIAL" }) do
+        local ok, key = pcall(GetBindingKey, action)
+        if ok and type(key) == "string" and key ~= "" then return key .. "=" .. action end
+    end
+    return nil
+end
+
+-- ============================================================ Charakterfenster
+
+--- Der Name eines Ausruestungsplatzes in der Sprache des Clients.
+---
+--- Die Tabelle EQUIPMENT_SLOTS oben traegt deutsche Beschriftungen — sie war
+--- fuer die Fehlersuche gedacht, nicht fuer die Anzeige. Das Spiel selbst
+--- hat die Namen in jeder Sprache als globale Zeichenketten (HEADSLOT,
+--- WRISTSLOT, ...). Geprueft wird der Rueckgabewert: eine Zeichenkette, die
+--- nicht leer ist. Alles andere faellt auf die Tabelle zurueck.
+local SLOT_GLOBALS = {
+    [1] = "HEADSLOT", [2] = "NECKSLOT", [3] = "SHOULDERSLOT", [15] = "BACKSLOT",
+    [5] = "CHESTSLOT", [4] = "SHIRTSLOT", [19] = "TABARDSLOT", [9] = "WRISTSLOT",
+    [10] = "HANDSSLOT", [6] = "WAISTSLOT", [7] = "LEGSSLOT", [8] = "FEETSLOT",
+    [11] = "FINGER0SLOT", [12] = "FINGER1SLOT", [13] = "TRINKET0SLOT", [14] = "TRINKET1SLOT",
+    [16] = "MAINHANDSLOT", [17] = "SECONDARYHANDSLOT", [18] = "RANGEDSLOT",
+}
+
+--- Welche Ausruestungsplaetze ein Gegenstand seiner Art nach belegen kann.
+---
+--- Das ist Spieldatum, kein Ratespiel: Der Client nennt fuer jeden
+--- Gegenstand seinen Ausruestungsort (INVTYPE_…), und die Plaetze, die
+--- dazu gehoeren, sind seit Vanilla dieselben. Zwei Eintraege bei Ring,
+--- Schmuck und einhaendigen Waffen — dort gibt es zwei Plaetze, und
+--- welchen jemand tauschen wuerde, weiss nur er.
+local SLOTS_FOR_EQUIPLOC = {
+    INVTYPE_HEAD = { 1 }, INVTYPE_NECK = { 2 }, INVTYPE_SHOULDER = { 3 },
+    INVTYPE_BODY = { 4 }, INVTYPE_CHEST = { 5 }, INVTYPE_ROBE = { 5 },
+    INVTYPE_WAIST = { 6 }, INVTYPE_LEGS = { 7 }, INVTYPE_FEET = { 8 },
+    INVTYPE_WRIST = { 9 }, INVTYPE_HAND = { 10 },
+    INVTYPE_FINGER = { 11, 12 }, INVTYPE_TRINKET = { 13, 14 },
+    INVTYPE_CLOAK = { 15 }, INVTYPE_TABARD = { 19 },
+    INVTYPE_WEAPON = { 16, 17 }, INVTYPE_2HWEAPON = { 16 },
+    INVTYPE_WEAPONMAINHAND = { 16 }, INVTYPE_WEAPONOFFHAND = { 17 },
+    INVTYPE_SHIELD = { 17 }, INVTYPE_HOLDABLE = { 17 },
+    INVTYPE_RANGED = { 18 }, INVTYPE_RANGEDRIGHT = { 18 },
+    INVTYPE_THROWN = { 18 }, INVTYPE_RELIC = { 18 },
+}
+
+--- @return table|nil  Platzkennungen; nil = nicht anlegbar oder unbekannt
+function Compat.SlotsForEquipLoc(equipLoc)
+    if type(equipLoc) ~= "string" then return nil end
+    return SLOTS_FOR_EQUIPLOC[equipLoc]
+end
+
+--- Der Ausruestungsort als Wort in der Sprache des Clients ("Schulter").
+--- Das Spiel haelt die Namen unter dem Ort selbst als globale Zeichenkette.
+--- @return string|nil
+function Compat.EquipLocName(equipLoc)
+    if type(equipLoc) ~= "string" or equipLoc == "" then return nil end
+    local name = _G[equipLoc]
+    if type(name) == "string" and name ~= "" then return name end
+    return nil
+end
+
+--- Was der eigene Charakter an der Stelle traegt, die ein Gegenstand
+--- belegen wuerde: der Platz mit dem NIEDRIGSTEN Itemlevel, denn den
+--- wuerde man tauschen. Ein leerer Platz zaehlt als 0 — und ist die beste
+--- Verbesserung ueberhaupt.
+---
+--- @return table|nil { slotID, link, itemLevel }  nil = kein Platz bekannt
+function Compat.EquippedToReplace(equipLoc)
+    local slots = Compat.SlotsForEquipLoc(equipLoc)
+    if not slots then return nil end
+
+    local bester
+    for _, slotID in ipairs(slots) do
+        local link = Compat.GetEquippedLink("player", slotID)
+        local level = link and Compat.GetItemLevelOf(link) or 0
+        if not bester or level < bester.itemLevel then
+            bester = { slotID = slotID, link = link, itemLevel = level }
+        end
+    end
+    return bester
+end
+
+function Compat.SlotName(slotID)
+    local key = SLOT_GLOBALS[slotID]
+    local name = key and _G[key]
+    if type(name) == "string" and name ~= "" then return name end
+    for _, slot in ipairs(Compat.EQUIPMENT_SLOTS) do
+        if slot.id == slotID then return slot.label end
+    end
+    return tostring(slotID)
+end
+
+--- Welche Einheit traegt diese GUID gerade?
+---
+--- FUER DAS MODELL IN DER MITTE DES CHARAKTERFENSTERS. Ein 3D-Modell laesst
+--- sich nur von einer EINHEIT zeigen — Ziel, Gruppenmitglied, man selbst.
+--- Wer nicht in Reichweite ist, hat keine, und dann gibt es auch kein
+--- Modell: Ein fremdes Modell mit seinen Gegenstaenden anzuziehen zeigte
+--- die falsche Rasse mit dem richtigen Helm, und das ist eine Erfindung.
+---
+--- @return string|nil unitToken
+function Compat.FindUnitByGUID(guid)
+    if not guid or not isFunction(_G.UnitGUID) then return nil end
+
+    local function passt(unit)
+        local ok, wert = pcall(_G.UnitGUID, unit)
+        return ok and Compat.IsReadable(wert) and wert == guid
+    end
+
+    if passt("player") then return "player" end
+    if passt("target") then return "target" end
+    for i = 1, 4 do if passt("party" .. i) then return "party" .. i end end
+    for i = 1, 40 do if passt("raid" .. i) then return "raid" .. i end end
+    return nil
+end
+
+--- Ein Modellrahmen fuer das Charakterfenster, oder nil.
+---
+--- GEPRUEFT AM ERGEBNIS: Der Rahmentyp existiert auf dieser Linie nur, wenn
+--- CreateFrame ihn hergibt UND das Ergebnis SetUnit kann. Beides wird
+--- angesehen, nichts vorausgesetzt.
+--- @return table|nil
+function Compat.CreateDressUpModel(parent)
+    local ok, model = pcall(CreateFrame, "DressUpModel", nil, parent)
+    if not ok or not isTable(model) or not isFunction(model.SetUnit) then return nil end
+    return model
+end
+
+--- Zeigt die Einheit im Modell. Wahr heisst: Der Aufruf lief durch — ob
+--- der Client wirklich etwas zeichnet, sieht nur, wer hinschaut.
+function Compat.ShowUnitInModel(model, unit)
+    if not isTable(model) or not isFunction(model.SetUnit) or not unit then return false end
+    local ok = pcall(model.SetUnit, model, unit)
+    if not ok then return false end
+    -- Von vorn, leicht gedreht: so steht die Figur im Charakterfenster.
+    if isFunction(model.SetFacing) then pcall(model.SetFacing, model, 0.35) end
+    return true
+end
+
+--- Zieht ein Modell an: Rasse, Geschlecht, dann Gegenstand fuer Gegenstand.
+---
+--- FUER JEDEN IN DER GILDE, NICHT NUR FUER DIE IN REICHWEITE (27.09.2026 auf
+--- Ansage: "ja bau das"). Ein Charakter, der in einer anderen Zone steht,
+--- hat keine Einheit — aber er hat eine Rassenkennung, ein Geschlecht und
+--- siebzehn Gegenstandskennungen, alle gemessen, keine geraten. Daraus laesst
+--- sich die Figur zusammensetzen, wie das Ankleidezimmer es tut.
+---
+--- OHNE GESCHLECHT KEIN MODELL. Das Geschlecht wird seit heute mitgeschickt;
+--- ein Datensatz von vorher hat keins. Ihn mit einem geratenen zu zeigen
+--- traefe jeden zweiten Charakter falsch, und "falsch" sieht hier aus wie
+--- "richtig". Dann lieber die Textmitte.
+---
+--- Zwei Aufrufe, die auf dieser Linie ungemessen sind — SetCustomRace und
+--- TryOn — werden beide am Ergebnis geprueft und in der Sonde ausgewiesen.
+---
+--- @return boolean gesetzt, number|string angezogenOderGrund
+function Compat.DressModel(model, raceID, sex, itemIDs)
+    if not isTable(model) then return false, "kein Modell" end
+    if type(raceID) ~= "number" then return false, "Rasse unbekannt" end
+    if sex ~= 2 and sex ~= 3 then return false, "Geschlecht unbekannt" end
+    if not isFunction(model.SetCustomRace) then return false, "SetCustomRace fehlt" end
+
+    -- UnitSex zaehlt 2/3, SetCustomRace 0/1. Zwei Zaehlweisen fuer
+    -- dasselbe, an EINER Stelle uebersetzt.
+    local gender = sex - 2
+    if not pcall(model.SetCustomRace, model, raceID, gender) then
+        return false, "SetCustomRace wirft"
+    end
+    if isFunction(model.Undress) then pcall(model.Undress, model) end
+    if isFunction(model.SetFacing) then pcall(model.SetFacing, model, 0.35) end
+
+    if not isFunction(model.TryOn) then return true, 0 end
+    local angezogen = 0
+    for _, itemID in ipairs(itemIDs or {}) do
+        -- Als Verweiskern, nicht als nackte Zahl: TryOn nimmt auf den
+        -- neueren Linien einen Link, auf den aelteren auch die Zahl — der
+        -- Kern "item:1234" gilt auf beiden.
+        if pcall(model.TryOn, model, "item:" .. tostring(itemID)) then
+            angezogen = angezogen + 1
+        end
+    end
+    return true, angezogen
+end

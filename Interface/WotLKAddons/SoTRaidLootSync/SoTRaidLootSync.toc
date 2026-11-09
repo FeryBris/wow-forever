@@ -1,0 +1,9 @@
+## Interface: 30300
+## Title: |cff69ccf0SoT|r Raid Loot Sync
+## Notes: Captures HeadCount raid exports and RCLootCouncil loot exports for the SoT Launcher to sync to the web (Stalkers of Time members only).
+## Author: Stalkers of Time
+## Version: 1.0.2
+## RequiredDeps: HeadCount, RCLootCouncil
+## SavedVariables: SoTRaidLootSyncDB
+
+SoTRaidLootSync.lua

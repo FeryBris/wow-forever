@@ -1,0 +1,9 @@
+## Interface: 30300
+## Title: |cff69ccf0SoT|r Character Sync
+## Notes: Reports your character to the SoT Guild Launcher (Stalkers of Time members only).
+## Author: Stalkers of Time
+## Version: 1.0.8
+## SavedVariables: SoTCharacterSyncDB
+
+Json.lua
+SoTCharacterSync.lua

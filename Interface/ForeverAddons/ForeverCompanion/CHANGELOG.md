@@ -1,0 +1,488 @@
+# Forever Companion
+
+## [v0.1.1](https://github.com/ShadowlessGT/ForeverCompanion/tree/v0.1.1) (2026-09-30)
+[Full Changelog](https://github.com/ShadowlessGT/ForeverCompanion/commits/v0.1.1) 
+
+- deploy: release v0.1.1  
+- fix: exclude local test launcher from releases  
+- fix: preserve validated package for CurseForge upload  
+- Reduce CurseForge workflow to syntax check and deployment  
+- Stop automatic development CI runner usage  
+- deploy: release v0.1.0  
+- Promote v0.1.0 stable candidate  
+    Merge the validated development polish into the Forever release branch. Deployment remains separate and will be triggered only after switching the release channel to stable.  
+- Finish stable status presentation polish  
+- Localize discovery mode labels in runtime UI  
+- Localize discovery mode labels in runtime UI  
+- Polish status indicators for stable UI  
+- Clarify account profession goal ownership  
+- Clarify account profession goal ownership  
+- Show profession goal owner context  
+- deploy: beta v0.1.0-beta.5  
+- Gate Forever-only milestones on confirmed capabilities  
+- Validate Windows test runner syntax in CI  
+- Document local Windows WoW mock testing  
+- Add double-click Windows test launcher  
+- Add local Windows addon test runner  
+- Align feature drawer dependencies with guarded views  
+- Keep non-toggle core modules recoverable  
+- Preserve crafting goals across empty target caches  
+- Support cache-independent crafting goal imports  
+- Require verified complete Legacy snapshots  
+- Harden group travel roster reads  
+- Harden group context against restricted unit values  
+- Respect camp capability in profession planner  
+- Preserve profession data on incomplete API scans  
+- Preserve profession caches on partial API reads  
+- Require complete bank tab snapshots before cache updates  
+- Require complete bag snapshots before cache updates  
+- Fail closed when camp capability is unavailable  
+- Gate camp aura data on Forever capability  
+- Harden milestone dependency and locale semantics  
+- Respect module state in global search  
+- Refresh companion data when opening from minimap  
+- Make login summary navigation deterministic  
+- Isolate public suggestion providers  
+- Isolate and sanitize recipe source providers  
+- Isolate and sanitize travel route providers  
+- Localize suggestion action labels in German  
+- Localize suggestion action labels  
+- Route suggestions to exact companion targets  
+- Attach Legacy challenge targets to suggestions  
+- Preserve Journey suggestion navigation metadata  
+- Group Travel Routes under Adventure settings  
+- Expose Travel Routes recovery toggle  
+- Add regression coverage for audited failures  
+- Make planning imports idempotent  
+- Localize cached character profession labels  
+- Fix paged collection labels and hidden actions  
+- Normalize crafting goal quantities  
+- Harden journey quest snapshot records  
+- Harden dungeon suggestion API reads  
+- Harden item intelligence restricted values  
+- Calculate partial Legacy criteria progress safely  
+- Harden map and taxi adapter values  
+- Preserve bank cache on storage API failures  
+- Preserve inventory cache on API read failure  
+- Harden container and profession API fallbacks  
+- Use account profession progress for account-wide goals  
+- Hook command extensions before slash registration  
+- Expose slash handler hook and fix goal toggle feedback  
+- Surface database and module runtime failures in self-check  
+- Localize and disambiguate group suggestions  
+- Localize group suggestion messages in German  
+- Localize group suggestion messages  
+- Defer provider refreshes until built-in modules settle  
+- Respect source module toggles in Journey engine  
+- Make planning transfer roundtrip lossless and backward compatible  
+- Harden numeric goal input initialization  
+- Guard optional feature drawer region iteration  
+- Expose preparation module consistently  
+- Expose professions module consistently  
+- Run headless runtime smoke test in CI  
+- Add headless Lua runtime smoke test  
+- Track module initialization failures correctly  
+- Harden database migration failure handling  
+- deploy: beta v0.1.0-beta.4  
+- Merge development UI polish for beta.4  
+- Shorten German journey status copy  
+- Shorten journey status copy for compact layout  
+- Polish travel and journey dialog layout  
+- Group anonymous Explorer travel suggestions  
+- Deduplicate aggregated travel discovery suggestions  
+- Exclude symbol font documentation from releases  
+- Package optional symbol fonts in development builds  
+- Load graphical status polish  
+- Replace text status glyphs with UI indicators  
+- Fix Lua 5.1 syntax in account recipes  
+- Load persistent localization UX  
+- Render persistent system records in selected locale  
+- Render structured milestones in selected locale  
+- Load display localization and symbol UX  
+- Preserve cache age in runtime localization  
+- Complete German runtime display localization keys  
+- Complete runtime display localization keys  
+- Localize and dedupe Journey profession opportunities  
+- Prioritize checklist and status UI assets  
+- Document language-neutral cache migration  
+- Add localization audit plan  
+- Document optional Companion symbol font  
+- Render cached runtime names in selected addon language  
+- Refresh runtime data after language changes  
+- Deduplicate semantically equivalent suggestions  
+- Localize structured goals and dedupe profession suggestions  
+- Localize cached class and profession names in search  
+- Localize profession planner display names  
+- Render account professions in addon locale  
+- Render profession suggestions in addon locale  
+- Replace fragile Unicode UI glyphs  
+- Add resilient UI symbol layer  
+- Add German display localization  
+- Add language-neutral display localization  
+- Add locale-aware class and profession display names  
+- Recognize Retail UI test runtime in diagnostics  
+- Fix live UI overlaps from Retail testing  
+- Load visual layout fixes  
+- Polish dashboard layout from Retail UI test  
+- Fix minimap button placement and icon framing  
+- deploy: beta v0.1.0-beta.3  
+- Merge development for v0.1.0-beta.3  
+- Ignore Visual Studio local workspace files  
+- Audit raw player feedback in validation  
+- Localize camp finder status feedback  
+- Localize crafting goal validation feedback  
+- Localize recipe source validation feedback  
+- Localize preparation checklist validation feedback  
+- Localize travel route validation feedback  
+- Localize goal validation feedback  
+- Localize German normal form validation messages  
+- Localize normal form validation messages  
+- Load daily workflow localization  
+- Harden daily localization planner fallback  
+- Localize camp item and profession planner live views  
+- Localize item intelligence errors  
+- Localize German item intelligence errors  
+- Localize item intelligence errors  
+- Localize profession goal and camp finder feedback  
+- Localize German camp finder status  
+- Localize camp finder status  
+- Localize profession planner stages  
+- Add German camp item and profession planner locale copy  
+- Add camp item and profession planner locale copy  
+- Load recipe source display localization  
+- Localize recipe source dynamic display  
+- Localize German recipe source dynamic copy  
+- Localize recipe source dynamic copy  
+- Localize milestone summary and empty state  
+- Localize planning import validation error  
+- Localize planning transfer feedback  
+- Localize cache manager live content  
+- Localize German cache transfer and milestone utility copy  
+- Localize cache transfer and milestone utility copy  
+- Load utility locales and polish copy  
+- Localize utility window explanatory copy  
+- Add German utility window explanatory copy  
+- Add utility window explanatory copy  
+- Localize account recipe matrix paging  
+- Localize German account recipe matrix copy  
+- Localize account recipe matrix copy  
+- Load account dashboard locales  
+- Localize character account dashboard rows  
+- Add German account dashboard locale copy  
+- Add account dashboard locale copy  
+- Load checklist localization and search navigation UX  
+- Route search results to their exact data page  
+- Localize preparation checklist display  
+- Use localized preparation checklist labels in search  
+- Localize seeded preparation checklist safely  
+- Localize German preparation checklist defaults and suggestion  
+- Localize preparation checklist defaults and suggestion  
+- Localize Journey kinds and group level rows  
+- Localize German group member level line  
+- Localize group member level line  
+- Localize collection paging states  
+- Localize German shared status and category labels  
+- Localize shared status and category labels  
+- Refresh localized Global Search chrome  
+- Complete Global Search localization  
+- Use localized labels in inline search  
+- Localize search result metadata  
+- Add German search result copy  
+- Add localized search result copy  
+- Validate feature drawer navigation targets  
+- Localize personal goal suggestion fallback  
+- Localize milestone copy  
+- Localize dungeon suggestions  
+- Localize Journey opportunities  
+- Localize Travel suggestions  
+- Localize Camp suggestions  
+- Localize Legacy suggestions  
+- Localize crafting goal suggestions  
+- Localize profession suggestions  
+- Localize preparation suggestions  
+- Load localized suggestion copy  
+- Add German suggestion and milestone locale strings  
+- Add English suggestion and milestone locale strings  
+- Exclude image asset plan from release packages  
+- Exclude image documentation from development packages  
+- Point image documentation to focused asset plan  
+- Add UX readiness audit and beta acceptance criteria  
+- Harden navigation wrapper closures for Lua 5.1  
+- Use localized travel rendezvous copy  
+- Localize German travel rendezvous text  
+- Localize travel rendezvous text  
+- Load responsive navigation UX layer  
+- Clean responsive navigation helper  
+- Add responsive single-window companion navigation  
+- Localize inline companion search feedback  
+- Localize login summary UX  
+- Localize minimap interaction tooltip  
+- Localize grouped settings UX  
+- Add German UX polish locale strings  
+- Add UX polish locale strings  
+- Add focused image asset plan for UX and branding  
+- Enforce reviewed UI chat fallbacks in validation  
+- Load release polish UX layer  
+- Keep crafting-goal feedback inside the UI  
+- Add German crafting-goal feedback locale  
+- Add crafting-goal inline feedback locale  
+- Consolidate legacy Hub into Features drawer  
+- Audit locale usage and UI chat output in validation  
+- Localize Legacy progress and goal text  
+- Use locale keys for dynamic context paging text  
+- Add German dynamic context translations  
+- Localize dynamic travel journey group and Legacy text  
+- Update roadmap for completed validation and paging work  
+- Load runtime self-check diagnostics  
+- Add runtime self-check diagnostics  
+- Refresh runtime test plan for current development build  
+- Load Legacy and context paging UX  
+- Add paging to travel journey and group context  
+- Complete Legacy tracker UI workflow  
+- Add German Legacy localization to feature windows  
+- Add Legacy localization to feature windows  
+- Load paging for growing companion collections  
+- Add paging to growing companion collections  
+- Load feature localization and feedback layers  
+- Keep feature actions out of chat  
+- Localize remaining feature windows  
+- Add German localization for feature windows  
+- Add English localization for feature windows  
+- Validate addon before CurseForge release packaging  
+- Exclude development validation tools from addon package  
+- Validate addon before development packaging  
+- Add static addon structure validator  
+- Load utility localization extensions  
+- Localize inline form feedback  
+- Localize primary companion utility windows  
+- Add German localization for companion utility windows  
+- Add English localization for companion utility windows  
+- Load primary UI localization layer  
+- Localize primary companion UI dynamically  
+- Expand German localization for primary UI  
+- Expand English localization for primary UI  
+- Load account recipe paging UX  
+- Add paging to account recipe matrix  
+- Load account character paging UX  
+- Add paging to account character dashboard  
+- Load recipe source paging UX  
+- Add paging to recipe source browser  
+- Load expanded search navigation  
+- Connect quick search to full result browser  
+- Add paginated full companion search UI  
+- Update roadmap for UI-first development state  
+- Load extended diagnostics  
+- Extend diagnostics for new planning systems  
+- Load grouped settings UX  
+- Group module settings for clearer UX  
+- Remove duplicate settings module toggles  
+- Improve cache manager UI feedback and coverage  
+- Show recipe source notes in planning transfer UI  
+- Include recipe source notes in planning transfer  
+- Route disabled modules through settings UI  
+- Define UI-first product direction  
+- Harden recipe source UI lookups  
+- Harden recipe source cache lookup  
+- Search recipe source metadata from main UI  
+- Keep primary navigation out of chat  
+- Load inline form feedback  
+- Move form feedback from chat into UI  
+- Enable UI-first recipe source library  
+- Expose recipe source providers  
+- Connect recipe sources to profession UI  
+- Expose recipe sources module in settings  
+- Localize recipe sources in German  
+- Localize recipe source module  
+- Persist recipe source library  
+- Bump database for recipe source library  
+- Add UI-first recipe source library  
+- Load actionable dashboard suggestions  
+- Make dashboard suggestions actionable  
+- Clean legacy header actions for UI-first layout  
+- Load minimap UI workflow  
+- Make minimap launcher UI-first  
+- Load primary UI-first companion workflow  
+- Make primary companion workflow UI-first  
+- Add extensible profession recipe source library  
+- Add global companion search shortcut  
+- Expose global search in companion hub  
+- Load global companion search  
+- Analyze item immediately when opened from search  
+- Add global companion search UI  
+- Add global companion search index  
+- Refresh travel context when route library changes  
+- Surface relevant saved routes in Journey  
+- Connect saved travel routes to live travel context  
+- Add planning transfer shortcut  
+- Expose planning transfer in companion hub  
+- Load planning data transfer tools  
+- Add planning data transfer UI  
+- Add planning data export and import  
+- Reflect module state in companion hub  
+- Honor module visibility across UI  
+- Respect module toggles across companion UI  
+- Harden runtime module disable lifecycle  
+- Persist travel route library  
+- Bump database schema for travel routes  
+- Add travel route library shortcut  
+- Load extensible travel route library  
+- Expose travel route providers through public API  
+- Add travel route library UI  
+- Add extensible travel route registry  
+- Add smart suggestion shortcut  
+- Expose smart suggestions in companion hub  
+- Load smart suggestion manager  
+- Add smart suggestion manager UI  
+- Persist suggestion snooze state  
+- Bump database schema for suggestion controls  
+- Add suggestion snooze and goal actions  
+- Load companion command shortcuts  
+- Add slash shortcuts for expanded companion tools  
+- Load account cache manager  
+- Update roadmap to full development feature set  
+- Add cache manager to companion hub  
+- Add safe account cache manager  
+- Add Legacy challenge planning and pinning  
+- Load central companion hub  
+- Add central companion tools hub  
+- Load extended settings controls  
+- Expose recipe matrix and preparation checklist modules  
+- Load campsite finder compatibility layer  
+- Localize expanded module settings in German  
+- Localize expanded module settings  
+- Add campsite finder bridge and host kit status  
+- Expose expanded modules in settings  
+- Persist expanded module defaults  
+- Add optional non-invasive camp finder compatibility  
+- Bump database schema for expanded modules  
+- Separate Cooking campfire hosting kits from camp objects  
+- Load account recipe matrix  
+- Add account recipe matrix UI  
+- Add account recipe matrix module  
+- Load personal preparation checklist  
+- Add personal preparation checklist UI  
+- Add personal preparation checklist module  
+- Present implemented companion status in Journey dashboard  
+- Load account character dashboard  
+- Add account character dashboard  
+- Replace stale preparation roadmap text with live companion state  
+- Describe crafting material cache as account storage  
+- Tie dungeon opportunities to Journey module state  
+- Preserve Profession Planner error details  
+- Show complete camp profession catalog and blueprint state  
+- Load Travel meeting point UI extension  
+- Show group rendezvous helper in Travel UI  
+- Add group meeting point helper  
+- Resolve learned camp blueprints from recipe cache  
+- Refresh external suggestion providers on context changes  
+- Make camp profession matching resilient  
+- Wire dungeon, login summary and integration layers  
+- Expose login summary toggle in settings  
+- Add login summary module  
+- Add compact login suggestion summary UI  
+- Add level-appropriate dungeon opportunities  
+- Add Forever-compatible dungeon opportunity API  
+- Synchronize dashboard status with implemented modules  
+- Load complete companion module stack  
+- Respect runtime Legacy module disable state  
+- Expand German module localization  
+- Expand English module localization  
+- Expose extended modules in settings  
+- Complete schema defaults for extended modules  
+- Add public suggestion provider API  
+- Add profession planner UI  
+- Add data-driven profession progression planner  
+- Add account milestones UI  
+- Add account milestone tracker  
+- Add Group Preparation UI  
+- Implement group preparation summary module  
+- Add Item Intelligence UI  
+- Implement contextual Item Intelligence module  
+- Add Item Intelligence API wrapper  
+- Wire companion modules into events and slash commands  
+- Add schema defaults for new companion modules  
+- Advance database schema for companion modules  
+- Add settings and module control UI  
+- Add German localization baseline  
+- Add English localization baseline  
+- Add localization core  
+- Add runtime module enable and disable controls  
+- Add Goals and Pins UI  
+- Add general account goal and pin system  
+- Expand account item cache with bank storage  
+- Add capability-gated bank storage API  
+- Preserve map and player names in travel snapshots  
+- Add Journey Companion UI  
+- Implement contextual Journey opportunity engine  
+- Add Journey quest API layer  
+- Add Travel Companion UI  
+- Implement travel companion module  
+- Add travel and flight point API layer  
+- Add Camp Companion UI  
+- Implement camp companion module  
+- Add camp capability and rested XP API wrapper  
+- Add verified Forever camp feature data  
+- deploy: beta v0.1.0-beta.2  
+- Merge development for v0.1.0-beta.2  
+    Sync Legacy tracking, diagnostics, packaging cleanup and current beta documentation into the release branch. This merge is not a deployment trigger.  
+- Add implementation status roadmap  
+- Document verified Legacy achievement integration  
+- Expand beta test plan for Legacy and diagnostics  
+- Keep development packages install-clean  
+- Wire Legacy tracker and diagnostics into addon  
+- Add copyable diagnostics window  
+- Add Legacy tracker UI  
+- Add Legacy challenge tracker module  
+- Add Forever Legacy achievement capability layer  
+- deploy: beta v0.1.0-beta.1  
+- Configure CurseForge project ID  
+- deploy: beta v0.1.0-beta.1  
+- Allow CurseForge project ID from TOC  
+- Allow CurseForge project ID from TOC  
+- Exclude image documentation from release package  
+- Exclude image documentation from release package  
+- deploy: beta v0.1.0-beta.1  
+- Fix tagged packaging on release branch  
+- Fix tagged packaging on release branch  
+- deploy: beta v0.1.0-beta.1  
+- Harden Forever release packaging  
+- Harden Forever release packaging  
+- Sync minimap fixes for first beta  
+    Include the corrected PNG texture path and slash command for showing, hiding, or toggling the minimap launcher. This sync does not trigger a CurseForge upload.  
+- Add minimap visibility command  
+- Fix minimap PNG texture path  
+- deploy: beta v0.1.0-beta.1  
+    Publish the first Forever Companion beta with the styled dashboard, account/character cache, profession tracking, crafting goals and shopping lists, inventory search, preparation checks, discovery modes, smart suggestions, shared image assets, and the minimap launcher.  
+- Use Forever-capable CurseForge packager revision  
+- Add minimap launcher and shared image assets  
+    Bring the complete Images tree from main into development, add the Forever Companion minimap icon with tooltip, left/right/middle click shortcuts and draggable positioning, and include image assets in development ZIP builds.  
+- Expand preparation checks for Hearthstone and Hunter ammo  
+    Use verified Forever item metadata to cache item class IDs, detect projectile counts without hardcoded ammo lists, surface Hunter ammo warnings, and show Hearthstone/ammo state in the styled Preparation view.  
+- Add styled dashboard and crafting goals  
+    Introduce a native WoW blue/gold theme inspired by the approved Forever Companion mockups, replace the single-page prototype with functional Overview, Professions, Inventory, Preparation and Journey tabs, add click-to-track crafting goals and account-aware shopping lists from verified Forever recipe schematics, expose Discovery Mode controls, and bump the database schema for account-wide crafting goals.  
+- Document development ZIP and Forever packager requirement  
+- Build deterministic development ZIP  
+- Use Forever-capable packager revision  
+- Collect development ZIP before artifact upload  
+- Keep hidden release ZIP artifacts  
+- Fix development ZIP artifact upload  
+- Add account inventory cache and development packages  
+    Cache current bag contents per character, rebuild an account-wide item index, add item/character lookup commands and account character dashboard rows, and package every development push as a downloadable ZIP without uploading to CurseForge.  
+- Add profession recipe cache and account summary  
+    Capture recipe lists from the current profession window, persist learned recipe ownership per character, expose recipe capability diagnostics, and surface account/recipe cache information in the MVP dashboard.  
+- Harden Forever compatibility wrappers  
+    Preserve professions across nil gaps returned by GetProfessions and guard durability arithmetic so restricted or unavailable values degrade safely.  
+- Build first Forever Companion MVP  
+    Add the modular core, database migrations, capability wrappers, suggestion engine, character and profession scanners, preparation checks, dashboard UI, diagnostics commands, API research notes and tester plan on the development branch.  
+- Initialize release branch and CurseForge deployment  
+    Merge the initial Forever Companion foundation, project documentation and controlled CurseForge deployment workflow into the release branch. This merge is not a deployment trigger.  
+- docs: record initial Forever and packaging research  
+- build: ignore local packaging output and env files  
+- docs: add Forever Companion project handover  
+- docs: document development and CurseForge release flow  
+- feat: add minimal addon bootstrap  
+- feat: add initial WoW Forever addon manifest  
+- build: configure addon packaging  
+- build: add release channel configuration  
+- ci: add controlled CurseForge deployment workflow  
+- Initial commit  

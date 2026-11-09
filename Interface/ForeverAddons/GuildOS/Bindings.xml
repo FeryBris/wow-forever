@@ -1,0 +1,9 @@
+<Bindings>
+    <!--
+        One binding, unbound by default: open or close the Guild OS window.
+        Assign a key under Key Bindings, AddOns, in the Guild OS section.
+    -->
+    <Binding name="GUILDOS_TOGGLE" header="GUILDOS" category="ADDONS">
+        BRutus:ToggleRoster()
+    </Binding>
+</Bindings>

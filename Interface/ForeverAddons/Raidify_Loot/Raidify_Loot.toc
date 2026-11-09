@@ -1,0 +1,26 @@
+## Interface: 11508, 11509, 11510
+## Title: |cFFEAB444Raidify|r Loot
+## Notes: |cFF7F888BLoot council sessions for Raidify: drop detection, candidate cards, and a session record you can send back to raidify.app|r
+## Author: Raidify Team
+## Version: 0.2.5
+## Dependencies: Raidify
+## SavedVariables: RaidifyLootDB
+## X-Website: https://raidify.app
+## X-Category: Raid
+
+# No libraries here on purpose: `## Dependencies: Raidify` guarantees the core
+# addon has already loaded LibStub and Ace3, and loading a second copy would
+# fight core over the shared LibStub registry.
+
+# The boundary first — it self-disables the rest if core is missing or the API
+# version does not match, so nothing below ever runs against a core it cannot use.
+LootCore.lua
+
+Loot.lua
+LootWindow.lua
+LootPage.lua
+LootTestData.lua
+LootTrade.lua
+LootReport.lua
+LootSync.lua
+LootSession.lua
