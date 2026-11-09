@@ -13,8 +13,8 @@ SoTCharacterSyncDB = {
 ["waited"] = {
 ["TIME_PLAYED_MSG"] = {
 ["payload"] = {
-177378,
-19151,
+177582,
+19355,
 },
 ["fired"] = true,
 },
@@ -1325,10 +1325,10 @@ SoTCharacterSyncDB = {
 },
 ["meta"] = {
 ["character"] = "Blue",
-["addonVersion"] = "0.2.0",
-["finishedAt"] = 1794221157,
+["addonVersion"] = "0.3.0",
+["finishedAt"] = 1794221362,
 ["build"] = "1.60.1.70862",
-["startedAt"] = 1794221157,
+["startedAt"] = 1794221361,
 ["realm"] = "CAMWOW EU5 Realm 4 PvP",
 },
 ["bags"] = {
@@ -1811,7 +1811,7 @@ false,
 "number",
 },
 ["values"] = {
-2744,
+2758,
 },
 ["api"] = "GetXPExhaustion",
 },
@@ -10806,7 +10806,7 @@ true,
 1051,
 true,
 0,
-323,
+528,
 },
 ["api"] = "GetAchievementCriteriaInfo",
 ["types"] = {
@@ -11997,7 +11997,7 @@ nil,
 111541,
 true,
 0,
-313589,
+313794,
 },
 ["api"] = "GetAchievementCriteriaInfo",
 ["types"] = {
@@ -12094,7 +12094,7 @@ nil,
 111541,
 true,
 0,
-313589,
+313794,
 },
 ["api"] = "GetAchievementCriteriaInfo",
 ["types"] = {
@@ -12191,7 +12191,7 @@ nil,
 111541,
 true,
 0,
-313589,
+313794,
 },
 ["api"] = "GetAchievementCriteriaInfo",
 ["types"] = {
@@ -12859,7 +12859,7 @@ true,
 1335,
 true,
 0,
-323,
+528,
 },
 ["api"] = "GetAchievementCriteriaInfo",
 ["types"] = {
@@ -13236,7 +13236,7 @@ true,
 930,
 true,
 0,
-323,
+528,
 },
 ["api"] = "GetAchievementCriteriaInfo",
 ["types"] = {
@@ -13275,7 +13275,7 @@ true,
 928,
 true,
 0,
-323,
+528,
 },
 ["api"] = "GetAchievementCriteriaInfo",
 ["types"] = {
@@ -13314,7 +13314,7 @@ true,
 929,
 true,
 0,
-323,
+528,
 },
 ["api"] = "GetAchievementCriteriaInfo",
 ["types"] = {
@@ -13353,7 +13353,7 @@ true,
 919,
 true,
 0,
-323,
+528,
 },
 ["api"] = "GetAchievementCriteriaInfo",
 ["types"] = {
@@ -13392,7 +13392,7 @@ true,
 918,
 true,
 0,
-323,
+528,
 },
 ["api"] = "GetAchievementCriteriaInfo",
 ["types"] = {
@@ -13975,7 +13975,7 @@ true,
 828,
 true,
 0,
-323,
+528,
 },
 ["api"] = "GetAchievementCriteriaInfo",
 ["types"] = {
@@ -14051,7 +14051,7 @@ true,
 827,
 true,
 0,
-323,
+528,
 },
 ["api"] = "GetAchievementCriteriaInfo",
 ["types"] = {
@@ -14090,7 +14090,7 @@ true,
 831,
 true,
 0,
-323,
+528,
 },
 ["api"] = "GetAchievementCriteriaInfo",
 ["types"] = {
@@ -14129,7 +14129,7 @@ true,
 822,
 true,
 0,
-323,
+528,
 },
 ["api"] = "GetAchievementCriteriaInfo",
 ["types"] = {
@@ -15293,7 +15293,7 @@ true,
 911,
 true,
 0,
-323,
+528,
 },
 ["api"] = "GetAchievementCriteriaInfo",
 ["types"] = {
@@ -16024,7 +16024,7 @@ true,
 1356,
 true,
 0,
-323,
+528,
 },
 ["api"] = "GetAchievementCriteriaInfo",
 ["types"] = {
@@ -16137,7 +16137,7 @@ true,
 1350,
 true,
 0,
-323,
+528,
 },
 ["api"] = "GetAchievementCriteriaInfo",
 ["types"] = {
@@ -16176,7 +16176,7 @@ true,
 1351,
 true,
 0,
-323,
+528,
 },
 ["api"] = "GetAchievementCriteriaInfo",
 ["types"] = {
@@ -19550,7 +19550,7 @@ nil,
 19213,
 true,
 0,
-229309,
+229514,
 },
 ["api"] = "GetAchievementCriteriaInfo",
 ["types"] = {
@@ -19589,7 +19589,7 @@ nil,
 116049,
 true,
 0,
-87176,
+87381,
 },
 ["api"] = "GetAchievementCriteriaInfo",
 ["types"] = {
@@ -19628,7 +19628,7 @@ nil,
 18524,
 true,
 0,
-137851,
+138056,
 },
 ["api"] = "GetAchievementCriteriaInfo",
 ["types"] = {
@@ -22538,7 +22538,108 @@ false,
 },
 },
 ["pvp"] = {
+["isPvp"] = {
+["values"] = {
+false,
+},
+["api"] = "UnitIsPVP",
+["types"] = {
+"boolean",
+},
+["args"] = {
+"player",
+},
+["n"] = 1,
+},
+["honorCurrency"] = {
+["values"] = {
 {
+["canEarnPerWeek"] = false,
+["description"] = "Honor is gained by killing members of the opposite faction in PvP combat. You can use honor points to purchase special items.",
+["isShowInBackpack"] = false,
+["isAccountTransferable"] = false,
+["iconFileID"] = 2173920,
+["isHeader"] = false,
+["isTypeUnused"] = false,
+["discovered"] = false,
+["currencyListDepth"] = 0,
+["trackedQuantity"] = 0,
+["maxQuantity"] = 25000,
+["isAccountWide"] = false,
+["quantityEarnedThisWeek"] = 0,
+["isHeaderExpanded"] = false,
+["isTradeable"] = false,
+["useTotalEarnedForMaxQty"] = false,
+["currencyID"] = 1792,
+["totalEarned"] = 0,
+["quantity"] = 0,
+["name"] = "Honor Points",
+["maxWeeklyQuantity"] = 0,
+["quality"] = 1,
+["rechargingAmountPerCycle"] = 0,
+["transferPercentage"] = 0,
+["rechargingCycleDurationMS"] = 0,
+},
+},
+["api"] = "C_CurrencyInfo.GetCurrencyInfo",
+["types"] = {
+"table",
+},
+["args"] = {
+1792,
+},
+["n"] = 1,
+},
+["trainingGroundsEnabled"] = {
+["n"] = 1,
+["types"] = {
+"boolean",
+},
+["values"] = {
+true,
+},
+["api"] = "C_PvP.AreTrainingGroundsEnabled",
+},
+["inspectHonor"] = {
+["n"] = 9,
+["types"] = {
+"number",
+"number",
+"number",
+"number",
+"number",
+"number",
+"number",
+"number",
+"number",
+},
+["values"] = {
+6,
+0,
+7,
+0,
+31,
+0,
+0,
+0,
+750,
+},
+["api"] = "GetInspectHonorData",
+},
+["pvpName"] = {
+["values"] = {
+"Blue Black",
+},
+["api"] = "UnitPVPName",
+["types"] = {
+"string",
+},
+["args"] = {
+"player",
+},
+["n"] = 1,
+},
+["lifetime"] = {
 ["n"] = 2,
 ["types"] = {
 "number",
@@ -22550,7 +22651,70 @@ false,
 },
 ["api"] = "GetPVPLifetimeStats",
 },
+["yesterday"] = {
+["n"] = 2,
+["types"] = {
+"number",
+"number",
+},
+["values"] = {
+0,
+0,
+},
+["api"] = "GetPVPYesterdayStats",
+},
+["honorMax"] = {
+["values"] = {
+5500,
+},
+["api"] = "UnitHonorMax",
+["types"] = {
+"number",
+},
+["args"] = {
+"player",
+},
+["n"] = 1,
+},
+["randomBG"] = {
+["n"] = 1,
+["types"] = {
+"table",
+},
+["values"] = {
 {
+["bgIndex"] = 1,
+["minLevel"] = 10,
+["canQueue"] = true,
+["hasRandomWinToday"] = false,
+["maxLevel"] = 60,
+["bgID"] = 32,
+["name"] = "",
+},
+},
+["api"] = "C_PvP.GetRandomBGInfo",
+},
+["uiSeason"] = {
+["n"] = 1,
+["types"] = {
+"number",
+},
+["values"] = {
+1,
+},
+["api"] = "C_PvP.GetUIDisplaySeason",
+},
+["numBattlegroundTypes"] = {
+["n"] = 1,
+["types"] = {
+"number",
+},
+["values"] = {
+3,
+},
+["api"] = "GetNumBattlegroundTypes",
+},
+["honor"] = {
 ["values"] = {
 0,
 },
@@ -22563,7 +22727,17 @@ false,
 },
 ["n"] = 1,
 },
-{
+["seasonEnd"] = {
+["n"] = 1,
+["types"] = {
+"number",
+},
+["values"] = {
+0,
+},
+["api"] = "C_SeasonInfo.GetTimeUntilCurrentPVPSeasonEnd",
+},
+["honorLevel"] = {
 ["values"] = {
 1,
 },
@@ -22575,6 +22749,401 @@ false,
 "player",
 },
 ["n"] = 1,
+},
+["trainingGroundBGWinToday"] = {
+["n"] = 1,
+["types"] = {
+"boolean",
+},
+["values"] = {
+false,
+},
+["api"] = "C_PvP.HasRandomTrainingGroundBGWinToday",
+},
+["canShowHK"] = {
+["n"] = 1,
+["types"] = {
+"boolean",
+},
+["values"] = {
+true,
+},
+["api"] = "C_PvP.CanDisplayHonorableKills",
+},
+["battlegrounds"] = {
+{
+["values"] = {
+{
+["mapID"] = 489,
+["battlegroundID"] = 2,
+["isRandom"] = false,
+["gameType"] = "",
+["mapDescription"] = "A valley bordering Ashenvale Forest and the Barrens, Warsong Gulch hosts a constant battle between the Horde and the Alliance. Orcs use their Warsong Mill to cut lumber reaped from Ashenvale, provoking the night elves of Silverwing Hold. Eager to aid their allies, members of every race in Azeroth rush to the Gulch to lend sword, or spell, to the conflict.",
+["shortDescription"] = "A valley bordering Ashenvale Forest and the Barrens, Warsong Gulch hosts a constant battle between the Horde and the Alliance. Orcs use their Warsong Mill to cut lumber reaped from Ashenvale, provoking the night elves of Silverwing Hold. Eager to aid their allies, members of every race in Azeroth rush to the Gulch to lend sword, or spell, to the conflict.",
+["isTrainingGround"] = false,
+["name"] = "Warsong Gulch",
+["canEnter"] = false,
+["longDescription"] = "A valley bordering Ashenvale Forest and the Barrens, Warsong Gulch hosts a constant battle between the Horde and the Alliance. Orcs use their Warsong Mill to cut lumber reaped from Ashenvale, provoking the night elves of Silverwing Hold. Eager to aid their allies, members of every race in Azeroth rush to the Gulch to lend sword, or spell, to the conflict.",
+["isHoliday"] = false,
+["maxPlayers"] = 10,
+},
+},
+["api"] = "C_PvP.GetBattlegroundInfo",
+["types"] = {
+"table",
+},
+["args"] = {
+1,
+},
+["n"] = 1,
+},
+{
+["values"] = {
+{
+["mapID"] = 529,
+["battlegroundID"] = 3,
+["isRandom"] = false,
+["gameType"] = "",
+["mapDescription"] = "The Arathi Basin is one of the main staging points of war between the Humans and the Forsaken in Azeroth. The League of Arathor seek to reclaim lost lands for their benefactors in Stormwind, while the Defilers – elite troopers under the watchful eye of Varimathras – seek to sever the vital connection between the Humans and their Dwarven allies to the south.",
+["shortDescription"] = "The Arathi Basin is one of the main staging points of war between the Humans and the Forsaken in Azeroth. The League of Arathor seek to reclaim lost lands for their benefactors in Stormwind, while the Defilers – elite troopers under the watchful eye of Varimathras – seek to sever the vital connection between the Humans and their Dwarven allies to the south.",
+["isTrainingGround"] = false,
+["name"] = "Arathi Basin",
+["canEnter"] = false,
+["longDescription"] = "The Arathi Basin is one of the main staging points of war between the Humans and the Forsaken in Azeroth. The League of Arathor seek to reclaim lost lands for their benefactors in Stormwind, while the Defilers – elite troopers under the watchful eye of Varimathras – seek to sever the vital connection between the Humans and their Dwarven allies to the south.",
+["isHoliday"] = false,
+["maxPlayers"] = 15,
+},
+},
+["api"] = "C_PvP.GetBattlegroundInfo",
+["types"] = {
+"table",
+},
+["args"] = {
+2,
+},
+["n"] = 1,
+},
+{
+["values"] = {
+{
+["mapID"] = 2997,
+["battlegroundID"] = 1157,
+["isRandom"] = false,
+["gameType"] = "",
+["mapDescription"] = "Off the coast of Kalimdor are the ceremonial islands of the Darkspear tribe.",
+["shortDescription"] = "Capture the objectives",
+["isTrainingGround"] = false,
+["name"] = "Darkspear Islands",
+["icon"] = 462827,
+["longDescription"] = "Off the coast of Kalimdor are the storm-torn islands of the Darkspear tribe. These islands are coveted by the trolls for their spiritual significance - but the encroaching Alliance seek to gain a foothold off the coast of Durotar.",
+["canEnter"] = false,
+["isHoliday"] = false,
+["maxPlayers"] = 15,
+},
+},
+["api"] = "C_PvP.GetBattlegroundInfo",
+["types"] = {
+"table",
+},
+["args"] = {
+3,
+},
+["n"] = 1,
+},
+},
+["trainingGrounds"] = {
+["n"] = 1,
+["types"] = {
+"table",
+},
+["values"] = {
+{
+},
+},
+["api"] = "C_PvP.GetTrainingGrounds",
+},
+["majorFactions"] = {
+["idsNoArg"] = {
+["n"] = 1,
+["types"] = {
+"table",
+},
+["values"] = {
+{
+2800,
+2802,
+},
+},
+["api"] = "C_MajorFactions.GetMajorFactionIDs",
+},
+["factions"] = {
+{
+["progression"] = {
+["values"] = {
+{
+["currentWeekProgressiveMaxLevel"] = 5,
+["maxLevel"] = 14,
+["renownReputationEarned"] = 0,
+["weekNumber"] = 1,
+["renownLevel"] = 0,
+["previousWeekProgressiveMaxLevel"] = 3,
+["renownLevelThreshold"] = 750,
+},
+},
+["api"] = "C_MajorFactions.GetMajorFactionProgressionInfo",
+["types"] = {
+"table",
+},
+["args"] = {
+2800,
+},
+["n"] = 1,
+},
+["id"] = 2800,
+["weeklyCapped"] = {
+["values"] = {
+false,
+},
+["api"] = "C_MajorFactions.IsWeeklyRenownCapped",
+["types"] = {
+"boolean",
+},
+["args"] = {
+2800,
+},
+["n"] = 1,
+},
+["data"] = {
+["values"] = {
+{
+["description"] = "",
+["bountySetID"] = 0,
+["textureKit"] = "storm",
+["celebrationSoundKit"] = 0,
+["maxLevel"] = 14,
+["uiPriority"] = 0,
+["factionFontColor"] = {
+["baseTag"] = "STORM_MAJOR_FACTION_COLOR",
+["color"] = {
+["a"] = 1,
+["b"] = 0.9960784316062927,
+["GetHSL"] = "<function>",
+["g"] = 0.5568627715110779,
+["GetRGBA"] = "<function>",
+["IsRGBEqualTo"] = "<function>",
+["SetRGB"] = "<function>",
+["GetRGB"] = "<function>",
+["OnLoad"] = "<function>",
+["GenerateHexColorMarkup"] = "<function>",
+["WrapTextInColorCode"] = "<function>",
+["GenerateHexColor"] = "<function>",
+["IsEqualTo"] = "<function>",
+["r"] = 0.2588235437870026,
+["GenerateHexColorNoAlpha"] = "<function>",
+["SetRGBA"] = "<function>",
+["GetRGBAsBytes"] = "<function>",
+["GetRGBAAsBytes"] = "<function>",
+},
+},
+["highlights"] = {
+},
+["playerCompanionID"] = 0,
+["renownReputationEarned"] = 0,
+["hideRenownLevelUpToast"] = true,
+["renownLevel"] = 0,
+["isUnlocked"] = true,
+["factionID"] = 2800,
+["expansionID"] = 0,
+["name"] = "PvP Rank Points",
+["renownLevelThreshold"] = 750,
+["useJourneyUnlockToast"] = false,
+["renownFanfareSoundKitID"] = 0,
+},
+},
+["api"] = "C_MajorFactions.GetMajorFactionData",
+["types"] = {
+"table",
+},
+["args"] = {
+2800,
+},
+["n"] = 1,
+},
+["asJourney"] = {
+["values"] = {
+false,
+},
+["api"] = "C_MajorFactions.ShouldDisplayMajorFactionAsJourney",
+["types"] = {
+"boolean",
+},
+["args"] = {
+2800,
+},
+["n"] = 1,
+},
+},
+{
+["progression"] = {
+["values"] = {
+{
+["currentWeekProgressiveMaxLevel"] = 90,
+["maxLevel"] = 90,
+["renownReputationEarned"] = 0,
+["weekNumber"] = 0,
+["renownLevel"] = 1,
+["previousWeekProgressiveMaxLevel"] = 90,
+["renownLevelThreshold"] = 1,
+},
+},
+["api"] = "C_MajorFactions.GetMajorFactionProgressionInfo",
+["types"] = {
+"table",
+},
+["args"] = {
+2802,
+},
+["n"] = 1,
+},
+["id"] = 2802,
+["weeklyCapped"] = {
+["values"] = {
+false,
+},
+["api"] = "C_MajorFactions.IsWeeklyRenownCapped",
+["types"] = {
+"boolean",
+},
+["args"] = {
+2802,
+},
+["n"] = 1,
+},
+["data"] = {
+["values"] = {
+{
+["description"] = "",
+["bountySetID"] = 0,
+["textureKit"] = "storm",
+["celebrationSoundKit"] = 0,
+["maxLevel"] = 90,
+["uiPriority"] = 0,
+["factionFontColor"] = {
+["baseTag"] = "STORM_MAJOR_FACTION_COLOR",
+["color"] = {
+["a"] = 1,
+["b"] = 0.9960784316062927,
+["GetHSL"] = "<function>",
+["g"] = 0.5568627715110779,
+["GetRGBA"] = "<function>",
+["IsRGBEqualTo"] = "<function>",
+["SetRGB"] = "<function>",
+["GetRGB"] = "<function>",
+["OnLoad"] = "<function>",
+["GenerateHexColorMarkup"] = "<function>",
+["WrapTextInColorCode"] = "<function>",
+["GenerateHexColor"] = "<function>",
+["IsEqualTo"] = "<function>",
+["r"] = 0.2588235437870026,
+["GenerateHexColorNoAlpha"] = "<function>",
+["SetRGBA"] = "<function>",
+["GetRGBAsBytes"] = "<function>",
+["GetRGBAAsBytes"] = "<function>",
+},
+},
+["highlights"] = {
+},
+["playerCompanionID"] = 0,
+["renownReputationEarned"] = 0,
+["hideRenownLevelUpToast"] = true,
+["renownLevel"] = 1,
+["isUnlocked"] = true,
+["factionID"] = 2802,
+["expansionID"] = 0,
+["name"] = "Legacy Track",
+["renownLevelThreshold"] = 1,
+["useJourneyUnlockToast"] = false,
+["renownFanfareSoundKitID"] = 0,
+},
+},
+["api"] = "C_MajorFactions.GetMajorFactionData",
+["types"] = {
+"table",
+},
+["args"] = {
+2802,
+},
+["n"] = 1,
+},
+["asJourney"] = {
+["values"] = {
+false,
+},
+["api"] = "C_MajorFactions.ShouldDisplayMajorFactionAsJourney",
+["types"] = {
+"boolean",
+},
+["args"] = {
+2802,
+},
+["n"] = 1,
+},
+},
+},
+["idsExp0"] = {
+["values"] = {
+{
+2800,
+2802,
+},
+},
+["api"] = "C_MajorFactions.GetMajorFactionIDs",
+["types"] = {
+"table",
+},
+["args"] = {
+0,
+},
+["n"] = 1,
+},
+},
+["warMode"] = {
+["n"] = 1,
+["types"] = {
+"boolean",
+},
+["values"] = {
+false,
+},
+["api"] = "C_PvP.IsWarModeActive",
+},
+["session"] = {
+["n"] = 2,
+["types"] = {
+"number",
+"number",
+},
+["values"] = {
+0,
+0,
+},
+["api"] = "GetPVPSessionStats",
+},
+["weeklyChest"] = {
+["n"] = 4,
+["types"] = {
+"boolean",
+"boolean",
+"boolean",
+"number",
+},
+["values"] = {
+false,
+false,
+false,
+0,
+},
+["api"] = "C_PvP.GetWeeklyChestInfo",
 },
 },
 },
