@@ -25,7 +25,7 @@ ImmersionSetup = {
 ["boxoffsetX"] = 5.00048828125,
 ["hidetracker"] = true,
 ["hidetooltip"] = true,
-["boxlock"] = true,
+["paddown"] = "PADDDOWN",
 ["ttsfemalevoice"] = 1,
 ["titlescale"] = 1,
 ["anidivisor"] = 5,
@@ -35,6 +35,6 @@ ImmersionSetup = {
 ["inspect"] = "SHIFT",
 ["reset"] = "BACKSPACE",
 ["padaccept"] = "PAD1",
+["boxlock"] = true,
 ["ttsvolume"] = 100,
-["paddown"] = "PADDDOWN",
 }
