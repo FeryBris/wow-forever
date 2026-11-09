@@ -10,7 +10,7 @@ ForeverDungeonJournalDB = {
 ["displayIDs"] = {
 },
 ["mapBossScale"] = 0.3,
-["newestSeenAt"] = 1794220286,
+["newestSeenAt"] = 1794220988,
 ["newestSeenVersion"] = "1.7.4",
 ["mapFloors"] = {
 ["Ragefire Chasm"] = 1,
@@ -649,13 +649,13 @@ ForeverDungeonJournalDB = {
 ["o"] = "Bring to Thun'grim Firegaze 15 Smoky Iron Ingots, 10 Powdered Azurite, 10 Iron Bars and a Vial of Phlogiston.",
 ["d"] = "I have heard tales of your strength and valor, and wish to make for you a suit of armor, a companion to aid you as tales of your great deeds grow.\n\nBut the fashioning of this armor will be a quest unto itself, N.  I will need your help, and the help of other smiths of the Horde.\n\nHere, take this scroll.  I spent many nights, struggling with near-blind eyes, writing that which I need for the armor.  Bring me the items on this scroll and I will create for you the first piece of the suit.",
 },
-[1153] = {
-["o"] = "Find an Unrefined Ore Sample on a Gravelsnout Digger or Surveyor and bring it to Tatternack Steelforge at Camp Taurajo in the Barrens.",
-["d"] = "Warrior, you have done well in helping me in the past. The warchief is pleased thus far with what I've accomplished, and asks me to continue with renewed determination. My honor dictates that I give you proper recognition to the warchief for all you have done, but first I would ask you for your help again.\n\nTravelers recently came from the south from a place called Thousand Needles. There they killed a kobold who had an unusual ore sample, but they would not sell it. I want a sample of that ore to examine.",
-},
 [92401] = {
 ["o"] = "Investigate the disappearance of Edward Heartweaver in the Ruins of Lordaeron.",
 ["d"] = "It's my husband Edward...\r\n\r\nHe has not returned from his weekly journey to the graveyard in the Lordaeron ruins. Our son was lost when Arthas razed the city, and my dear Edward is still filled with guilt and sorrow that we never found his body. I've tried to warn him against searching those overrun ruins, but he refuses to give up. I try not to worry, but it's been days.\r\n\r\nThere are things there I cannot contend with but if you are willing, I need to know the fate of my husband.",
+},
+[1153] = {
+["o"] = "Find an Unrefined Ore Sample on a Gravelsnout Digger or Surveyor and bring it to Tatternack Steelforge at Camp Taurajo in the Barrens.",
+["d"] = "Warrior, you have done well in helping me in the past. The warchief is pleased thus far with what I've accomplished, and asks me to continue with renewed determination. My honor dictates that I give you proper recognition to the warchief for all you have done, but first I would ask you for your help again.\n\nTravelers recently came from the south from a place called Thousand Needles. There they killed a kobold who had an unusual ore sample, but they would not sell it. I want a sample of that ore to examine.",
 },
 [1013] = {
 ["o"] = "Bring the Book of Ur to Keeper Bel'dugur at the Apothecarium in the Undercity.",
@@ -721,9 +721,9 @@ ForeverDungeonJournalDB = {
 ["o"] = "Bring Ishamuhale's Fang to Jorn at Camp Taurajo.",
 ["d"] = "Ishamuhale, Speartooth, is the fiercest sunscale raptor of the Barrens.  He does not hunt for sport, nor for food.  He hunts because hunting is his passion.  He kills because it is his nature to kill.\n\nAnd you will learn of his nature, N, for your path now follows the taloned tracks of Ishamuhale.\n\nBegin the hunt.  Slay his favorite prey, a zhevra, then bring its carcass to the dead tree northwest of Ratchet.  Ishamuhale will smell the carcass and be drawn to it.\n\nBe ready when he comes.",
 },
-[1221] = {
-["o"] = "Grab a Crate with Holes.\nGrab a Snufflenose Command Stick.\nGrab and read the Snufflenose Owner's Manual.\n\nIn Razorfen Kraul, use the Crate with Holes to summon a Snufflenose Gopher, and use the Command Stick on the gopher to make it search for Tubers.\n\nBring 6 Nleaf Tubers, the Snufflenose Command Stick and the Crate with Holes to Mebok Mizzyrix in Ratchet.",
-["d"] = "Nleaf tubers are a delicacy around the world!  But they're rare, very rare.  The only place to find them is here in the Barrens, deep in the earth, in Razorfen Kraul.\n\nAnd even then, they're impossible to find unless you know just where to look!  That's why I've trained these snufflenose gophers to find them for me.  They have great noses and can smell a tuber from fifty paces away.\n\nIt won't be easy, but if you get me some tubers I'll pay you handsomely.",
+[6382] = {
+["o"] = "Speak with Senani Thunderheart at Splintertree Post, Ashenvale.",
+["d"] = "Your strength impresses me, warrior.  Your willingness to embrace the hunt gives me confidence that you could move on to bigger game... and bigger challenges.\n\nThe forests of Ashenvale represent a vast untamed wild that the Horde seeks to impose its own will upon, both politically and spiritually.  If you seek to prove yourself in an unproven land, seek the guidance of Senani Thunderheart in Splintertree Post.  The outpost is due north of the path leading from the Barrens.",
 },
 [874] = {
 ["o"] = "Speak with Mahren Skyseer.",
@@ -753,9 +753,9 @@ ForeverDungeonJournalDB = {
 ["o"] = "Bring the books Spells of Shadow and Incantations from the Nether to Varimathras in Undercity.",
 ["d"] = "Many denizens of the Legion bestow gifts on their followers as you may well know. Some of these gifts the Dark Lady feels would be better off in her hands than in the hands of those with... lesser vision.\n\nA sect of the Shadow Council hidden in caverns below Orgrimmar known as the Searing Blade are a prime example. The Lady tells me that members of the Searing Blade have come into the possession of two powerful spell books--she would like to \"borrow\" these books from them. You will get them for her.",
 },
-[6382] = {
-["o"] = "Speak with Senani Thunderheart at Splintertree Post, Ashenvale.",
-["d"] = "Your strength impresses me, warrior.  Your willingness to embrace the hunt gives me confidence that you could move on to bigger game... and bigger challenges.\n\nThe forests of Ashenvale represent a vast untamed wild that the Horde seeks to impose its own will upon, both politically and spiritually.  If you seek to prove yourself in an unproven land, seek the guidance of Senani Thunderheart in Splintertree Post.  The outpost is due north of the path leading from the Barrens.",
+[1221] = {
+["o"] = "Grab a Crate with Holes.\nGrab a Snufflenose Command Stick.\nGrab and read the Snufflenose Owner's Manual.\n\nIn Razorfen Kraul, use the Crate with Holes to summon a Snufflenose Gopher, and use the Command Stick on the gopher to make it search for Tubers.\n\nBring 6 Nleaf Tubers, the Snufflenose Command Stick and the Crate with Holes to Mebok Mizzyrix in Ratchet.",
+["d"] = "Nleaf tubers are a delicacy around the world!  But they're rare, very rare.  The only place to find them is here in the Barrens, deep in the earth, in Razorfen Kraul.\n\nAnd even then, they're impossible to find unless you know just where to look!  That's why I've trained these snufflenose gophers to find them for me.  They have great noses and can smell a tuber from fifty paces away.\n\nIt won't be easy, but if you get me some tubers I'll pay you handsomely.",
 },
 [477] = {
 ["o"] = "Retrieve the contents of one of the Dalaran wizards' crates. You will find Pyrewood Village to the south.",
