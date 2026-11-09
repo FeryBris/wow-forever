@@ -164,7 +164,7 @@ local function StepStats(nextStep)
 	end
 	for _, api in ipairs({ "GetCritChance", "GetRangedCritChance", "GetHaste", "GetMeleeHaste",
 		"GetMastery", "GetDodgeChance", "GetParryChance", "GetBlockChance", "GetHitModifier",
-		"GetSpellHitModifier", "GetExpertise", "GetManaRegen", "GetVersatilityBonus" }) do
+		"GetSpellHitModifier", "GetExpertise", "GetManaRegen" }) do
 		stats[#stats + 1] = Capture(api)
 	end
 	stats[#stats + 1] = Capture("UnitArmor", "player")
@@ -264,6 +264,86 @@ local function StepBags(nextStep)
 end
 
 ---------------------------------------------------------------------------
+-- Legacy (Forever-only): run 1 showed achievements exist and reward
+-- "Earn 1 Legacy Point." (GetAchievementInfo return 11), while
+-- GetTotalAchievementPoints is 0. ForeverCompanion (LegacyAPI.lua) finds the
+-- Legacy tree as a parent category with 8 children, 65 achievements total.
+-- Here: every category, every achievement, criteria for unfinished ones.
+---------------------------------------------------------------------------
+local MAX_CRITERIA = 5
+
+local function StepLegacy(nextStep)
+	local section = { categories = {} }
+	probe.legacy = section
+	local cats = First(Capture("GetCategoryList"))
+	if type(cats) ~= "table" then
+		section.skipped = "GetCategoryList returned no table"
+		return nextStep()
+	end
+	local achievementCount = 0
+	for _, catId in ipairs(cats) do
+		local cat = {
+			id = catId,
+			info = Capture("GetCategoryInfo", catId),
+			num = Capture("GetCategoryNumAchievements", catId, true),
+			achievements = {},
+		}
+		for i = 1, Num(cat.num) do
+			local a = { info = Capture("GetAchievementInfo", catId, i) }
+			local v = a.info.values
+			local achievementId, completed = v and v[1], v and v[4]
+			if type(achievementId) == "number" and completed ~= true then
+				a.numCriteria = Capture("GetAchievementNumCriteria", achievementId)
+				a.criteria = {}
+				for c = 1, math.min(Num(a.numCriteria), MAX_CRITERIA) do
+					a.criteria[c] = Capture("GetAchievementCriteriaInfo", achievementId, c, true)
+				end
+			end
+			cat.achievements[i] = a
+			achievementCount = achievementCount + 1
+		end
+		section.categories[#section.categories + 1] = cat
+	end
+	section.achievementCount = achievementCount
+	nextStep()
+end
+
+---------------------------------------------------------------------------
+-- Forever rules: experience preset (Enum.ForeverExperiencePreset: Classic 0,
+-- Enhanced 1), game mode, hardcore / self-found, every active game rule
+-- (Enum.GameRule has 169 values), and the campsite benefit aura
+-- (spell 1229741, from ForeverCompanion Data/Camps.lua).
+---------------------------------------------------------------------------
+local CAMP_AURA_SPELL = 1229741
+
+local function StepForever(nextStep)
+	local section = {
+		preset = Capture("C_GameRules.GetForeverExperiencePreset"),
+		gameMode = Capture("C_GameRules.GetActiveGameMode"),
+		gameModeInfo = Capture("C_GameRules.GetCurrentGameModeDisplayInfo"),
+		hardcore = Capture("C_GameRules.IsHardcoreActive"),
+		selfFound = Capture("C_GameRules.IsSelfFoundAllowed"),
+		standard = Capture("C_GameRules.IsStandard"),
+		season = Capture("C_SeasonInfo.GetCurrentDisplaySeasonID"),
+		seasonExpansion = Capture("C_SeasonInfo.GetCurrentDisplaySeasonExpansion"),
+		campAura = Capture("C_UnitAuras.GetPlayerAuraBySpellID", CAMP_AURA_SPELL),
+		activeRules = {},
+	}
+	if type(Enum) == "table" and type(Enum.GameRule) == "table" then
+		for ruleName, ruleId in pairs(Enum.GameRule) do
+			if First(Capture("C_GameRules.IsGameRuleActive", ruleId)) == true then
+				section.activeRules[ruleName] = {
+					id = ruleId,
+					value = First(Capture("C_GameRules.GetGameRuleAsFloat", ruleId, 2)),
+				}
+			end
+		end
+	end
+	probe.forever = section
+	nextStep()
+end
+
+---------------------------------------------------------------------------
 -- Level-ups: recorded whenever they happen (not part of a probe run).
 -- PLAYER_LEVEL_UP payload starts with the new level (doc).
 ---------------------------------------------------------------------------
@@ -336,7 +416,7 @@ ns.commands.probe = function()
 	running = true
 	ns.Print("probing character APIs (a few seconds)...")
 	ns.RunSteps({ StepIdentity, StepPlayed, StepEquipment, StepTalents, StepProfessions, StepStats,
-		StepReputation, StepCurrency, StepAchievements, StepPvp, StepCollections, StepBags }, function()
+		StepReputation, StepCurrency, StepAchievements, StepLegacy, StepForever, StepPvp, StepCollections, StepBags }, function()
 		probe.meta.finishedAt = time()
 		local s = { missing = {}, errors = {}, secret = {} }
 		Summarize(probe, s)
@@ -344,9 +424,9 @@ ns.commands.probe = function()
 		SoTCharacterSyncDB = SoTCharacterSyncDB or {}
 		SoTCharacterSyncDB.probe = probe
 		running = false
-		ns.Print(("done. talents: %s selected, professions %d, factions %d, currencies %d."):format(
+		ns.Print(("done. talents: %s selected, professions %d, factions %d, currencies %d, achievements %s."):format(
 			tostring(probe.talents.selectedCount), #probe.professions.info,
-			Num(probe.reputation.num), Num(probe.currency.num)))
+			Num(probe.reputation.num), Num(probe.currency.num), tostring(probe.legacy.achievementCount)))
 		if next(s.missing) then ns.Print("missing: " .. Keys(s.missing)) end
 		if next(s.errors) then ns.Print("errors: " .. Keys(s.errors)) end
 		if next(s.secret) then ns.Print("secret values from: " .. Keys(s.secret)) end
