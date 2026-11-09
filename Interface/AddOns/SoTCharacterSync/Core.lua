@@ -6,7 +6,7 @@ local ADDON_NAME, ns = ...
 
 -- Hardcoded, not read from the TOC: the client caches TOC metadata until a
 -- full restart, so after /reload it would report a stale version.
-ns.VERSION = "0.3.0"
+ns.VERSION = "0.4.0"
 
 local PREFIX = "|cff69ccf0SoT Character Sync|r: "
 
@@ -217,21 +217,22 @@ SlashCmdList.SOTCHARSYNC = function(msg)
 	if fn then
 		fn(msg)
 	else
-		ns.Print("commands: /sotchar status, /sotchar probe (read one sample of every character API)")
+		ns.Print("commands: /sotchar status, /sotchar export (save now), /sotchar probe (diagnostics)")
 	end
 end
 
 ns.commands.status = function()
 	local db = SoTCharacterSyncDB or {}
 	ns.Print("version " .. ns.VERSION)
-	local p = db.probe
-	if p and p.meta then
-		ns.Print(("last probe: %s on %s"):format(date("%Y-%m-%d %H:%M", p.meta.startedAt), tostring(p.meta.character)))
-	else
-		ns.Print("no probe yet: /sotchar probe")
+	local count = 0
+	for name, c in pairs(db.characters or {}) do
+		count = count + 1
+		ns.Print(("  %s: level %s, saved %s (%s)"):format(name, tostring(c.level),
+			date("%Y-%m-%d %H:%M", c.updatedAt), tostring(c.trigger)))
 	end
-	local seen = db.levelUpsSeen
-	ns.Print(("level-ups recorded: %d"):format(seen and #seen or 0))
+	if count == 0 then
+		ns.Print("no characters saved yet (only characters in the guild are saved)")
+	end
 end
 
 ns.On("PLAYER_LOGIN", function()

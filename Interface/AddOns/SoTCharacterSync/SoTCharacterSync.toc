@@ -2,8 +2,10 @@
 ## Title: |cff69ccf0SoT|r Character Sync
 ## Notes: Reports your characters to the SoT Guild Launcher (Stalkers of Time members only). /sotchar
 ## Author: FeryWork
-## Version: 0.3.0
+## Version: 0.4.0
 ## SavedVariables: SoTCharacterSyncDB
 
 Core.lua
+Json.lua
+Export.lua
 Probe.lua

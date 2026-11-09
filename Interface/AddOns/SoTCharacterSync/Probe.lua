@@ -400,21 +400,6 @@ local function StepForever(nextStep)
 end
 
 ---------------------------------------------------------------------------
--- Level-ups: recorded whenever they happen (not part of a probe run).
--- PLAYER_LEVEL_UP payload starts with the new level (doc).
----------------------------------------------------------------------------
-ns.On("PLAYER_LEVEL_UP", function(_, ...)
-	SoTCharacterSyncDB = SoTCharacterSyncDB or {}
-	SoTCharacterSyncDB.levelUpsSeen = SoTCharacterSyncDB.levelUpsSeen or {}
-	table.insert(SoTCharacterSyncDB.levelUpsSeen, {
-		at = time(),
-		character = UnitName("player"),
-		payload = ns.Plain({ ... }),
-		unitLevelNow = UnitLevel("player"),
-	})
-end)
-
----------------------------------------------------------------------------
 local function Summarize(node, out)
 	if type(node) ~= "table" then
 		return
