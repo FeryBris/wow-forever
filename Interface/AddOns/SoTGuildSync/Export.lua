@@ -163,7 +163,7 @@ end
 -- changed target's rank to `rank`. Time is "how long ago", hour precision.
 -- Names can be nil until the client has them cached (run 1 vs run 2).
 ---------------------------------------------------------------------------
-local function CollectEventLog()
+function ns.CollectEventLog()
 	local rows = {}
 	for i = 1, GetNumGuildEvents() do
 		local eventType, actor, target, rank, y, m, d, h = GetGuildEventInfo(i)
@@ -179,21 +179,40 @@ local function CollectEventLog()
 end
 
 ---------------------------------------------------------------------------
--- Set by the first successful export this session. At logout the client may
--- already report "not in guild / not leader" (first export, 2026-11-09: the
--- logout save never landed), so the final save trusts this instead.
+-- Set by the first successful export this session.
 local wasGuildMaster = false
+
+-- Final save at PLAYER_LEAVING_WORLD / PLAYER_LOGOUT. Measured 2026-11-09
+-- (finalSaveDiag): at logout IsInGuild() and IsGuildLeader() are false,
+-- GetGuildInfo's name is nil, rank names are "" and GetGuildRosterInfo rows
+-- are empty, while GetNumGuildMembers still says 96 and the event log is
+-- fully readable. So the final save only refreshes the event log on top of
+-- the last full export from this session.
+local function FinalExport(trigger)
+	local prev = SoTGuildSyncDB and SoTGuildSyncDB.export
+	if not wasGuildMaster or not prev then
+		return false
+	end
+	local log = ns.CollectEventLog()
+	if #log > 0 then
+		prev.eventLog = log
+		prev.eventLogAt = time()
+	end
+	prev.trigger = trigger -- updatedAt stays the roster's read time
+	SoTGuildSyncDB.json = ns.EncodeJSON(prev)
+	return true, prev
+end
 
 function ns.Export(trigger, final)
 	if final then
-		if not wasGuildMaster then
-			return false
-		end
-	elseif not IsInGuild() or not IsGuildLeader() then
+		return FinalExport(trigger)
+	end
+	if not IsInGuild() or not IsGuildLeader() then
 		return false
 	end
-	-- Never replace a good export with an empty roster (data torn down at logout).
-	if (GetNumGuildMembers() or 0) == 0 then
+	local members = CollectMembers()
+	-- Never replace a good export with an empty roster.
+	if #members == 0 then
 		return false
 	end
 	local guildName, _, _, guildRealm = GetGuildInfo("player")
@@ -215,9 +234,11 @@ function ns.Export(trigger, final)
 		},
 		ranks = CollectRanks(),
 		permissionLabels = PermissionLabels(),
-		members = CollectMembers(),
-		eventLog = CollectEventLog(),
+		members = members,
+		eventLog = ns.CollectEventLog(),
 	}
+	-- members[].lastOnline is relative to updatedAt; eventLog[].ago to eventLogAt.
+	data.eventLogAt = data.updatedAt
 	SoTGuildSyncDB = SoTGuildSyncDB or {}
 	SoTGuildSyncDB.export = data
 	SoTGuildSyncDB.json = ns.EncodeJSON(data)
