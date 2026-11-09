@@ -2,7 +2,7 @@
 ## Title: |cff69ccf0SoT|r Guild Sync
 ## Notes: Exports guild data for the SoT Guild Launcher (Stalkers of Time, guild master only). /sotguild
 ## Author: FeryWork
-## Version: 0.1.0
+## Version: 0.2.0
 ## SavedVariables: SoTGuildSyncDB
 
 Core.lua

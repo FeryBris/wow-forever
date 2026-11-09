@@ -91,7 +91,16 @@ local function StepRanks(nextStep)
 		names[#names + 1] = Capture("GuildControlGetRankName", i)
 		flags[#flags + 1] = Capture("C_GuildInfo.GuildControlGetRankFlags", i)
 	end
-	probe.ranks = { num = numRec, names = names, flags = flags }
+	-- Labels for the 22 permission flags: FrameXML global strings
+	-- GUILDCONTROL_OPTION1..n (localized). Run 1 measured 22 flags per rank.
+	local labels = {}
+	for i = 1, 30 do
+		local s = _G["GUILDCONTROL_OPTION" .. i]
+		if type(s) == "string" then
+			labels[i] = s
+		end
+	end
+	probe.ranks = { num = numRec, names = names, flags = flags, labels = labels }
 	nextStep()
 end
 
@@ -101,9 +110,20 @@ local function StepRoster(nextStep)
 	ns.WaitFor("GUILD_ROSTER_UPDATE", WAIT, function(fired, ...)
 		Waited(section, "GUILD_ROSTER_UPDATE", fired, ...)
 		section.num = Capture("GetNumGuildMembers")
-		local n = math.min(Num(section.num), SAMPLE_ROSTER)
-		section.info = Range("GetGuildRosterInfo", n)
-		section.lastOnline = Range("GetGuildRosterLastOnline", n)
+		-- Sample both online and offline members (run 1 only got online ones,
+		-- whose last-online is nil). isOnline is return 9 (measured run 1).
+		section.online, section.offline = {}, {}
+		for i = 1, Num(section.num) do
+			local info = Capture("GetGuildRosterInfo", i)
+			local isOnline = info.values and info.values[9]
+			local bucket = isOnline and section.online or section.offline
+			if #bucket < SAMPLE_ROSTER then
+				bucket[#bucket + 1] = { index = i, info = info, lastOnline = Capture("GetGuildRosterLastOnline", i) }
+			end
+			if #section.online >= SAMPLE_ROSTER and #section.offline >= SAMPLE_ROSTER then
+				break
+			end
+		end
 		nextStep()
 	end, nextStep)
 end
@@ -144,6 +164,21 @@ end
 
 local StepEventLog = AsyncList("eventLog", "QueryGuildEventLog", "GUILD_EVENT_LOG_UPDATE",
 	"GetNumGuildEvents", "GetGuildEventInfo")
+-- Run 1: many event-log names were nil (likely not in the name cache yet).
+-- Query again after a pause and re-read the same rows to see if they fill in.
+local function StepEventLogAgain(nextStep)
+	C_Timer.After(3, function()
+		local section = { request = Capture("QueryGuildEventLog") }
+		probe.eventLogAgain = section
+		ns.WaitFor("GUILD_EVENT_LOG_UPDATE", WAIT, function(fired, ...)
+			Waited(section, "GUILD_EVENT_LOG_UPDATE", fired, ...)
+			section.num = Capture("GetNumGuildEvents")
+			section.rows = Range("GetGuildEventInfo", math.min(Num(section.num), SAMPLE_LOG))
+			nextStep()
+		end, nextStep)
+	end)
+end
+
 local StepNews = AsyncList("news", "QueryGuildNews", "GUILD_NEWS_UPDATE",
 	"GetNumGuildNews", "C_GuildInfo.GetGuildNewsInfo")
 local StepRecipes = AsyncList("recipes", "QueryGuildRecipes", "GUILD_TRADESKILL_UPDATE",
@@ -277,8 +312,8 @@ ns.commands.probe = function()
 		},
 	}
 	running = true
-	ns.Print("probing guild APIs (about 20 seconds)...")
-	ns.RunSteps({ StepGates, StepIdentity, StepRanks, StepRoster, StepClub, StepEventLog, StepNews, StepRecipes }, function()
+	ns.Print("probing guild APIs (up to 30 seconds)...")
+	ns.RunSteps({ StepGates, StepIdentity, StepRanks, StepRoster, StepClub, StepEventLog, StepEventLogAgain, StepNews, StepRecipes }, function()
 		probe.meta.finishedAt = time()
 		local s = { missing = {}, errors = {}, secret = {} }
 		Summarize(probe, s)
