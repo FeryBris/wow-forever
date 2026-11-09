@@ -1,0 +1,1918 @@
+--[[
+
+	The MIT License (MIT)
+
+	Copyright (c) 2026 Lars Norberg
+	Copyright (c) 2026 Jonas "JuNNeZ" Andersen (JuNNeZ Edition modifications)
+
+	Permission is hereby granted, free of charge, to any person obtaining a copy
+	of this software and associated documentation files (the "Software"), to deal
+	in the Software without restriction, including without limitation the rights
+	to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+	copies of the Software, and to permit persons to whom the Software is
+	furnished to do so, subject to the following conditions:
+
+	The above copyright notice and this permission notice shall be included in all
+	copies or substantial portions of the Software.
+
+	THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+	IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+	FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+	AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+	LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+	OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+	SOFTWARE.
+
+--]]
+local _, ns = ...
+
+local MinimapMod = ns:NewModule("Minimap", ns.MovableModulePrototype, "LibMoreEvents-1.0", "AceHook-3.0", "AceTimer-3.0", "AceConsole-3.0")
+local API = ns.API
+local L = LibStub("AceLocale-3.0"):GetLocale((...))
+
+--local LibDD = LibStub("LibUIDropDownMenu-4.0")
+
+-- Lua API
+local ipairs = ipairs
+local math_cos = math.cos
+local half_pi = math.pi/2
+local math_sin = math.sin
+local next = next
+local pairs = pairs
+local string_format = string.format
+local string_lower = string.lower
+local table_insert = table.insert
+local tonumber = tonumber
+local type = type
+local unpack = unpack
+
+-- WoW API
+-- GetCVarBool is deprecated in favour of C_CVar.GetCVarBool. Shadowed as a file
+-- local so the call sites keep working whichever of the two the client exposes.
+local GetCVarBool = (C_CVar and C_CVar.GetCVarBool) or GetCVarBool
+
+-- GLOBALS: AddonCompartmentFrame, GameTimeFrame, MiniMapBattlefieldFrame, MiniMapMailFrame, MiniMapLFGFrame
+-- GLOBALS: C_CraftingOrders, GameTooltip, GameTooltip_SetDefaultAnchor, GarrisonLandingPage_Toggle
+-- GLOBALS: GetPlayerFacing, GetRealZoneText
+-- GLOBALS: ExpansionLandingPageMinimapButton, GarrisonLandingPageMinimapButton, MinimapZoneTextButton, MiniMapWorldMapButton, TimeManagerClockButton, QueueStatusButton
+-- GLOBALS: InCombatLockdown, IsInInstance, IsResting, HasNewMail, PlaySound, ToggleDropDownMenu
+-- GLOBALS: C_DateAndTime, GetCursorPosition, GetCurrentRegionName
+-- GLOBALS: MinimapZoomIn, MinimapZoomOut, Minimap_OnClick
+-- GLOBALS: Minimap, MinimapBackdrop, MinimapCluster, MinimapBorder, MinimapBorderTop, MicroMenuContainer, MinimapCompassTexture, MiniMapInstanceDifficulty, MiniMapTracking
+-- GLOBALS: MenuUtil
+-- GLOBALS: SOUNDKIT, MINIMAP_LABEL, PROFESSIONS_CRAFTING
+
+-- Addon API
+local Colors = ns.Colors
+local GetMedia = ns.API.GetMedia
+local IsAddOnEnabled = ns.API.IsAddOnEnabled
+local UIHider = ns.Hider
+local noop = ns.Noop
+
+-- WoW Strings
+local L_NEW = NEW -- "New"
+local L_MAIL = MAIL_LABEL -- "Mail"
+local L_HAVE_MAIL = HAVE_MAIL -- "You have unread mail"
+local L_HAVE_MAIL_FROM = HAVE_MAIL_FROM -- "Unread mail from:"
+
+-- Constants
+local TORGHAST_ZONE_ID = 2162
+local IN_TORGHAST = (not IsResting()) and (GetRealZoneText() == GetRealZoneText(TORGHAST_ZONE_ID))
+local mapScale = 1
+local math_atan2 = math.atan2
+local math_max = math.max
+local math_min = math.min
+local Minimap_OnMouseButton_Hook
+
+-- The situations the minimap can be automatically hidden in, keyed by the
+-- instanceType IsInInstance() reports for them. Anything not listed here -
+-- the open world, scenarios, delves - leaves the minimap alone.
+local AutoHideSettings = {
+	arena = "autoHideInArenas",
+	pvp = "autoHideInBattlegrounds",
+	party = "autoHideInDungeons",
+	raid = "autoHideInRaids"
+}
+
+-- The day and night indicator
+---------------------------------------------------------
+-- Forever draws one of these on MinimapCluster, where Blizzard's Edit Mode owns
+-- its position and a replaced MinimapCluster:SetEditModeScale keeps putting it
+-- back. Rather than contest that ownership we build our own on the AzeriteUI map
+-- ring, drive it from the same two documented signals Blizzard uses, and fade
+-- theirs to nothing. Theirs stays alive, parented and registered throughout, so
+-- standing down is a single SetAlpha away and Edit Mode never notices us.
+-- Reference: Blizzard_Minimap/Camelot/Diel.lua in the Forever UI source.
+local DIEL_BUTTON_SIZE = 56
+local DIEL_SCENE_SIZE = 25
+local DIEL_DISTANCE_OFFSET = 0
+local DIEL_DISTANCE_LIMIT = 60
+local DIEL_THEME_SKY = "Sky"
+local DIEL_THEME_CELESTIAL = "Celestial"
+local DIEL_THEMES = {
+	[DIEL_THEME_SKY] = {
+		day = "minimap-diel-day-sky",
+		night = "minimap-diel-night-sky",
+		label = "Sky"
+	},
+	[DIEL_THEME_CELESTIAL] = {
+		day = "minimap-diel-day-celestial",
+		night = "minimap-diel-night-celestial",
+		label = "Sun & Moon"
+	}
+}
+
+local GetDielTheme = function(db)
+	local theme = db and db.dielTheme
+
+	return DIEL_THEMES[theme] and theme or DIEL_THEME_SKY
+end
+
+-- The saved distance is player input by way of a slider, and the slider is not
+-- the only thing that can write it. Clamp on the way out, every time.
+local ClampDielDistance = function(value)
+	value = tonumber(value)
+	if (not value) then return DIEL_DISTANCE_OFFSET end
+
+	return math_max(-DIEL_DISTANCE_LIMIT, math_min(DIEL_DISTANCE_LIMIT, value))
+end
+
+local Diel_OnEnter = function(self)
+	if (GameTooltip:IsForbidden()) then return end
+
+	GameTooltip_SetDefaultAnchor(GameTooltip, self)
+	GameTooltip:AddLine(self.isDayTime and L["Daytime"] or L["Nighttime"])
+	GameTooltip:AddLine(L["<Left-Click and drag to move>"], unpack(Colors.green))
+	GameTooltip:AddLine(L["<Right-Click to choose theme and distance>"], unpack(Colors.green))
+	GameTooltip:Show()
+
+	self.tooltipShown = true
+end
+
+local Diel_OnLeave = function(self)
+	self.tooltipShown = nil
+
+	if (GameTooltip:IsForbidden()) then return end
+	GameTooltip:Hide()
+end
+
+-- Whether the player wants our copy of the indicator. Off is not "no indicator":
+-- it hands the display back to the native frame we would otherwise fade out.
+MinimapMod.IsDielEnabled = function(self)
+	if (not ns.IsForever) then return false end
+
+	local db = self.db and self.db.profile
+
+	return not (db and db.dielEnabled == false)
+end
+
+-- Whether the player wants no indicator at all, ours or Blizzard's. This wins
+-- over IsDielEnabled: hidden means both are gone, whichever one would show.
+MinimapMod.IsDielHidden = function(self)
+	if (not ns.IsForever) then return false end
+
+	local db = self.db and self.db.profile
+
+	return db and db.dielHidden == true or false
+end
+
+MinimapMod.PositionDiel = function(self)
+	local frame = self.dielFrame
+	if (not frame) then return end
+
+	local width, height = Minimap:GetSize()
+	if (not width or not height or width <= 0 or height <= 0) then return end
+
+	local db = self.db and self.db.profile
+	local angle = (db and db.dielAngle) or half_pi
+	local distance = ClampDielDistance(db and db.dielDistanceOffset)
+
+	-- Zero puts the button's center 6px outside the map edge, which is where the
+	-- XP button it borrows its housing from sits. See Layouts/Data/StatusBars.lua.
+	local radius = math_min(width, height)/2 + 6 + distance
+
+	frame:ClearAllPoints()
+	frame:SetPoint("CENTER", Minimap, "CENTER", radius*math_cos(angle), radius*math_sin(angle))
+end
+
+MinimapMod.UpdateDielDrag = function(self)
+	local frame = self.dielFrame
+	if (not frame or not self.db or not self.db.profile) then return end
+
+	local cursorX, cursorY = GetCursorPosition()
+	local centerX, centerY = Minimap:GetCenter()
+	local scale = Minimap:GetEffectiveScale()
+	if (not cursorX or not cursorY or not centerX or not centerY or not scale or scale == 0) then return end
+
+	-- Only the angle is dragged. The distance from the ring is the slider's job,
+	-- so the button cannot be pulled off the edge by a stray mouse movement.
+	self.db.profile.dielAngle = math_atan2(cursorY/scale - centerY, cursorX/scale - centerX)
+	self:PositionDiel()
+end
+
+MinimapMod.UpdateDiel = function(self, isDayTime)
+	local frame = self.dielFrame
+	if (not frame) then return end
+
+	local nativeDiel = MinimapCluster and MinimapCluster.DielFrame
+
+	-- Hidden is the same fade we use when ours is up, only with nothing in its
+	-- place, so Blizzard's frame stays alive for Edit Mode and the cycle event.
+	if (self:IsDielHidden()) then
+		frame.isDayTime = nil
+		frame:Hide()
+		if (nativeDiel) then nativeDiel:SetAlpha(0) end
+		return
+	end
+
+	-- Match Forever's native initialization/event contract. false means night,
+	-- so only a non-boolean is missing data worth querying the client over.
+	if (not API.IsSafeBool(isDayTime)) then
+		if (C_DateAndTime and type(C_DateAndTime.IsDayTime) == "function") then
+			isDayTime = C_DateAndTime.IsDayTime()
+		end
+	end
+
+	-- Either the player asked for Blizzard's indicator back, or the client will
+	-- not tell us which half of the cycle it is. Neither is a case for guessing:
+	-- stand down and let the native frame show through.
+	if (not self:IsDielEnabled() or not API.IsSafeBool(isDayTime)) then
+		frame.isDayTime = nil
+		frame:Hide()
+		if (nativeDiel) then nativeDiel:SetAlpha(1) end
+		return
+	end
+
+	local db = self.db and self.db.profile
+	local theme = GetDielTheme(db)
+
+	-- The five-second reconcile calls this with unchanged state and theme most
+	-- times it fires. Swapping the texture is only useful when either changes.
+	if (frame.isDayTime ~= isDayTime or frame.dielTheme ~= theme) then
+		frame.isDayTime = isDayTime
+		frame.dielTheme = theme
+		local media = DIEL_THEMES[theme]
+		frame.Scene:SetTexture(GetMedia(isDayTime and media.day or media.night))
+
+		-- A cycle change under the cursor should not leave a stale tooltip up.
+		if (frame.tooltipShown) then
+			Diel_OnEnter(frame)
+		end
+	end
+
+	frame:Show()
+	-- Keep Blizzard's Edit Mode frame and event handler alive.
+	if (nativeDiel) then nativeDiel:SetAlpha(0) end
+	self:PositionDiel()
+end
+
+MinimapMod.CreateDiel = function(self)
+	if (not ns.IsForever or self.dielFrame) then return end
+	if (not (MinimapCluster and MinimapCluster.DielFrame)) then return end
+
+	local frame = CreateFrame("Button", nil, Minimap)
+	frame:SetSize(DIEL_BUTTON_SIZE, DIEL_BUTTON_SIZE)
+	frame:SetFrameLevel(Minimap:GetFrameLevel() + 40)
+	frame:EnableMouse(true)
+	frame:RegisterForDrag("LeftButton")
+	frame:RegisterForClicks("RightButtonUp")
+	frame:SetHitRectInsets(-4, -4, -4, -4)
+
+	-- The same housing the XP button wears, so the ring reads as one set.
+	local border = frame:CreateTexture(nil, "BACKGROUND", nil, 0)
+	border:SetPoint("CENTER")
+	border:SetTexture(GetMedia("point_plate"))
+	border:SetVertexColor(Colors.ui[1], Colors.ui[2], Colors.ui[3])
+	border:SetSize(100, 100)
+	frame.Border = border
+
+	-- The selected day/night artwork fills the center of that housing.
+	local scene = frame:CreateTexture(nil, "ARTWORK", nil, 0)
+	scene:SetPoint("CENTER")
+	scene:SetSize(DIEL_SCENE_SIZE, DIEL_SCENE_SIZE)
+	frame.Scene = scene
+
+	frame:SetScript("OnEnter", Diel_OnEnter)
+	frame:SetScript("OnLeave", Diel_OnLeave)
+
+	-- The drag runs off OnUpdate, but only for as long as the drag lasts. A script
+	-- that polls a flag every frame for the life of the session is a cost with
+	-- nothing to show for it in the frames nobody is dragging, which is all of them.
+	local DielDrag_OnUpdate = function()
+		self:UpdateDielDrag()
+	end
+
+	frame:SetScript("OnDragStart", function(button)
+		button:SetScript("OnUpdate", DielDrag_OnUpdate)
+	end)
+
+	frame:SetScript("OnDragStop", function(button)
+		button:SetScript("OnUpdate", nil)
+	end)
+
+	self.dielFrame = frame
+
+	-- Right-click panel holding the controls that do not belong to the radial drag.
+	local picker = CreateFrame("Frame", nil, frame, "BackdropTemplate")
+	picker:SetSize(190, 92)
+	picker:SetPoint("TOP", frame, "BOTTOM", 0, -4)
+	picker:SetFrameLevel(frame:GetFrameLevel() + 10)
+	picker:SetBackdrop({ bgFile = GetMedia("plain"), edgeFile = GetMedia("border-tooltip"), edgeSize = 12 })
+	picker:SetBackdropColor(.025, .035, .05, .95)
+	picker:EnableMouse(true)
+	picker:Hide()
+
+	self.dielPicker = picker
+
+	local themeButton = CreateFrame("Button", nil, picker, "UIPanelButtonTemplate")
+	themeButton:SetSize(164, 20)
+	themeButton:SetPoint("TOP", 0, -10)
+	self.dielThemeButton = themeButton
+
+	local UpdateThemeButton = function()
+		local db = self.db and self.db.profile
+		local theme = GetDielTheme(db)
+		themeButton:SetText(string_format("%s: %s", L["Theme"], L[DIEL_THEMES[theme].label]))
+	end
+
+	themeButton:SetScript("OnClick", function()
+		if (not self.db or not self.db.profile) then return end
+
+		local theme = GetDielTheme(self.db.profile)
+		self.db.profile.dielTheme = theme == DIEL_THEME_SKY and DIEL_THEME_CELESTIAL or DIEL_THEME_SKY
+		UpdateThemeButton()
+		self:UpdateDiel(frame.isDayTime)
+	end)
+
+	local label = picker:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+	label:SetPoint("TOP", 0, -42)
+
+	local slider = CreateFrame("Slider", nil, picker, "UISliderTemplate")
+	slider:SetSize(164, 16)
+	slider:SetPoint("BOTTOM", 0, 10)
+	slider:SetMinMaxValues(-DIEL_DISTANCE_LIMIT, DIEL_DISTANCE_LIMIT)
+	slider:SetValueStep(1)
+	slider:SetObeyStepOnDrag(true)
+	slider:SetScript("OnValueChanged", function(_, value)
+		if (not self.db or not self.db.profile) then return end
+
+		value = ClampDielDistance(value)
+		self.db.profile.dielDistanceOffset = value
+		label:SetText(string_format("%s: %+.0f", L["Distance"], value))
+		self:PositionDiel()
+	end)
+
+	frame:SetScript("OnClick", function()
+		if (not self.db or not self.db.profile) then return end
+
+		if (picker:IsShown()) then
+			picker:Hide()
+			return
+		end
+
+		local value = ClampDielDistance(self.db.profile.dielDistanceOffset)
+		slider:SetValue(value)
+		label:SetText(string_format("%s: %+.0f", L["Distance"], value))
+		UpdateThemeButton()
+		picker:Show()
+	end)
+
+	-- The map takes this button with it when it auto-hides, and neither the panel
+	-- nor a half-finished drag has any business surviving that.
+	frame:SetScript("OnHide", function(button)
+		button:SetScript("OnUpdate", nil)
+		button.tooltipShown = nil
+		picker:Hide()
+	end)
+
+	self:UpdateDiel()
+end
+
+-- Our own dismount and vehicle exit button. It sits on the minimap ring, at the
+-- upper left of it, but hangs off UIParent rather than the map, so it inherits
+-- none of the map's alpha and has to be taken along by hand. Looked up on demand
+-- rather than cached: the module owning it is disabled outright when Bartender4
+-- takes over the action bars, and the button only exists once that module has
+-- enabled. See Components/ActionBars/Elements/VehicleExit.lua.
+local GetVehicleExitButton = function()
+	local module = ns:GetModule("VehicleExit", true)
+	return module and module.Button
+end
+
+-- Whether that button is still riding the minimap. Once the player has given
+-- it a position of its own it stops taking part in the map's auto-hide: it is
+-- somewhere else on screen by then, and dismounting is exactly what you want
+-- reachable in the content the map is hidden in.
+local IsVehicleExitButtonAttached = function()
+	local module = ns:GetModule("VehicleExit", true)
+	local db = module and module.db and module.db.profile
+
+	return not (db and db.useCustomPosition)
+end
+
+-- The China client's Activity button
+---------------------------------------------------------
+-- MinimapBackdrop.ExternalEventURLButton is Forever's (Blizzard_Minimap/Shared/
+-- ExternalEventURLMinimapButton.lua, not in the Retail source): a plain clock
+-- button that opens an event web page through C_ExternalEventURL. Its Refresh()
+-- shows it only while CanShow() and HasURL(), which in practice means the China
+-- realms. We leave it where Blizzard puts it unless asked to hide it, and hiding
+-- means moving it into our hidden frame, as ElvUI's hideExternalEvent does:
+-- Refresh() calls SetShown on every EXTERNAL_EVENT_URL_CHANGED, but nothing in
+-- Blizzard's code reparents it, and ApplyExternalEventURLButtonAnchor only
+-- re-sets its points, which a reparent keeps.
+local GetEventButton = function()
+	return MinimapBackdrop and MinimapBackdrop.ExternalEventURLButton
+end
+
+-- Only the China client has the button, and only there is the option offered.
+MinimapMod.HasEventButton = function(self)
+	if (type(GetCurrentRegionName) ~= "function" or GetCurrentRegionName() ~= "CN") then return false end
+
+	return GetEventButton() ~= nil
+end
+
+MinimapMod.UpdateEventButton = function(self)
+	if (not self:HasEventButton()) then return end
+
+	local button = GetEventButton()
+	local db = self.db and self.db.profile
+	local hide = db and db.enabled and db.hideEventButton and true or false
+
+	-- It is a plain button in Blizzard's source, but should a later build make it
+	-- protected, it cannot be reparented in combat. Wait for PLAYER_REGEN_ENABLED.
+	if (InCombatLockdown() and button:IsProtected()) then
+		self.eventButtonPending = true
+		return
+	end
+	self.eventButtonPending = nil
+
+	if (hide) then
+		if (not self.eventButtonParent) then
+			self.eventButtonParent = button:GetParent()
+		end
+		button:SetParent(UIHider)
+	elseif (self.eventButtonParent) then
+		button:SetParent(self.eventButtonParent)
+		self.eventButtonParent = nil
+	end
+end
+
+local defaults = { profile = ns:Merge({
+	enabled = true,
+	theme = "Azerite",
+	hideAddonText = false,
+	hideClockText = false,
+	autoHideEnabled = false,
+	autoHideInArenas = true,
+	autoHideInBattlegrounds = true,
+	autoHideInDungeons = false,
+	autoHideInRaids = false,
+	dielEnabled = true,
+	dielHidden = false,
+	dielAngle = half_pi,
+	dielDistanceOffset = DIEL_DISTANCE_OFFSET,
+	dielTheme = DIEL_THEME_SKY,
+	hideEventButton = false,
+	textVisibilityMigrated = false
+}, ns.MovableModulePrototype.defaults) }
+
+MinimapMod.GetScale = function(self)
+	return mapScale
+end
+
+-- Generate module defaults on the fly
+-- to recalculate default values relying on
+-- changing factors like user interface scale.
+MinimapMod.GenerateDefaults = function(self)
+	defaults.profile.savedPosition = {
+		scale = mapScale * ns.API.GetEffectiveScale(),
+		[1] = "BOTTOMRIGHT",
+		[2] = -40 * (mapScale * ns.API.GetEffectiveScale()),
+		[3] = 40 * (mapScale * ns.API.GetEffectiveScale())
+	}
+	return defaults
+end
+
+local DEFAULT_THEME = "Blizzard"
+local CURRENT_THEME = DEFAULT_THEME
+
+local Elements = {}
+local Objects = {}
+local ObjectOwners = {}
+local queueStatusCustomEnabled
+local queueStatusHooksInstalled
+local queueStatusUpdating
+local queueStatusPending
+
+MinimapMod.Elements = Elements
+MinimapMod.Objects = Objects
+MinimapMod.ObjectOwners = ObjectOwners
+
+local UpdateQueueStatusPlacement = function(button)
+	if (not queueStatusCustomEnabled or not button or queueStatusUpdating) then return end
+
+	-- Blizzard re-anchors the eye from secure paths in combat (action bar
+	-- transition -> MicroMenuContainer -> QueueStatusButton:UpdatePosition),
+	-- and the button is protected then. Put it back once combat drops.
+	if (InCombatLockdown()) then
+		queueStatusPending = button
+		return
+	end
+	queueStatusPending = nil
+
+	-- Already in place: nothing to do (ElvUI's QueueStatusReposition does the same).
+	if (button:GetParent() == Minimap and button:GetNumPoints() == 1) then
+		local point, relativeTo, relativePoint, x, y = button:GetPoint(1)
+		if (point == "CENTER" and relativeTo == Minimap and relativePoint == "CENTER" and x == 82 and y == 82) then
+			return
+		end
+	end
+
+	queueStatusUpdating = true
+	if (button:GetParent() ~= Minimap) then
+		button:SetParent(Minimap)
+	end
+	button:SetFrameLevel(100)
+	button:ClearAllPoints()
+	button:SetPoint("CENTER", Minimap, "CENTER", 82, 82)
+	button:SetHitRectInsets(-8, -8, -8, -8)
+	queueStatusUpdating = nil
+end
+
+local EnableQueueStatusPlacement = function(button)
+	if (not button) then return end
+
+	queueStatusCustomEnabled = true
+	if (not queueStatusHooksInstalled) then
+		hooksecurefunc(button, "SetParent", UpdateQueueStatusPlacement)
+		hooksecurefunc(button, "SetPoint", UpdateQueueStatusPlacement)
+		queueStatusHooksInstalled = true
+	end
+	UpdateQueueStatusPlacement(button)
+
+	if (button.Eye) then
+		button.Eye:SetParent(UIHider)
+	end
+	if (button.Highlight) then
+		button.Highlight:SetParent(UIHider)
+	end
+end
+
+local DisableQueueStatusPlacement = function(button)
+	queueStatusCustomEnabled = nil
+	queueStatusPending = nil
+	if (not button) then return end
+
+	local owner = ObjectOwners.Eye or UIParent
+	button:SetParent(owner)
+	button:SetFrameLevel(owner:GetFrameLevel() + 1)
+	button:ClearQueueStatus()
+	button:ClearAllPoints()
+	button:SetPoint("BOTTOMLEFT", owner, "BOTTOMLEFT", -45, 4)
+	button:SetHitRectInsets(0, 0, 0, 0)
+	if (button.Highlight) then
+		button.Highlight:SetParent(button)
+	end
+	if (button.Eye) then
+		button.Eye:SetParent(button)
+		button.Eye:SetFrameLevel(button:GetFrameLevel() - 1)
+	end
+end
+
+-- Snippets to be run upon object toggling.
+----------------------------------------------------
+local ObjectSnippets = {
+
+	-- Blizzard Objects
+	------------------------------------------
+	Crafting = {
+		Enable = function(object)
+			object:OnLoad()
+			object:SetScript("OnEvent", object.OnEvent)
+		end,
+		Disable = function(object)
+			object:SetScript("OnEvent", nil)
+		end,
+		Update = function(object)
+			object:OnEvent("CRAFTINGORDERS_UPDATE_PERSONAL_ORDER_COUNTS")
+		end
+	},
+	Mail = {
+		Enable = function(object)
+			object:OnLoad()
+			object:SetScript("OnEvent", object.OnEvent)
+		end,
+		Disable = function(object)
+			object:SetScript("OnEvent", nil)
+		end,
+		Update = function(object)
+			object:OnEvent("UPDATE_PENDING_MAIL")
+		end
+	},
+	Eye = {
+		Enable = function(object)
+		end,
+		Disable = function(object)
+		end,
+		Update = function(object)
+		end
+	},
+	--EyeClassicPvP = {
+	--	Enable = function(object)
+	--		LFGMinimapFrameBorder:Show()
+	--		LFGMinimapFrameIcon:Show()
+	--		--MiniMapBattlefieldIcon:Show()
+	--		--MiniMapBattlefieldBorder:Show()
+	--		--BattlegroundShine:Show()
+	--		--if (BattlefieldIconText) then BattlefieldIconText:Show() end
+	--	end,
+	--	Disable = function(object)
+	--		LFGMinimapFrameBorder:Hide()
+	--		LFGMinimapFrameIcon:Hide()
+	--		--MiniMapBattlefieldIcon:Hide()
+	--		--MiniMapBattlefieldBorder:Hide()
+	--		--BattlegroundShine:Hide()
+	--		--if (BattlefieldIconText) then BattlefieldIconText:Hide() end
+	--	end,
+	--	Update = function(object)
+	--		--if (PVPBattleground_UpdateQueueStatus) then PVPBattleground_UpdateQueueStatus() end
+	--		BattlefieldFrame_UpdateStatus(false)
+	--	end
+	--},
+
+	-- AzeriteUI Objects
+	------------------------------------------
+	AzeriteEye = {
+		Enable = function(object)
+			EnableQueueStatusPlacement(Objects.Eye)
+		end,
+		Disable = function(object)
+			DisableQueueStatusPlacement(Objects.Eye)
+		end,
+		Update = function(object)
+			UpdateQueueStatusPlacement(Objects.Eye)
+		end
+	},
+	--AzeriteEyeClassicPvP = {
+	--	Enable = function(object)
+	--		MiniMapBattlefieldFrame:SetFrameStrata("MEDIUM")
+	--		MiniMapBattlefieldFrame:SetFrameLevel(70) -- Minimap's XP button is 60
+	--		MiniMapBattlefieldFrame:ClearAllPoints()
+	--		MiniMapBattlefieldFrame:SetPoint("BOTTOMLEFT", Minimap, 4, 2)
+	--		MiniMapBattlefieldFrame:SetHitRectInsets(-8, -8, -8, -8)
+	--		MiniMapBattlefieldIcon:Hide()
+	--		MiniMapBattlefieldBorder:Hide()
+	--		BattlegroundShine:Hide()
+	--		if (BattlefieldIconText) then BattlefieldIconText:Hide() end
+	--	end,
+	--	Disable = function(object)
+	--		MiniMapBattlefieldFrame:SetFrameStrata(Minimap:GetFrameStrata())
+	--		MiniMapBattlefieldFrame:SetFrameLevel(Minimap:GetFrameLevel() + 1)
+	--		MiniMapBattlefieldFrame:ClearAllPoints()
+	--		MiniMapBattlefieldFrame:SetPoint("BOTTOMLEFT", Minimap, 13, -13)
+	--		MiniMapBattlefieldFrame:SetHitRectInsets(0, 0, 0, 0)
+	--		MiniMapBattlefieldIcon:Show()
+	--		MiniMapBattlefieldBorder:Show()
+	--		BattlegroundShine:Show()
+	--		if (BattlefieldIconText) then BattlefieldIconText:Show() end
+	--	end,
+	--	Update = function(object)
+	--	end
+	--}
+}
+
+-- Element type of custom elements.
+local ElementTypes = {
+	Backdrop = "Texture",
+	Border = "Texture",
+	AzeriteEye = "Texture",
+	--AzeriteEyeClassicPvP = "Texture"
+}
+
+-- Mask textures for the supported shapes.
+local Shapes = {
+	Round = GetMedia("minimap-mask-opaque"),
+	RoundTransparent = GetMedia("minimap-mask-transparent")
+}
+
+-- Our custom embedded skins.
+local Skins = {
+	Blizzard = {
+		Version = 1,
+		Shape = "Round"
+	},
+	["Azerite"] = {
+		Version = 1,
+		Shape = "RoundTransparent",
+		HideElements = {
+			Addons = true, -- retail
+			BattleField = false, -- classic + wrath
+			BorderTop = true,
+			BorderClassic = true, -- wrath
+			Calendar = true,
+			Clock = true,
+			Compass = true,
+			Crafting = true, -- retail
+			Difficulty = true,
+			Expansion = true, -- retail
+			Eye = false, -- wrath + retail
+			Mail = true,
+			Tracking = true,
+			ToggleButton = true, -- classic
+			Zone = true,
+			ZoomIn = true,
+			ZoomOut = true,
+			WorldMap = true -- wrath
+		},
+		Elements = {
+			Backdrop = {
+				Owner = "Minimap",
+				DrawLayer = "BACKGROUND",
+				DrawLevel = -7,
+				Path = GetMedia("minimap-mask-opaque"),
+				Size = function() return (198 / mapScale), (198 / mapScale) end,
+				Point = { "CENTER" },
+				Color = { 0, 0, 0, .75 },
+			},
+			Border = {
+				Owner = "Backdrop",
+				DrawLayer = "BORDER",
+				DrawLevel = 1,
+				-- Resolved when the theme is applied: at file load the character's
+				-- Legacy choice is not known yet, so the Legacy ring art was never used.
+				Path = function() return GetMedia("minimap-border") end,
+				Size = function()
+					-- The Legacy HUD's ring is a different piece of art: AzeriteUI 3.x drew it
+					-- 256px around a 210px map, so it keeps that proportion here.
+					local size = (ns.LegacyHUD and ns.LegacyHUD:IsActive()) and (198 * 256/210) or 398 -- 404
+					return (size / mapScale), (size / mapScale)
+				end,
+				Point = { "CENTER", 0, 0 },
+				Color = { Colors.ui[1], Colors.ui[2], Colors.ui[3] },
+			},
+			AzeriteEye = {
+				Owner = "Eye",
+				DrawLayer = "BORDER",
+				DrawLevel = 2,
+				Path = GetMedia("group-finder-eye-orange"),
+				Size = { 64, 64 },
+				Point = { "CENTER", 0, 0 },
+				Color = { .90, .95, 1 }
+			},
+			-- CATA: check
+			--AzeriteEyeClassicPvP = (ns.IsClassic or ns.IsCata) and {
+			--	Owner = "EyeClassicPvP",
+			--	DrawLayer = "BORDER",
+			--	DrawLevel = 2,
+			--	Path = GetMedia("group-finder-eye-orange"),
+			--	Size = { 64, 64 },
+			--	Point = { "CENTER", 0, 0 },
+			--	Color = { .90, .95, 1 }
+			--}
+		}
+	}
+}
+
+-- Element Callbacks
+--------------------------------------------
+local Minimap_OnMouseWheel = function(self, delta)
+	if (delta > 0) then
+		(Minimap.ZoomIn or MinimapZoomIn):Click()
+	elseif (delta < 0) then
+		(Minimap.ZoomOut or MinimapZoomOut):Click()
+	end
+end
+
+local function GetTrackingButton()
+	local trackingFrame
+	if (MinimapCluster) then
+		trackingFrame = MinimapCluster.Tracking or MinimapCluster.TrackingFrame
+	end
+	return (trackingFrame and (trackingFrame.Button or trackingFrame))
+		or _G.MiniMapTrackingButton
+		or _G.MiniMapTracking
+end
+
+local function EnsureTrackingProxy()
+	if (MinimapMod.trackingProxy and MinimapMod.trackingProxy.OpenMenu) then
+		return MinimapMod.trackingProxy
+	end
+	local trackingMixin = _G.MiniMapTrackingButtonMixin or _G.MinimapTrackingDropdownMixin
+	if (type(Mixin) ~= "function" or type(trackingMixin) ~= "table") then
+		return nil
+	end
+
+	local proxy = CreateFrame("DropdownButton", nil, Minimap)
+	proxy:SetFrameStrata("BACKGROUND")
+	proxy:SetFrameLevel(1)
+	proxy:SetAllPoints(Minimap)
+	proxy:SetAlpha(0)
+	proxy:EnableMouse(false)
+
+	Mixin(proxy, trackingMixin)
+	if (proxy.OnLoad) then
+		API.SafeCall("Minimap.trackingProxy.OnLoad", proxy.OnLoad, proxy)
+	end
+	if (proxy.OnEvent) then
+		proxy:SetScript("OnEvent", proxy.OnEvent)
+	end
+
+	MinimapMod.trackingProxy = proxy
+	return proxy
+end
+
+local OpenTrackingContextMenu = function(anchor)
+	local function IsTrackingMenuVisible(buttonObject)
+		if (buttonObject and buttonObject.menu and buttonObject.menu.IsShown and buttonObject.menu:IsShown()) then
+			return true
+		end
+		if (Menu and Menu.GetManager) then
+			local okManager, manager = API.TryCall(Menu.GetManager)
+			if (okManager and manager and manager.GetOpenMenu) then
+				local okMenu, openMenu = API.TryCall(manager.GetOpenMenu, manager)
+				if (okMenu and openMenu and openMenu.IsShown and openMenu:IsShown()) then
+					return true
+				end
+			end
+		end
+		local trackingDropDown = _G.MiniMapTrackingDropDown
+		if (trackingDropDown and trackingDropDown.IsShown and trackingDropDown:IsShown()) then
+			return true
+		end
+		local dropDownList = _G.DropDownList1
+		if (dropDownList and dropDownList.IsShown and dropDownList:IsShown()) then
+			return true
+		end
+		return false
+	end
+
+	local function OpenAndCheck(buttonObject)
+		if (not buttonObject) then
+			return false
+		end
+		if (buttonObject.OpenMenu) then
+			local ok = API.TryCall(buttonObject.OpenMenu, buttonObject)
+			if (ok and IsTrackingMenuVisible(buttonObject)) then
+				return true
+			end
+		end
+		if (MenuUtil and MenuUtil.CreateContextMenu and buttonObject.menuGenerator) then
+			local ok = API.TryCall(MenuUtil.CreateContextMenu, anchor or Minimap, buttonObject.menuGenerator)
+			if (ok and IsTrackingMenuVisible(buttonObject)) then
+				return true
+			end
+		end
+		if (buttonObject.OnMouseDown) then
+			local ok = API.TryCall(buttonObject.OnMouseDown, buttonObject, "RightButton")
+			if (ok and IsTrackingMenuVisible(buttonObject)) then
+				return true
+			end
+		end
+		if (buttonObject.OnClick) then
+			local ok = API.TryCall(buttonObject.OnClick, buttonObject, "RightButton")
+			if (ok and IsTrackingMenuVisible(buttonObject)) then
+				return true
+			end
+		end
+		if (buttonObject.Click) then
+			local ok = API.TryCall(buttonObject.Click, buttonObject, "RightButton")
+			if (ok and IsTrackingMenuVisible(buttonObject)) then
+				return true
+			end
+		end
+		return false
+	end
+
+	-- Pattern parity with ElvUI/GW2_UI:
+	-- prefer the live retail tracking button, then a mixin proxy fallback.
+	if (OpenAndCheck(EnsureTrackingProxy()) or OpenAndCheck(GetTrackingButton())) then
+		return true
+	end
+	local okBlizzard = API.TryCall(Minimap_OnClick, Minimap, "RightButton")
+	if (okBlizzard and IsTrackingMenuVisible()) then
+		return true
+	end
+
+	local dropdown = _G[ns.Prefix.."MiniMapTrackingDropDown"] or _G.MiniMapTrackingDropDown
+	if (dropdown) then
+		ToggleDropDownMenu(1, nil, dropdown, "cursor")
+		return IsTrackingMenuVisible()
+	end
+
+	return false
+end
+
+-- Hook for RightButton only.
+-- LeftButton and MiddleButton are handled by Blizzard's original minimap click handler.
+Minimap_OnMouseButton_Hook = function(self, button)
+	if (button == "RightButton") then
+		OpenTrackingContextMenu(self)
+	end
+end
+
+local Mail_OnEnter = function(self)
+	if (GameTooltip:IsForbidden()) then return end
+
+	GameTooltip_SetDefaultAnchor(GameTooltip, self)
+
+	-- Add unread mail notifier.
+	local sender1, sender2, sender3 = GetLatestThreeSenders()
+	if (sender1 or sender2 or sender3) then
+		GameTooltip:AddLine(L_HAVE_MAIL_FROM, unpack(Colors.highlight))
+		if (sender1) then
+			GameTooltip:AddLine(sender1, unpack(Colors.green))
+		end
+		if (sender2) then
+			GameTooltip:AddLine(sender2, unpack(Colors.green))
+		end
+		if (sender3) then
+			GameTooltip:AddLine(sender3, unpack(Colors.green))
+		end
+	else
+		GameTooltip:AddLine(L_HAVE_MAIL, unpack(Colors.highlight))
+	end
+
+	-- Add crafting order notifier.
+	local countInfos = self.countInfos
+	if ((not countInfos) and MinimapMod and MinimapMod.mail) then
+		countInfos = MinimapMod.mail.countInfos
+	end
+	if (countInfos and #countInfos > 0) then
+		GameTooltip:AddLine(" ")
+		GameTooltip:AddLine(MAILFRAME_CRAFTING_ORDERS_TOOLTIP_TITLE)
+		for _,countInfo in ipairs(countInfos) do
+			GameTooltip:AddLine(string_format(PERSONAL_CRAFTING_ORDERS_AVAIL_FMT, countInfo.numPersonalOrders, countInfo.professionName))
+		end
+	end
+
+	GameTooltip:Show()
+end
+
+local Mail_OnLeave = function(self)
+	if (GameTooltip:IsForbidden()) then return end
+	GameTooltip:Hide()
+end
+
+-- Element API
+--------------------------------------------
+MinimapMod.UpdateCompass = function(self)
+	local compass = self.compass
+	if (not compass) then
+		return
+	end
+	if (self.rotateMinimap) then
+		local radius = self.compassRadius
+		if (not radius) then
+			local width = compass:GetWidth()
+			if (not width) then
+				return
+			end
+			radius = width/2
+		end
+
+		local playerFacing = GetPlayerFacing()
+		if (not playerFacing) or (self.supressCompass) or (IN_TORGHAST) then
+			compass:SetAlpha(0)
+		else
+			compass:SetAlpha(1)
+		end
+
+		-- In Torghast, map is always locked. Weird.
+		local angle = (IN_TORGHAST) and 0 or (self.rotateMinimap and playerFacing) and -playerFacing or 0
+		compass.north:SetPoint("CENTER", radius*math_cos(angle + half_pi), radius*math_sin(angle + half_pi))
+
+	else
+		compass:SetAlpha(0)
+	end
+end
+
+MinimapMod.UpdateMail = function(self)
+	local mail = self.mail
+	if (not mail) then
+		return
+	end
+
+	local hasMail = HasNewMail()
+	local hasCraftingOrder
+
+	mail.countInfos = C_CraftingOrders.GetPersonalOrdersInfo()
+	hasCraftingOrder = mail.countInfos and #mail.countInfos > 0
+
+	local mailText = ""
+
+	if (hasCraftingOrder) then
+		mailText = mailText .. string_format("%s |cff888888(|r"..Colors.normal.colorCode..#mail.countInfos.."|r|cff888888)|r", PROFESSIONS_CRAFTING, L_MAIL, #mail.countInfos)
+	end
+
+	if (hasMail) then
+		if (hasCraftingOrder) then
+			mailText = string_format("%s %s", L_NEW, L_MAIL) .. "|n" .. mailText
+		else
+			mailText = string_format("%s %s", L_NEW, L_MAIL)
+		end
+	end
+
+	mail:SetText(mailText)
+
+	if (hasMail or hasCraftingOrder) then
+		mail:Show()
+		mail.frame:Show()
+
+		--local resting = self.resting
+		--if (resting) then
+		--	resting:ClearAllPoints()
+		--	resting:SetPoint("BOTTOM", mail, "TOP", 0, 0)
+		--end
+	else
+		mail:Hide()
+		mail.frame:Hide()
+
+		--local resting = self.resting
+		--if (resting) then
+		--	resting:ClearAllPoints()
+		--	resting:SetPoint(mail:GetPoint())
+		--end
+	end
+
+end
+
+MinimapMod.MigrateLegacyTextVisibilitySettings = function(self)
+	if (self.db.profile.textVisibilityMigrated) then
+		return
+	end
+
+	local tracker = ns:GetModule("Tracker", true)
+	local trackerProfile = tracker and tracker.db and tracker.db.profile
+	if (trackerProfile) then
+		if (trackerProfile.hideAddonText) then
+			self.db.profile.hideAddonText = true
+		end
+		if (trackerProfile.hideClockText) then
+			self.db.profile.hideClockText = true
+		end
+		trackerProfile.hideAddonText = nil
+		trackerProfile.hideClockText = nil
+	end
+
+	self.db.profile.textVisibilityMigrated = true
+end
+
+MinimapMod.UpdateAddonCompartmentVisibility = function(self)
+	local addonCompartment = self.addonCompartment
+	if (not addonCompartment) then
+		return
+	end
+
+	local text = addonCompartment.text or (addonCompartment.GetFontString and addonCompartment:GetFontString())
+	if (text) then
+		text:SetShown(not self.db.profile.hideAddonText)
+	end
+end
+
+MinimapMod.UpdateClockVisibility = function(self)
+	local info = ns:GetModule("Info", true)
+	if (info and info.UpdateClockVisibility) then
+		info:UpdateClockVisibility()
+	end
+end
+
+MinimapMod.UpdateTimers = function(self)
+
+	-- In Torghast, map is always locked. Weird.
+	-- *Note that this is only in the tower, not the antechamber.
+	-- *We're resting in the antechamber, and it's a sanctuary. Good indicators.
+	-- *Also, we know there is an API call for it. We like ours better.
+	IN_TORGHAST = (not IsResting()) and (GetRealZoneText() == GetRealZoneText(TORGHAST_ZONE_ID))
+
+	self.rotateMinimap = GetCVarBool("rotateMinimap")
+
+	if (self.rotateMinimap) then
+		if (not self.compassTimer) then
+			self.compassTimer = self:ScheduleRepeatingTimer("UpdateCompass", 1/60)
+			self:UpdateCompass()
+		end
+
+	elseif (self.compassTimer) then
+		self:CancelTimer(self.compassTimer)
+		self:UpdateCompass()
+	end
+end
+
+-- Addon Styling & Initialization
+--------------------------------------------
+MinimapMod.InitializeMBB = function(self)
+
+	local button = CreateFrame("Frame", nil, Minimap)
+	button:SetFrameLevel(button:GetFrameLevel() + 10)
+	button:SetPoint("BOTTOMRIGHT", -244, 35)
+	button:SetSize(32, 32)
+	button:SetFrameStrata("LOW") -- MEDIUM collides with Immersion
+
+	local frame = _G.MBB_MinimapButtonFrame
+	frame:SetParent(button)
+	frame:RegisterForDrag()
+	frame:SetSize(32, 32)
+	frame:ClearAllPoints()
+	frame:SetFrameStrata("LOW") -- MEDIUM collides with Immersion
+	frame:SetPoint("CENTER", 0, 0)
+	frame:SetHighlightTexture("")
+	frame:DisableDrawLayer("OVERLAY")
+
+	frame.ClearAllPoints = noop
+	frame.SetPoint = noop
+	frame.SetAllPoints = noop
+
+	local icon = _G.MBB_MinimapButtonFrame_Texture
+	icon:ClearAllPoints()
+	icon:SetPoint("CENTER", 0, 0)
+	icon:SetSize(32, 32)
+	icon:SetTexture(GetMedia("plus"))
+	icon:SetTexCoord(0,1,0,1)
+	icon:SetAlpha(.85)
+
+	local down, over
+	local setalpha = function()
+		if (down and over) then
+			icon:SetAlpha(1)
+		elseif (down or over) then
+			icon:SetAlpha(.95)
+		else
+			icon:SetAlpha(.85)
+		end
+	end
+
+	frame:SetScript("OnMouseDown", function(self)
+		down = true
+		setalpha()
+	end)
+
+	frame:SetScript("OnMouseUp", function(self)
+		down = false
+		setalpha()
+	end)
+
+	frame:SetScript("OnEnter", function(self)
+		MBB_ShowTimeout = -1
+		over = true
+		setalpha()
+
+		if (GameTooltip:IsForbidden()) then return end
+
+		GameTooltip_SetDefaultAnchor(GameTooltip, self)
+		GameTooltip:AddLine("MinimapButtonBag v" .. MBB_Version)
+		GameTooltip:AddLine(MBB_TOOLTIP1, 0, 1, 0, true)
+		GameTooltip:Show()
+	end)
+
+	frame:SetScript("OnLeave", function(self)
+		MBB_ShowTimeout = 0
+		over = false
+		setalpha()
+
+		if (GameTooltip:IsForbidden()) then return end
+
+		GameTooltip:Hide()
+	end)
+end
+
+MinimapMod.InitializeNarcissus = function(self)
+	local Narci_MinimapButton = Narci_MinimapButton
+	if (not Narci_MinimapButton) then
+		return
+	end
+
+	Narci_MinimapButton:SetScript("OnDragStart", nil)
+	Narci_MinimapButton:SetScript("OnDragStop", nil)
+	Narci_MinimapButton:SetSize(56, 56)
+	Narci_MinimapButton.Color:SetVertexColor(.85, .85, .85, 1)
+	Narci_MinimapButton.Background:SetScale(1)
+	Narci_MinimapButton.Background:SetSize(46, 46)
+	Narci_MinimapButton.Background:SetVertexColor(.75, .75, .75, 1)
+	Narci_MinimapButton.InitPosition = function(self)
+		local _, _, rp = self:GetPoint()
+		if (rp ~= "TOP") then
+			Narci_MinimapButton:ClearAllPoints()
+			Narci_MinimapButton:SetPoint("CENTER", Minimap, "TOP", 0, 8)
+		end
+	end
+	Narci_MinimapButton.OnDragStart = noop
+	Narci_MinimapButton.OnDragStop = noop
+	Narci_MinimapButton.SetIconScale = noop
+	Narci_MinimapButton:InitPosition()
+
+	hooksecurefunc(Narci_MinimapButton, "SetPoint", Narci_MinimapButton.InitPosition)
+
+end
+
+MinimapMod.InitializeAddon = function(self, addon)
+	if (not IsAddOnEnabled(addon)) then
+		return
+	end
+	local method = self["Initialize"..addon]
+	if (method) then
+		if (not C_AddOns.IsAddOnLoaded(addon)) then
+			C_AddOns.LoadAddOn(addon)
+		end
+		method(self)
+	end
+end
+
+-- Module Theme API (really...?)
+--------------------------------------------
+MinimapMod.RegisterTheme = function(self, name, skin)
+	if (Skins[name] or name == DEFAULT_THEME) then return end
+	Skins[name] = skin
+end
+
+MinimapMod.SetMinimapTheme = function(self, input)
+	if (InCombatLockdown()) then return end
+	local theme = self:GetArgs(string_lower(input))
+	self:SetTheme(theme)
+end
+
+MinimapMod.SetTheme = function(self, requestedTheme)
+	if (InCombatLockdown()) then
+		self.pendingTheme = requestedTheme
+		return
+	end
+
+	if (not requestedTheme) then return end
+
+	-- Theme names are case sensitive,
+	-- but we don't want the input to be.
+	local name
+	for theme in next,Skins do
+		if (string_lower(theme) == string_lower(requestedTheme)) then
+			name = theme
+			break
+		end
+	end
+	if (not name or not Skins[name] or name == CURRENT_THEME) then return end
+
+	local current, new = Skins[CURRENT_THEME], Skins[name]
+
+	-- Disable unused custom elements.
+	if (current.Elements) then
+		for element,data in next,current.Elements do
+			if (data) and (not new.Elements or not new.Elements[element]) then
+				Elements[element]:SetParent(UIHider)
+				if (ObjectSnippets[element]) then
+					ObjectSnippets[element].Disable(Objects[element])
+				end
+			end
+		end
+	end
+
+	-- Update Blizzard element visibility.
+	for element,object in next,Objects do
+		if (new.HideElements and new.HideElements[element]) then
+			-- Retail tracking must keep a live parent; parenting to UIHider can break menu open.
+			if (element == "Tracking") then
+				local owner = ObjectOwners[element] or MinimapCluster or Minimap
+				object:SetParent(owner)
+				object:SetAlpha(0)
+				if (object.Show) then
+					object:Show()
+				end
+				local button = object.Button
+				if (button) then
+					if (button.SetAlpha) then
+						button:SetAlpha(0)
+					end
+					if (button.EnableMouse) then
+						button:EnableMouse(false)
+					end
+					if (button.Show) then
+						button:Show()
+					end
+				elseif (object.EnableMouse) then
+					object:EnableMouse(false)
+				end
+			else
+				object:SetParent(UIHider)
+			end
+			if (ObjectSnippets[element]) then
+				ObjectSnippets[element].Disable(object)
+			end
+		else
+			object:SetParent(ObjectOwners[element])
+			if (element == "Tracking") then
+				object:SetAlpha(1)
+				local button = object.Button
+				if (button) then
+					if (button.SetAlpha) then
+						button:SetAlpha(1)
+					end
+					if (button.EnableMouse) then
+						button:EnableMouse(true)
+					end
+				elseif (object.EnableMouse) then
+					object:EnableMouse(true)
+				end
+			end
+			if (ObjectSnippets[element]) then
+				ObjectSnippets[element].Enable(object)
+				ObjectSnippets[element].Update(object)
+			end
+		end
+	end
+
+	-- Set the minimap mask for the new theme.
+	local mask = new.Shape and Shapes[new.Shape] or Shapes.Round
+	Minimap:SetMaskTexture(mask)
+
+	-- Enable new theme's custom elements.
+	if (new.Elements) then
+		for element,data in next,new.Elements do
+
+			if (data) then
+
+				-- Retrieve the owner of the object
+				local owner = data and data.Owner and ObjectOwners[data.Owner] or Minimap
+
+				-- Retrieve the object
+				local object = Elements[element]
+
+				-- Figure out what our custom object should be parented to.
+				-- Check Objects first (for Blizzard elements), then Elements (for custom elements)
+				local objectParent = data and data.Owner and (Objects[data.Owner] or Elements[data.Owner]) or Minimap
+
+				-- If a custom object does not exist, create it.
+				if (not object) then
+
+					-- Create!
+					if (ElementTypes[element] == "Texture") then
+						object = objectParent:CreateTexture()
+						Elements[element] = object
+					end
+				end
+
+				-- Silently ignore non-supported objects.
+				if (object) then
+
+					object:SetParent(objectParent or owner)
+
+					if (data.Size) then
+						if (type(data.Size) == "function") then
+							object:SetSize(data.Size())
+						else
+							object:SetSize(unpack(data.Size))
+						end
+					else
+						object:SetSize(Minimap:GetSize())
+					end
+
+					if (data.Point) then
+						object:ClearAllPoints()
+						if (type(data.Point) == "function") then
+							object:SetPoint(data.Point())
+						else
+							object:SetPoint(unpack(data.Point))
+						end
+					end
+
+					if (ElementTypes[element] == "Texture") then
+						local path = type(data.Path) == "function" and data.Path() or data.Path
+						object:SetTexture(ns.ThemeEngine and ns.ThemeEngine:ResolvePath(path) or path)
+						object:SetDrawLayer(data.DrawLayer or "ARTWORK", data.DrawLevel or 0)
+						if (data.Color) then
+							object:SetVertexColor(unpack(data.Color))
+						else
+							object:SetVertexColor(1, 1, 1, 1)
+						end
+					end
+
+					-- Run object callbacks.
+					if (ObjectSnippets[element]) then
+						ObjectSnippets[element].Enable(Elements[element])
+						ObjectSnippets[element].Update(Elements[element])
+					end
+				end
+			end
+		end
+	end
+
+	CURRENT_THEME = name
+	self.pendingTheme = nil
+
+	-- Store the theme setting
+	self.db.profile.theme = name
+
+	-- Update custom element visibility
+	self:UpdateCustomElements()
+end
+
+-- Minimap Widget Settings
+--------------------------------------------
+-- Create our custom elements
+-- *This is a temporary and clunky measure,
+--  eventually I want this baked into the themes,
+--  including the position based visibility.
+MinimapMod.CreateCustomElements = function(self)
+
+	local db = ns.GetConfig("Minimap")
+
+	local frame = CreateFrame("Frame", nil, Minimap)
+	frame:SetFrameLevel(Minimap:GetFrameLevel())
+	frame:SetAllPoints(Minimap)
+
+	self.widgetFrame = frame
+
+	-- Compass
+	local compass = CreateFrame("Frame", nil, frame)
+	compass:SetFrameLevel(Minimap:GetFrameLevel() + 5)
+	compass:SetPoint("TOPLEFT", db.CompassInset, -db.CompassInset)
+	compass:SetPoint("BOTTOMRIGHT", -db.CompassInset, db.CompassInset)
+
+	local north = compass:CreateFontString(nil, "ARTWORK", nil, 1)
+	north:SetFontObject(db.CompassFont)
+	north:SetTextColor(unpack(db.CompassColor))
+	north:SetText(db.CompassNorthTag)
+	compass.north = north
+	if (ns.ThemeEngine) then ns.ThemeEngine:StyleCompass(compass) end
+
+	self.compass = compass
+
+	-- Coordinates
+	local coordinates = frame:CreateFontString(nil, "OVERLAY", nil, 1)
+	coordinates:SetJustifyH("CENTER")
+	coordinates:SetJustifyV("MIDDLE")
+	coordinates:SetFontObject(db.CoordinateFont)
+	coordinates:SetTextColor(unpack(db.CoordinateColor))
+	coordinates:SetPoint(unpack(db.CoordinatePlace))
+
+	self.coordinates = coordinates
+
+	-- Mail
+	local mailFrame = CreateFrame("Button", nil, frame)
+	mailFrame:SetFrameLevel(mailFrame:GetFrameLevel() + 5)
+	mailFrame:SetScript("OnEnter", Mail_OnEnter)
+	mailFrame:SetScript("OnLeave", Mail_OnLeave)
+
+	local mail = frame:CreateFontString(nil, "OVERLAY", nil, 1)
+	mail.frame = mailFrame
+	mail:SetFontObject(db.MailFont)
+	mail:SetTextColor(unpack(db.MailColor))
+	mail:SetJustifyH(db.MailJustifyH)
+	mail:SetJustifyV(db.MailJustifyV)
+	mail:SetFormattedText("%s", L_MAIL)
+	mail:SetPoint(unpack(db.MailPosition))
+	mailFrame:SetAllPoints(mail)
+
+	self.mail = mail
+
+	-- Addon Compartment
+	do
+		local addonCompartment = self.Objects.Addons
+		if (addonCompartment) then
+			local addons = CreateFrame("DropdownButton", nil, Minimap)
+			addons:SetPoint("BOTTOMRIGHT", -252, 43)
+			addons:SetSize(16, 16)
+
+			addons:SetupMenu(addonCompartment.menuGenerator)
+
+			local addonsAnchor = AnchorUtil.CreateAnchor("BOTTOMRIGHT", addons, "TOPLEFT", 0, 0)
+			addons:SetMenuAnchor(addonsAnchor)
+
+			addons:SetScript("OnEnter", function(self)
+				addons:SetAlpha(.95)
+
+				if (GameTooltip:IsForbidden()) then return end
+
+				GameTooltip_SetDefaultAnchor(GameTooltip, self)
+				GameTooltip_SetTitle(GameTooltip, ADDONS)
+				GameTooltip:Show()
+			end)
+
+			addons:SetScript("OnLeave", function(self)
+				addons:SetAlpha(.5)
+
+				if (GameTooltip:IsForbidden()) then return end
+
+				GameTooltip:Hide()
+			end)
+
+			local addonsText = addons:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+			addonsText:SetText(addonCompartment:GetText())
+			addonsText:SetPoint("CENTER")
+			addons:SetFontString(addonsText)
+			addons.text = addonsText
+
+			hooksecurefunc(addonCompartment, "UpdateDisplay", function(self)
+				addonsText:SetText(self:GetText())
+			end)
+
+			addons:SetAlpha(.5)
+
+			self.addonCompartment = addons
+			self:UpdateAddonCompartmentVisibility()
+		end
+	end
+
+
+	self:UpdateCustomElements()
+	self.CreateCustomElements = noop
+
+end
+
+-- Update the visibility of the custom elements
+MinimapMod.UpdateCustomElements = function(self)
+	if (not self.widgetFrame) then return end
+	self.widgetFrame:SetShown(CURRENT_THEME == "Azerite")
+end
+
+MinimapMod.PostUpdatePositionAndScale = function(self)
+	local config = self.db.profile.savedPosition
+
+	self.widgetFrame:SetScale(ns.API.GetEffectiveScale() / config.scale)
+	self:UpdateCustomElements()
+
+	MinimapCluster.MinimapContainer:SetScale(1)
+
+	-- TODO: Figure out all the elements I should rescale.
+	for name in next,{
+		LFGMinimapFrame = true, -- New Classic (and Cata?) Group Finder Eye
+		MiniMapBattlefieldFrame = true,
+		MiniMapLFGFrame = true,
+		QueueStatusButton = true
+	} do
+		local element = _G[name]
+		if (element and (name ~= "QueueStatusButton" or not IsAddOnEnabled("Bartender4"))) then
+			element:SetScale(ns.API.GetEffectiveScale() / config.scale)
+		end
+	end
+end
+
+MinimapMod.UpdateAnchor = function(self)
+	if (not self.anchor) then return end
+
+	if (self.PreUpdateAnchor) then
+		if (self:PreUpdateAnchor()) then return end
+	end
+
+	local config = self.db.profile.savedPosition
+	if (config) then
+		local w,h = self.frame:GetSize()
+		self.anchor:SetSize(w + (16*2*ns.API.GetEffectiveScale())/config.scale, h + (16*2*ns.API.GetEffectiveScale())/config.scale)
+		self.anchor:SetScale(config.scale)
+		self.anchor:ClearAllPoints()
+		self.anchor:SetPoint(config[1], UIParent, config[1], config[2], config[3])
+	end
+
+	if (self.PostUpdateAnchor) then
+		self:PostUpdateAnchor()
+	end
+end
+
+MinimapMod.UpdatePositionAndScale = function(self)
+	if (not self.frame) then return end
+
+	if (InCombatLockdown()) then
+		self.updateneeded = true
+		return
+	end
+
+	self.updateneeded = nil
+
+	local config = self.db.profile.savedPosition
+	if (config) then
+
+		local string_find = string.find
+
+		local x = string_find(config[1], "LEFT") and 16*ns.API.GetEffectiveScale() or string_find(config[1], "RIGHT") and -16*ns.API.GetEffectiveScale() or 0
+		local y = string_find(config[1], "TOP") and -16*ns.API.GetEffectiveScale() or string_find(config[1], "BOTTOM") and 16*ns.API.GetEffectiveScale() or 0
+
+		self.frame:SetScale(config.scale)
+		self.frame:ClearAllPoints()
+		self.frame:SetPoint(config[1], UIParent, config[1], (x + config[2])/config.scale, (y + config[3])/config.scale)
+	end
+
+	if (self.PostUpdatePositionAndScale) then
+		self:PostUpdatePositionAndScale()
+	end
+end
+
+-- Whether the instance we are currently in is one
+-- the player asked us to hide the minimap in.
+MinimapMod.ShouldAutoHide = function(self)
+	local db = self.db and self.db.profile
+	if (not db or not db.enabled or not db.autoHideEnabled) then return false end
+
+	-- Step aside while the anchor is on screen, or the player would be
+	-- dragging an invisible minimap around in the frame mover.
+	if (self.anchor and self.anchor:IsShown()) then return false end
+
+	local _, instanceType = IsInInstance()
+	local setting = instanceType and AutoHideSettings[instanceType]
+
+	return (setting and db[setting]) and true or false
+end
+
+-- Kept apart from UpdateAutoHide so a combat lockdown can only postpone the
+-- mouse half of it. The alpha half is never protected and always applies.
+MinimapMod.UpdateAutoHideMouse = function(self)
+
+	-- EnableMouse and friends are protected calls on a protected frame in
+	-- combat, and the vehicle exit button is genuinely one of those - it is a
+	-- SecureActionButtonTemplate. Wait for the combat drop rather than risk a
+	-- blocked action; everything here is invisible by then, so the only cost is
+	-- a click the exit button can still swallow until the fight ends. Entering
+	-- an instance drops combat first, so this only arises on a mid-fight toggle.
+	if (InCombatLockdown()) then
+		self.autoHideMouseNeeded = true
+		return
+	end
+
+	self.autoHideMouseNeeded = nil
+
+	local enable = not self.autoHidden
+
+	if (self.frame) then
+		self.frame:EnableMouse(enable)
+		self.frame:EnableMouseWheel(enable)
+	end
+
+	if (self.clickHandler) then
+		self.clickHandler:EnableMouse(enable)
+	end
+
+	local exitButton = GetVehicleExitButton()
+	if (exitButton) then
+		-- A detached button is not part of the map any more, so it keeps its
+		-- clicks whatever the map is doing.
+		exitButton:EnableMouse(enable or not IsVehicleExitButtonAttached())
+	end
+end
+
+-- Alpha only for the exit button, never Show() or Hide(). A state driver owns
+-- its visibility - "[@vehicle,exists,canexitvehicle][possessbar][mounted]
+-- show;hide" - and it is a protected frame, so contesting that would be a
+-- blocked call the moment the player is in combat.
+MinimapMod.UpdateVehicleExitAlpha = function(self)
+	local exitButton = GetVehicleExitButton()
+	if (not exitButton) then return end
+
+	local hide = self.autoHidden and IsVehicleExitButtonAttached()
+
+	exitButton:SetAlpha(hide and 0 or 1)
+end
+
+-- Re-applies the map's current hidden state to the exit button, alpha and
+-- clicks both. UpdateAutoHide only runs its body when the hidden state itself
+-- changes, so this is the way in for the VehicleExit module when the player
+-- attaches or detaches the button while the map is already hidden.
+MinimapMod.UpdateVehicleExitButton = function(self)
+	self:UpdateVehicleExitAlpha()
+	self:UpdateAutoHideMouse()
+end
+
+MinimapMod.UpdateAutoHide = function(self)
+	local shouldHide = self:ShouldAutoHide()
+
+	-- Nothing to apply and nothing to restore. This is the path taken by
+	-- everyone who leaves auto-hide off, and it touches no minimap state.
+	if (shouldHide == (self.autoHidden or false)) then
+		if (self.autoHideMouseNeeded) then
+			self:UpdateAutoHideMouse()
+		end
+		return
+	end
+
+	self.autoHidden = shouldHide or nil
+
+	-- MinimapCluster keeps its visibility and loses only its alpha. It is the
+	-- EditMode system frame and this module calls Show() on it elsewhere, so
+	-- contesting its shown state invites a fight. Alpha is inherited, which
+	-- takes the cluster's own children - zone text, difficulty, the border -
+	-- in the one call.
+	local alpha = shouldHide and 0 or 1
+
+	if (MinimapCluster) then
+		MinimapCluster:SetAlpha(alpha)
+	end
+
+	-- The map itself has to go out properly. Its blips - the player arrow, the
+	-- party and raid dots, every tracking icon - are drawn by the client over
+	-- the widget rather than parented to it, and they ignore frame alpha, so
+	-- alpha alone left them floating on an empty screen. Hide() takes them
+	-- with it. MinimapContainer has a fixed size, so hiding the map inside it
+	-- does not make the cluster relayout. The alpha stays alongside it as a
+	-- backstop for anything outside this addon showing the map back.
+	if (self.frame) then
+		self.frame:SetAlpha(alpha)
+		self.frame:SetShown(not shouldHide)
+	end
+
+	-- The exit button goes with the map, unless the player has given it a
+	-- position of its own somewhere else on screen.
+	self:UpdateVehicleExitAlpha()
+
+	self:UpdateAutoHideMouse()
+end
+
+MinimapMod.UpdateSettings = function(self)
+	if (not self.db or not self.db.profile) then return end
+	self:UpdateAddonCompartmentVisibility()
+	self:UpdateClockVisibility()
+	self:UpdateAutoHide()
+	-- Before the enabled check, so switching the minimap off gives the button back.
+	self:UpdateEventButton()
+	if (not self.db.profile.enabled) then return end
+
+	-- Just update theme and settings
+	if (MinimapCluster) then
+		MinimapCluster:Show()
+	end
+
+	self:SetTheme(self.db.profile.theme)
+	self:UpdateCompass()
+	self:UpdateDiel()
+	self:UpdateMail()
+	self:UpdateTimers()
+	self:UpdateCustomElements()
+end
+
+MinimapMod.InitializeObjectTables = function(self)
+
+	-- Minimap objects available for restyling.
+	----------------------------------------------------
+	Objects.Addons = AddonCompartmentFrame
+	Objects.BorderTop = MinimapCluster.BorderTop
+	Objects.Calendar = GameTimeFrame
+	Objects.Clock = TimeManagerClockButton
+	Objects.Compass = MinimapCompassTexture
+	Objects.Crafting = MinimapCluster.IndicatorFrame.CraftingOrderFrame
+	Objects.Difficulty = MinimapCluster.InstanceDifficulty
+	Objects.Expansion = ExpansionLandingPageMinimapButton
+	if (not IsAddOnEnabled("Bartender4")) then
+		Objects.Eye = QueueStatusButton
+	else
+		-- Bartender's optional QueueStatusButtonBar owns this shared button.
+		Skins.Azerite.Elements.AzeriteEye = nil
+	end
+	Objects.Mail = MinimapCluster.IndicatorFrame.MailFrame
+	-- Both clients name it Tracking (Blizzard_Minimap/Mainline/Minimap.xml); TrackingFrame is the old name.
+	Objects.Tracking = MinimapCluster.Tracking or MinimapCluster.TrackingFrame
+	Objects.Zone = MinimapCluster.ZoneTextButton
+	Objects.ZoomIn = Minimap.ZoomIn
+	Objects.ZoomOut = Minimap.ZoomOut
+
+	-- Object parents when using blizzard theme.
+	----------------------------------------------------
+	ObjectOwners.Addons = MinimapCluster
+	ObjectOwners.BorderTop = MinimapCluster
+	ObjectOwners.Calendar = MinimapCluster
+	ObjectOwners.Clock = MinimapCluster
+	ObjectOwners.Compass = MinimapBackdrop
+	ObjectOwners.Crafting = MinimapCluster.IndicatorFrame
+	ObjectOwners.Difficulty = MinimapCluster
+	ObjectOwners.Expansion = MinimapBackdrop
+	if (not IsAddOnEnabled("Bartender4")) then
+		ObjectOwners.Eye = MicroMenuContainer
+	end
+	ObjectOwners.Mail = MinimapCluster.IndicatorFrame
+	ObjectOwners.Tracking = MinimapCluster
+	ObjectOwners.Zone = MinimapCluster
+	ObjectOwners.ZoomIn = Minimap
+	ObjectOwners.ZoomOut = Minimap
+
+	--[[--
+
+	-- CATA: check
+	if (ns.IsCata) then
+		ObjectOwners.BorderTop = MinimapCluster
+		ObjectOwners.BorderClassic = MinimapBackdrop
+		ObjectOwners.Calendar = MinimapCluster
+		ObjectOwners.Clock = MinimapCluster
+		ObjectOwners.Compass = MinimapBackdrop
+		ObjectOwners.Difficulty = MinimapCluster
+		ObjectOwners.Expansion = MinimapBackdrop
+		ObjectOwners.Eye = MinimapBackdrop
+		ObjectOwners.EyeClassicPvP = Minimap
+		ObjectOwners.Mail = Minimap
+		ObjectOwners.Tracking = MinimapCluster
+		ObjectOwners.Zone = MinimapCluster
+		ObjectOwners.ZoomIn = Minimap
+		ObjectOwners.ZoomOut = Minimap
+		ObjectOwners.WorldMap = MinimapBackdrop
+	end
+
+
+	--]]--
+
+end
+
+MinimapMod.OnEvent = function(self, event, ...)
+	if (event == "PLAYER_ENTERING_WORLD" or event == "VARIABLES_LOADED") then
+		self:UpdateAnchor()
+		self:UpdateSettings()
+	elseif (event == "PLAYER_REGEN_ENABLED") then
+		if (self.pendingTheme) then
+			self:SetTheme(self.pendingTheme)
+		end
+		if (self.autoHideMouseNeeded) then
+			self:UpdateAutoHideMouse()
+		end
+		if (queueStatusPending) then
+			UpdateQueueStatusPlacement(queueStatusPending)
+		end
+		if (self.eventButtonPending) then
+			self:UpdateEventButton()
+		end
+	elseif (event == "DIEL_CYCLE_CHANGED") then
+		self:UpdateDiel(...)
+	end
+end
+
+MinimapMod.OnEnable = function(self)
+	C_AddOns.LoadAddOn("Blizzard_TimeManager")
+	C_AddOns.LoadAddOn("Blizzard_QueueStatusFrame")
+
+	-- Clean out deprecated settings
+	self.db.profile.useHalfClock = nil
+	self.db.profile.useServerTime = nil
+	self:MigrateLegacyTextVisibilitySettings()
+	-- Retire the temporary Diel art picker and tuning values; keep dielAngle.
+	for _, key in ipairs({ "dielBorderScale", "dielCycleBorderScale", "dielAzeriteBorderScale",
+		"dielLayer", "dielStyleMigrated", "dielSeparateBorderScalesMigrated" }) do
+		self.db.profile[key] = nil
+	end
+
+	self:InitializeObjectTables()
+
+	MinimapCluster:EnableMouse(false)
+	MinimapCluster:SetFrameLevel(1)
+
+	self.frame = Minimap
+	self.frame:SetMovable(true)
+	self.frame:EnableMouse(true)
+	if (self.frame.RegisterForClicks) then
+		self.frame:RegisterForClicks("AnyUp", "AnyDown")
+	end
+	self.frame:EnableMouseWheel(true)
+	self.frame:SetScript("OnMouseWheel", Minimap_OnMouseWheel)
+
+	-- Dedicated click handler frame, matching the reliable ElvUI/GW2_UI pattern:
+	-- keep left/middle passthrough, capture right-down for tracking menu.
+	if (not self.clickHandler) then
+		local clickHandler = CreateFrame("Frame", ns.Prefix.."MinimapClickHandler", self.frame)
+		clickHandler:SetAllPoints(self.frame)
+		clickHandler:SetFrameLevel(self.frame:GetFrameLevel() + 30)
+		clickHandler:EnableMouse(true)
+		if (clickHandler.SetPassThroughButtons) then
+			clickHandler:SetPassThroughButtons("LeftButton", "MiddleButton")
+		end
+		if (clickHandler.SetPropagateMouseMotion) then
+			clickHandler:SetPropagateMouseMotion(true)
+		end
+		clickHandler:SetScript("OnMouseDown", function(_, button)
+			Minimap_OnMouseButton_Hook(self.frame, button)
+		end)
+		clickHandler:SetScript("OnMouseUp", noop)
+		self.clickHandler = clickHandler
+	end
+
+	self.frame:SetArchBlobRingScalar(0)
+	self.frame:SetQuestBlobRingScalar(0)
+
+	self:CreateCustomElements()
+	self:CreateDiel()
+	-- Reconcile with Forever's current cycle even if its transition event was missed.
+	-- AceTimer cancels this on disable; replace the handle when re-enabled.
+	if (self.dielTimer) then
+		self:CancelTimer(self.dielTimer)
+		self.dielTimer = nil
+	end
+	if (ns.IsForever and self.dielFrame) then
+		self.dielTimer = self:ScheduleRepeatingTimer("UpdateDiel", 5)
+	end
+	self:CreateAnchor(MINIMAP_LABEL):SetDefaultScale(mapScale * ns.API.GetEffectiveScale())
+
+	-- Re-evaluate auto-hide whenever the frame mover comes and goes.
+	if (self.anchor) then
+		self.anchor:HookScript("OnShow", function() self:UpdateAutoHide() end)
+		self.anchor:HookScript("OnHide", function() self:UpdateAutoHide() end)
+	end
+
+	ns.MovableModulePrototype.OnEnable(self)
+
+	self:RegisterEvent("CVAR_UPDATE", "UpdateTimers")
+	self:RegisterEvent("PLAYER_ENTERING_WORLD", "OnEvent")
+	self:RegisterEvent("PLAYER_REGEN_ENABLED", "OnEvent")
+	self:RegisterEvent("UPDATE_PENDING_MAIL", "UpdateMail")
+	self:RegisterEvent("VARIABLES_LOADED", "OnEvent")
+	if (ns.IsForever and (not API.IsEventAvailable or API.IsEventAvailable("DIEL_CYCLE_CHANGED"))) then
+		self:RegisterEvent("DIEL_CYCLE_CHANGED", "OnEvent")
+	end
+
+	self:RegisterEvent("CRAFTINGORDERS_UPDATE_PERSONAL_ORDER_COUNTS", "UpdateMail")
+
+	self:RegisterChatCommand("setminimaptheme", "SetMinimapTheme")
+
+	self:InitializeAddon("MBB")
+	self:InitializeAddon("Narcissus")
+
+	-- Apply initial theme
+	self:UpdateSettings()
+end

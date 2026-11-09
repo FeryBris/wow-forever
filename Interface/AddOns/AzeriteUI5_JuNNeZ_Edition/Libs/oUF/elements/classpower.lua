@@ -1,0 +1,671 @@
+--[[
+# Element: ClassPower
+
+Handles the visibility and updating of the player's class resources (like Chi Orbs or Holy Power) and combo points.
+
+## Widget
+
+ClassPower - An `table` consisting of as many StatusBars as the theoretical maximum return of [UnitPowerMax](https://warcraft.wiki.gg/wiki/API_UnitPowerMax).
+
+## Notes
+
+A default texture will be applied if the sub-widgets are StatusBars and don't have a texture set.
+If the sub-widgets are StatusBars, their minimum and maximum values will be set to 0 and 1 respectively.
+
+Supported class powers:
+  - All          - Combo Points
+  - Demon Hunter - Soul Fragments
+  - Evoker       - Essence
+  - Mage         - Arcane Charges
+  - Monk         - Chi Orbs
+  - Paladin      - Holy Power
+  - Shaman       - Maelstrom Weapon
+  - Warlock      - Soul Shards
+
+## Examples
+
+    local ClassPower = {}
+    for index = 1, 10 do
+        local Bar = CreateFrame('StatusBar', nil, self)
+
+        -- Position and size.
+        Bar:SetSize(16, 16)
+        Bar:SetPoint('TOPLEFT', self, 'BOTTOMLEFT', (index - 1) * Bar:GetWidth(), 0)
+
+        ClassPower[index] = Bar
+    end
+
+    -- Register with oUF
+    self.ClassPower = ClassPower
+--]]
+
+local _, ns = ...
+local oUF = ns.oUF
+
+local playerClass = UnitClassBase('player')
+-- Classic resources in the modern Forever engine: only Rogue/Druid combo points.
+if(ns.IsForever and playerClass ~= 'ROGUE' and playerClass ~= 'DRUID') then return end
+local powerSpellIDs = (Constants and Constants.UnitPowerSpellIDs) or {}
+
+-- sourced from Blizzard_FrameXMLBase/Constants.lua
+local SPEC_DEMONHUNTER_DEVOURER = _G.SPEC_DEMONHUNTER_DEVOURER or 3
+local SPEC_MAGE_ARCANE = _G.SPEC_MAGE_ARCANE or 1
+local SPEC_MONK_WINDWALKER = _G.SPEC_MONK_WINDWALKER or 3
+local SPEC_SHAMAN_ENCHANCEMENT = 2
+local SPEC_WARLOCK_DESTRUCTION = _G.SPEC_WARLOCK_DESTRUCTION or 3
+
+local POWER_ID_ARCANE_CHARGES = Enum.PowerType.ArcaneCharges or 16
+local POWER_ID_CHI = Enum.PowerType.Chi or 12
+local POWER_ID_COMBO_POINTS = Enum.PowerType.ComboPoints or 4
+local POWER_ID_ENERGY = Enum.PowerType.Energy or 3
+local POWER_ID_ESSENCE = Enum.PowerType.Essence or 19
+local POWER_ID_HOLY_POWER = Enum.PowerType.HolyPower or 9
+local POWER_ID_MAELSTROM = Enum.PowerType.Maelstrom or 11
+local POWER_ID_SOUL_SHARDS = Enum.PowerType.SoulShards or 7
+
+local POWER_TYPE_ARCANE_CHARGES = 'ARCANE_CHARGES'
+local POWER_TYPE_CHI = 'CHI'
+local POWER_TYPE_COMBO_POINTS = 'COMBO_POINTS'
+local POWER_TYPE_ESSENCE = 'ESSENCE'
+local POWER_TYPE_HOLY_POWER = 'HOLY_POWER'
+local POWER_TYPE_MAELSTROM = 'MAELSTROM'
+local POWER_TYPE_SOUL_FRAGMENTS = 'SOUL_FRAGMENTS' -- fake, but it's present in PowerBarColor
+local POWER_TYPE_SOUL_SHARDS = 'SOUL_SHARDS'
+
+local SPELL_DARK_HEART = powerSpellIDs.DARK_HEART_SPELL_ID or 1225789
+local SPELL_MAELSTROM_WEAPON = 344179
+local SPELL_MAELSTROM_WEAPON_TALENT = 187880
+local SPELL_SHRED = 5221
+local SPELL_SILENCE_THE_WHISPERS = powerSpellIDs.SILENCE_THE_WHISPERS_SPELL_ID or 1227702
+local SPELL_VOID_METAMORPHOSIS = powerSpellIDs.VOID_METAMORPHOSIS_SPELL_ID or 1217607
+
+local SOUL_FRAGMENTS_NO_META_INDEX = 1
+local SOUL_FRAGMENTS_META_INDEX = 2
+
+local ClassPowerEnable, ClassPowerDisable
+local GetPower, GetPowerMax, GetPowerColor, GetPowerUpdaters
+local IsSecretValue = issecretvalue
+
+local function GetSafePowerValue(unit, powerID)
+	local value = UnitPower(unit, powerID)
+	if(type(value) == 'number' and (not IsSecretValue or not IsSecretValue(value))) then
+		return value
+	end
+	value = UnitPower(unit, powerID, true)
+	if(type(value) == 'number' and (not IsSecretValue or not IsSecretValue(value))) then
+		return value
+	end
+	return nil
+end
+
+local function GetSafePowerMaxValue(unit, powerID)
+	local value = UnitPowerMax(unit, powerID)
+	if(type(value) == 'number' and value > 0 and (not IsSecretValue or not IsSecretValue(value))) then
+		return value
+	end
+	value = UnitPowerMax(unit, powerID, true)
+	if(type(value) == 'number' and value > 0 and (not IsSecretValue or not IsSecretValue(value))) then
+		return value
+	end
+	return nil
+end
+
+-- holds class-specific information for enablement toggles
+local classPowerID, classPowerType, classAuraID
+local requireSpec, requirePower, requireSpell
+
+local function GetGenericPower(unit)
+	return UnitPower(unit, classPowerID)
+	end
+
+local function GetGenericPowerMax(unit)
+	return UnitPowerMax(unit, classPowerID)
+end
+
+local function GetGenericPowerColor(element, powerType)
+	return element.__owner.colors.power[powerType]
+end
+
+-- Forever keeps classic combo points on the target: Blizzard's Camelot ComboFrame reads
+-- GetComboPoints(unit, 'target') and refreshes on PLAYER_TARGET_CHANGED.
+local GetTargetComboPoints = ns.IsForever and _G.GetComboPoints or nil
+
+local function GetComboPoints(unit)
+	if(GetTargetComboPoints) then
+		return GetTargetComboPoints(unit, 'target') or 0
+	end
+	return UnitPower(unit, POWER_ID_COMBO_POINTS), GetUnitChargedPowerPoints and GetUnitChargedPowerPoints(unit)
+end
+
+local function GetComboPointsMax(unit)
+	local max = UnitPowerMax(unit, POWER_ID_COMBO_POINTS)
+	-- A secret max cannot size the points, and classic combo points always top out at 5.
+	if(GetTargetComboPoints and (type(max) ~= 'number' or (IsSecretValue and IsSecretValue(max)) or max <= 0)) then
+		return 5
+	end
+	return max
+end
+
+if(playerClass == 'DEMONHUNTER') then
+	requireSpec = SPEC_DEMONHUNTER_DEVOURER
+	classAuraID = SPELL_VOID_METAMORPHOSIS
+	classPowerType = POWER_TYPE_SOUL_FRAGMENTS
+
+	local function GetSoulFragments()
+		if(C_UnitAuras.GetPlayerAuraBySpellID(SPELL_VOID_METAMORPHOSIS)) then
+			local auraInfo = C_UnitAuras.GetPlayerAuraBySpellID(SPELL_SILENCE_THE_WHISPERS)
+			if(auraInfo) then
+				return auraInfo.applications / GetCollapsingStarCost()
+			end
+		else
+			local auraInfo = C_UnitAuras.GetPlayerAuraBySpellID(SPELL_DARK_HEART)
+			if(auraInfo) then
+				return auraInfo.applications / C_Spell.GetSpellMaxCumulativeAuraApplications(SPELL_DARK_HEART)
+			end
+		end
+
+		return 0
+	end
+
+	local function GetSoulFragmentsMax()
+		-- we use normalised cur so that there's only 1 bar instead of 30-50
+		return 1
+	end
+
+	local function GetSoulFragmentsColor(element)
+		local color = element.__owner.colors.power[POWER_TYPE_SOUL_FRAGMENTS]
+		if(color) then
+			if(C_UnitAuras.GetPlayerAuraBySpellID(SPELL_VOID_METAMORPHOSIS)) then
+				return color[SOUL_FRAGMENTS_META_INDEX]
+			end
+
+			return color[SOUL_FRAGMENTS_NO_META_INDEX]
+		end
+	end
+
+	GetPowerUpdaters = function()
+		return GetSoulFragments, GetSoulFragmentsMax, GetSoulFragmentsColor
+	end
+elseif(playerClass == 'DRUID') then
+	classPowerID = POWER_ID_COMBO_POINTS
+	classPowerType = POWER_TYPE_COMBO_POINTS
+	requirePower = POWER_ID_ENERGY
+	-- Forever: Shred is learned at 22 and ranked; 5221 (Rank 1) can drop out of
+	-- the spellbook. Cat Form's Energy is the only reliable combo-point gate there.
+	requireSpell = (not ns.IsForever) and SPELL_SHRED or nil
+
+	GetPowerUpdaters = function()
+		return GetComboPoints, GetComboPointsMax, GetGenericPowerColor
+	end
+elseif(playerClass == 'EVOKER') then
+	classPowerID = POWER_ID_ESSENCE
+	classPowerType = POWER_TYPE_ESSENCE
+
+	GetPowerUpdaters = function()
+		return GetGenericPower, GetGenericPowerMax, GetGenericPowerColor
+	end
+elseif(playerClass == 'MAGE') then
+	classPowerID = POWER_ID_ARCANE_CHARGES
+	classPowerType = POWER_TYPE_ARCANE_CHARGES
+	requireSpec = SPEC_MAGE_ARCANE
+
+	GetPowerUpdaters = function()
+		return GetGenericPower, GetGenericPowerMax, GetGenericPowerColor
+	end
+elseif(playerClass == 'MONK') then
+	classPowerID = POWER_ID_CHI
+	classPowerType = POWER_TYPE_CHI
+	requireSpec = SPEC_MONK_WINDWALKER
+
+	GetPowerUpdaters = function()
+		return GetGenericPower, GetGenericPowerMax, GetGenericPowerColor
+	end
+elseif(playerClass == 'PALADIN') then
+	classPowerID = POWER_ID_HOLY_POWER
+	classPowerType = POWER_TYPE_HOLY_POWER
+
+	GetPowerUpdaters = function()
+		return GetGenericPower, GetGenericPowerMax, GetGenericPowerColor
+	end
+elseif(playerClass == 'ROGUE') then
+	classPowerID = POWER_ID_COMBO_POINTS
+	classPowerType = POWER_TYPE_COMBO_POINTS
+
+	GetPowerUpdaters = function()
+		return GetComboPoints, GetComboPointsMax, GetGenericPowerColor
+	end
+elseif(playerClass == 'SHAMAN') then
+	classPowerID = POWER_ID_MAELSTROM
+	classAuraID = SPELL_MAELSTROM_WEAPON
+	classPowerType = POWER_TYPE_MAELSTROM -- we re-use this from elemental for the colors
+	requireSpec = SPEC_SHAMAN_ENCHANCEMENT
+	requireSpell = SPELL_MAELSTROM_WEAPON_TALENT
+
+	local function GetMaelstromWeapon()
+		local auraInfo = C_UnitAuras.GetPlayerAuraBySpellID(SPELL_MAELSTROM_WEAPON)
+		if(auraInfo) then
+			local applications = auraInfo.applications
+			if(type(applications) == 'number') then
+				return applications
+			end
+		end
+		-- Fallback: when aura payload is unreadable/secret in combat, read the maelstrom power pool.
+		local powerValue = GetSafePowerValue('player', POWER_ID_MAELSTROM)
+		local powerMax = GetSafePowerMaxValue('player', POWER_ID_MAELSTROM)
+		if(type(powerValue) == 'number') then
+			if(type(powerMax) == 'number' and powerMax > 10) then
+				return (powerValue / powerMax) * 10
+			end
+			return powerValue
+		end
+
+		return 0
+	end
+
+	local function GetMaelstromWeaponMax()
+		local maxStacks = C_Spell.GetSpellMaxCumulativeAuraApplications(SPELL_MAELSTROM_WEAPON)
+		if(type(maxStacks) == 'number' and maxStacks > 0) then
+			return maxStacks
+		end
+		local powerMax = GetSafePowerMaxValue('player', POWER_ID_MAELSTROM)
+		if(type(powerMax) == 'number') then
+			return (powerMax > 10) and 10 or powerMax
+		end
+		return 10
+	end
+
+	GetPowerUpdaters = function()
+		return GetMaelstromWeapon, GetMaelstromWeaponMax, GetGenericPowerColor
+	end
+elseif(playerClass == 'WARLOCK') then
+	classPowerID = POWER_ID_SOUL_SHARDS
+	classPowerType = POWER_TYPE_SOUL_SHARDS
+
+	local function GetSoulShardsDestruction(unit)
+		return UnitPower(unit, POWER_ID_SOUL_SHARDS, true) / UnitPowerDisplayMod(POWER_ID_SOUL_SHARDS)
+	end
+
+	GetPowerUpdaters = function()
+		if(C_SpecializationInfo.GetSpecialization() == SPEC_WARLOCK_DESTRUCTION) then
+			return GetSoulShardsDestruction, GetGenericPowerMax, GetGenericPowerColor
+		end
+
+		return GetGenericPower, GetGenericPowerMax, GetGenericPowerColor
+	end
+end
+
+local function UpdateColor(element, powerType)
+	local color = GetPowerColor(element, powerType)
+	if(color) then
+		for i = 1, #element do
+			local bar = element[i]
+			if(type(color) == 'table' and color.GetRGB) then
+				bar:GetStatusBarTexture():SetVertexColor(color:GetRGB())
+			elseif(type(color) == 'table') then
+				bar:GetStatusBarTexture():SetVertexColor(unpack(color))
+			end
+		end
+	end
+
+	--[[ Callback: ClassPower:PostUpdateColor(color)
+	Called after the element color has been updated.
+
+	* self  - the ClassPower element
+	* color - the used ColorMixin-based object (table?)
+	--]]
+	if(element.PostUpdateColor) then
+		element:PostUpdateColor(color)
+	end
+end
+
+local function ColorPath(self)
+	local element = self.ClassPower
+
+	local powerType = classPowerType
+	if(UnitHasVehicleUI('player')) then
+		powerType = POWER_TYPE_COMBO_POINTS
+	end
+
+	--[[ Override: ClassPower:UpdateColor(powerType)
+	Used to completely override the internal function for updating the widgets' colors.
+
+	* self      - the ClassPower element
+	* powerType - the active power type (string)
+	--]]
+	do
+		(element.UpdateColor or UpdateColor) (element, powerType)
+	end
+end
+
+local function Update(self, event, unit, powerType)
+	if(not unit) then
+		return
+	elseif(unit == 'vehicle' and powerType ~= POWER_TYPE_COMBO_POINTS) then
+		return
+	elseif(not UnitIsUnit(unit, 'player')) then -- is this redundant?
+		return
+	elseif(event == 'UNIT_AURA' or event == 'UNIT_POWER_POINT_CHARGE') then
+		-- fake the power type for events that don't provide any
+		powerType = classPowerType
+	elseif(playerClass == 'SHAMAN' and (event == 'UNIT_POWER_UPDATE' or event == 'UNIT_POWER_FREQUENT' or event == 'UNIT_MAXPOWER')) then
+		-- Enhancement can route stack data via power updates depending on build/API payload.
+		powerType = classPowerType
+	elseif(not powerType or powerType ~= classPowerType) then
+		return
+	end
+
+	local element = self.ClassPower
+
+	--[[ Callback: ClassPower:PreUpdate(unit)
+	Called before the element has been updated.
+
+	* self - the ClassPower element
+	* unit - the unit for which the update has been triggered (string)
+	]]
+	if(element.PreUpdate) then
+		element:PreUpdate(unit)
+	end
+
+	local cur, max, chargedPoints, hasMaxChanged
+	if(event ~= 'ClassPowerDisable') then
+		cur, chargedPoints = GetPower(unit)
+		max = GetPowerMax(unit)
+
+		local prevMax = element.__max
+		if(type(prevMax) ~= 'number') then
+			prevMax = 0
+			element.__max = 0
+		end
+		local hasSafeMax = (type(max) == 'number') and (not IsSecretValue or not IsSecretValue(max))
+		if(not hasSafeMax) then
+			max = prevMax
+		elseif(max < 0) then
+			max = 0
+		end
+
+		hasMaxChanged = max ~= prevMax
+		if(hasMaxChanged) then
+			for i = 1, #element do
+				element[i]:SetShown(i <= max)
+
+				if(i > max) then
+					element[i]:SetValue(0)
+				end
+			end
+
+			element.__max = max
+		end
+
+		local prevCur = element.__cur
+		if(type(prevCur) ~= 'number') then
+			prevCur = 0
+			element.__cur = 0
+		end
+
+		-- Forever returns combo points as secrets even out of combat. The bars accept them, so give
+		-- each point its own [i - 1, i] range and let the client clamp the value, instead of doing
+		-- arithmetic on it here. PostUpdate receives the secret and must not compare it either.
+		-- Forever only: Retail keeps its cached fallback for every resource.
+		local isSecretCur = GetTargetComboPoints and (type(cur) == 'number') and IsSecretValue and IsSecretValue(cur)
+		if(isSecretCur) then
+			for i = 1, max do
+				element[i]:SetMinMaxValues(i - 1, i)
+				element[i]:SetValue(cur)
+			end
+			element.__isSecretCur = true
+		end
+
+		local wasSecretCur = element.__isSecretCur and not isSecretCur
+		if(wasSecretCur) then
+			for i = 1, #element do
+				element[i]:SetMinMaxValues(0, 1)
+			end
+			element.__isSecretCur = nil
+		end
+
+		local hasSafeCur = (type(cur) == 'number') and (not IsSecretValue or not IsSecretValue(cur))
+		if(not hasSafeCur and not isSecretCur) then
+			cur = prevCur
+		end
+
+		local hasCurChanged = (not isSecretCur) and (wasSecretCur or cur ~= prevCur)
+		if(hasCurChanged) then
+			local numActive = cur + 0.9
+			for i = 1, max do
+				if(i > numActive) then
+					element[i]:SetValue(0)
+				else
+					element[i]:SetValue(cur - i + 1)
+				end
+			end
+
+			element.__cur = cur
+		end
+	end
+	--[[ Callback: ClassPower:PostUpdate(cur, max, hasMaxChanged, powerType)
+	Called after the element has been updated.
+
+	* self          - the ClassPower element
+	* cur           - the current amount of power (number)
+	* max           - the maximum amount of power (number)
+	* hasMaxChanged - indicates whether the maximum amount has changed since the last update (boolean)
+	* powerType     - the active power type (string)
+	* ...           - the indices of currently charged power points, if any
+	--]]
+	if(element.PostUpdate) then
+		return element:PostUpdate(cur, max, hasMaxChanged, powerType, unpack(chargedPoints or {}))
+	end
+end
+
+local function Path(self, ...)
+	--[[ Override: ClassPower.Override(self, event, unit, ...)
+	Used to completely override the internal update function.
+
+	* self  - the parent object
+	* event - the event triggering the update (string)
+	* unit  - the unit accompanying the event (string)
+	* ...   - the arguments accompanying the event
+	--]]
+	return (self.ClassPower.Override or Update) (self, ...)
+end
+
+-- Forever: target-bound combo points change with the target, not with a power event.
+local function TargetChangedPath(self, event)
+	return Path(self, event, 'player', classPowerType)
+end
+
+local function Visibility(self, event, unit)
+	local element = self.ClassPower
+	local powerType, isAuraPower
+
+	if(UnitHasVehicleUI('player')) then
+		unit = 'vehicle'
+
+		if(PlayerVehicleHasComboPoints()) then
+			powerType = POWER_TYPE_COMBO_POINTS
+		end
+	elseif(playerClass == 'SHAMAN') then
+		local spec = C_SpecializationInfo.GetSpecialization()
+		if(spec == SPEC_SHAMAN_ENCHANCEMENT and (not requireSpell or C_SpellBook.IsSpellKnown(requireSpell))) then
+			isAuraPower = true
+			powerType = classPowerType
+			unit = 'player'
+		end
+	elseif(classAuraID) then
+		if(not requireSpec or requireSpec == C_SpecializationInfo.GetSpecialization()) then
+			if(not requireSpell or C_SpellBook.IsSpellKnown(requireSpell)) then
+				isAuraPower = true
+				powerType = classPowerType
+				unit = 'player'
+			end
+		end
+	elseif(classPowerID) then
+		if(not requireSpec or requireSpec == C_SpecializationInfo.GetSpecialization()) then
+			if(not requirePower or requirePower == UnitPowerType('player')) then
+				if(not requireSpell or C_SpellBook.IsSpellKnown(requireSpell)) then
+					powerType = classPowerType
+					unit = 'player'
+				end
+			end
+		end
+	end
+
+	local wasEnabled = element.__isEnabled
+	local shouldEnable = powerType ~= nil
+
+	if(shouldEnable) then
+		if(unit == 'vehicle') then
+			GetPower, GetPowerMax, GetPowerColor = GetComboPoints, GetComboPointsMax, GetGenericPowerColor
+		else
+			GetPower, GetPowerMax, GetPowerColor = GetPowerUpdaters()
+		end
+
+		ColorPath(self)
+	end
+
+	if(shouldEnable ~= wasEnabled) then
+		ClassPowerDisable(self, shouldEnable)
+
+		if(shouldEnable) then
+			ClassPowerEnable(self, isAuraPower)
+		end
+
+		--[[ Callback: ClassPower:PostVisibility(isVisible)
+		Called after the element's visibility has been changed.
+
+		* self      - the ClassPower element
+		* isVisible - the current visibility state of the element (boolean)
+		--]]
+		if(element.PostVisibility) then
+			element:PostVisibility(shouldEnable)
+		end
+	elseif(shouldEnable) then
+		Path(self, event, unit, powerType)
+	end
+end
+
+local function VisibilityPath(self, event, ...)
+	if(event == 'TRAIT_CONFIG_UPDATED' and C_ClassTalents and C_ClassTalents.GetActiveConfigID) then
+		if(C_ClassTalents.GetActiveConfigID() ~= ...) then return end
+	end
+
+	--[[ Override: ClassPower.OverrideVisibility(self, event, unit)
+	Used to completely override the internal visibility function.
+
+	* self  - the parent object
+	* event - the event triggering the update (string)
+	* ...   - the arguments accompanying the event
+	--]]
+	return (self.ClassPower.OverrideVisibility or Visibility) (self, event, ...)
+end
+
+local function ForceUpdate(element)
+	return VisibilityPath(element.__owner, 'ForceUpdate', element.__owner.unit)
+end
+
+do
+	function ClassPowerEnable(self, registerAuraEvents)
+		if(registerAuraEvents) then
+			self:RegisterEvent('UNIT_AURA', Path)
+			if(playerClass == 'SHAMAN') then
+				self:RegisterEvent('UNIT_POWER_UPDATE', Path)
+				self:RegisterEvent('UNIT_POWER_FREQUENT', Path)
+				self:RegisterEvent('UNIT_MAXPOWER', Path)
+			end
+		else
+			self:RegisterEvent('UNIT_MAXPOWER', Path)
+			self:RegisterEvent('UNIT_POWER_UPDATE', Path)
+			self:RegisterEvent('UNIT_POWER_FREQUENT', Path)
+			if(playerClass == 'SHAMAN') then
+				self:RegisterEvent('UNIT_AURA', Path)
+			end
+
+			-- according to Blizz any class may receive this event due to specific spell auras
+			self:RegisterEvent('UNIT_POWER_POINT_CHARGE', Path)
+		end
+
+		self:RegisterEvent('SPELLS_CHANGED', ColorPath, true)
+		if(GetTargetComboPoints) then
+			self:RegisterEvent('PLAYER_TARGET_CHANGED', TargetChangedPath, true)
+		end
+
+		self.ClassPower.__isEnabled = true
+
+		if(UnitHasVehicleUI('player')) then
+			Path(self, 'ClassPowerEnable', 'vehicle', POWER_TYPE_COMBO_POINTS)
+		else
+			Path(self, 'ClassPowerEnable', 'player', classPowerType)
+		end
+	end
+
+	function ClassPowerDisable(self, unregisterOnly)
+		self:UnregisterEvent('UNIT_AURA', Path)
+		self:UnregisterEvent('UNIT_POWER_UPDATE', Path)
+		self:UnregisterEvent('UNIT_POWER_FREQUENT', Path)
+		self:UnregisterEvent('UNIT_MAXPOWER', Path)
+		self:UnregisterEvent('UNIT_POWER_POINT_CHARGE', Path)
+		self:UnregisterEvent('SPELLS_CHANGED', ColorPath)
+		self:UnregisterEvent('PLAYER_TARGET_CHANGED', TargetChangedPath)
+
+		if(not unregisterOnly) then
+			local element = self.ClassPower
+			for i = 1, #element do
+				element[i]:Hide()
+			end
+
+			element.__max = 0
+			element.__isEnabled = false
+			Path(self, 'ClassPowerDisable', 'player', classPowerType)
+		end
+	end
+end
+
+local function Enable(self, unit)
+	local element = self.ClassPower
+	if(element and UnitIsUnit(unit, 'player')) then
+		element.__owner = self
+		element.__max = 0
+		element.ForceUpdate = ForceUpdate
+
+		if(requireSpec or requireSpell or playerClass == 'SHAMAN') then
+			self:RegisterEvent('PLAYER_LEVEL_UP', VisibilityPath, true)
+			if(not ns.IsForever and C_ClassTalents and C_ClassTalents.GetActiveConfigID) then
+				self:RegisterEvent('TRAIT_CONFIG_UPDATED', VisibilityPath, true)
+			end
+			self:RegisterEvent('SPELLS_CHANGED', VisibilityPath, true)
+		end
+
+		if(requirePower) then
+			self:RegisterEvent('UNIT_DISPLAYPOWER', VisibilityPath)
+		end
+
+		element.ClassPowerEnable = ClassPowerEnable
+		element.ClassPowerDisable = ClassPowerDisable
+
+		for i = 1, #element do
+			local bar = element[i]
+			if(bar:IsObjectType('StatusBar')) then
+				if(not bar:GetStatusBarTexture()) then
+					bar:SetStatusBarTexture([[Interface\TargetingFrame\UI-StatusBar]])
+				end
+
+				bar:SetMinMaxValues(0, 1)
+			end
+		end
+
+		return true
+	end
+end
+
+local function Disable(self)
+	if(self.ClassPower) then
+		ClassPowerDisable(self)
+
+		self:UnregisterEvent('PLAYER_LEVEL_UP', VisibilityPath)
+		self:UnregisterEvent('SPELLS_CHANGED', VisibilityPath)
+		self:UnregisterEvent('TRAIT_CONFIG_UPDATED', VisibilityPath)
+		self:UnregisterEvent('UNIT_DISPLAYPOWER', VisibilityPath)
+	end
+end
+
+oUF:AddElement('ClassPower', VisibilityPath, Enable, Disable)

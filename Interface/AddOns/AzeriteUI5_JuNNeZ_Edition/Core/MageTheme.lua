@@ -1,0 +1,350 @@
+-- The Tirisgarde: Mage artwork. Every casing is a drop-in replacement for the
+-- native texture of the same name, on the same canvas with the same alpha and
+-- openings (Assets_Draft/Mage-Complete-Assets-v12/manifest.json), so no size,
+-- offset or texcoord is changed. Ornaments are separate, non-interactive art.
+-- The crystal's energy is Core/MageCrystalPreview.lua; Core/ThemeEffects.lua
+-- decides when it plays.
+local _, ns = ...
+local Engine = ns.ThemeEngine
+local Theme = ns:NewModule("MageTheme", "AceConsole-3.0", "LibMoreEvents-1.0")
+ns.MageTheme = Theme
+Engine:Register(Theme, 20)
+
+local path = Engine:MediaPath("Mage")
+
+-- Native casings and optional shaped borders; shared functional layers stay native.
+local media = {}
+for _, name in ipairs({
+	"hp_cap_case", "hp_mid_case", "hp_low_case", "hp_boss_case", "hp_critter_case", "hp_critter_case_hi",
+	"cast_back", "cast_back_spiked", "cast_back_wooden", "nameplate_backdrop",
+	"pw_crystal_case", "pw_crystal_case_low", "orb_case_hi", "orb_case_low", "orb-border",
+	"portrait_frame_hi", "portrait_frame_lo", "party_portrait_border", "actionbutton-border",
+	"actionbutton-border-square", "actionbutton-border-square-rounded",
+	"minimap-border", "minimap-onebar-backdrop", "minimap-twobars-backdrop", "point_plate",
+	"config_button", "config_button_bright", "icon_exit_flight", "options-box",
+	"border-tooltip", "border-aura", "better-blizzard-border-small-alternate"
+}) do media[name] = true end
+Theme.Media = media
+
+-- Health ornaments follow the measured casing dip. Cast and badge retain
+-- their shared slots on the cast bar's left end and the crystal case.
+local CAST_HEAD_SLOT = Engine.FittedCastSlot
+local BADGE_SLOT = Engine.OrnamentSlots.ResourceBadge
+local BADGES = { arcane = "badge-eye", fire = "badge-fire", frost = "badge-frost" }
+-- Each school's suggested staff, used by the "school" endcap choice.
+local SCHOOL_ENDCAPS = { arcane = "aluneth", fire = "felomelorn", frost = "ebonchill" }
+local endcaps = { school = true, aluneth = true, felomelorn = true, ebonchill = true, atiesh = true, dragonwrath = true, none = true }
+local healthDips = { hp_cap_case = {753.5/1024,187/256}, hp_mid_case = {761/1024,181/256},
+	hp_low_case = {761/1024,181/256}, hp_boss_case = {872.5/1024,188/256} }
+-- Leftmost painted pixel of each staff, so the health percent text stays clear.
+local capTextEdges = {
+	aluneth = { hp_cap_case = 704, hp_mid_case = 715, hp_low_case = 715, hp_boss_case = 824 },
+	atiesh = { hp_cap_case = 702, hp_mid_case = 713, hp_low_case = 713, hp_boss_case = 822 },
+	dragonwrath = { hp_cap_case = 700, hp_mid_case = 712, hp_low_case = 712, hp_boss_case = 820 },
+	ebonchill = { hp_cap_case = 694, hp_mid_case = 706, hp_low_case = 706, hp_boss_case = 814 },
+	felomelorn = { hp_cap_case = 697, hp_mid_case = 708, hp_low_case = 708, hp_boss_case = 818 }
+}
+
+local Char = function() return ns.db and ns.db.char end
+
+local School = function()
+	local preview = ns.MageCrystalPreview
+	return preview and preview:GetSchool() or "arcane"
+end
+
+-- Choice ("school" follows the crystal's school and is stored as nil), size and
+-- nudge, per character. Every change redraws the ornaments at once.
+local endcapSettings = Engine:NewEndcapSettings({
+	prefix = "mage", choices = endcaps, default = "school", clearDefault = true,
+	defaultScale = 1.7, defaultY = -18, -- maintainer's SavedVariables fit; existing art
+	refresh = function() Theme:RefreshOrnaments() end
+})
+endcapSettings.Install(Theme)
+local EndcapKey, EndcapScale, EndcapOffset = endcapSettings.GetKey, endcapSettings.GetScale, endcapSettings.GetOffset
+-- The cast head's own size and nudge; X is outward, to the left.
+local castSettings = Engine:NewEndcapSettings({
+	prefix = "mageCast", name = "CastEndcap",
+	choices = { atiesh = true, none = true }, default = "atiesh", clearDefault = true,
+	refresh = function() Theme:RefreshOrnaments() end
+})
+castSettings.Install(Theme)
+
+-- The staff actually drawn, or nil for none.
+local EndcapArt = function()
+	local key = EndcapKey()
+	if (key == "none") then return end
+	if (key == "school") then key = SCHOOL_ENDCAPS[School()] or "aluneth" end
+	return "ornament-"..key.."-fitted"
+end
+
+-- Every styled bar and crystal, so ornament changes apply without a reload.
+local endcapBars = setmetatable({}, { __mode = "k" })
+local castBars = setmetatable({}, { __mode = "k" })
+local crystals = setmetatable({}, { __mode = "k" })
+
+Theme.IsActive = function(self)
+	local char = Char()
+	if (not char or not char.magePreview) then return false end
+	if (ns.HunterTheme and ns.HunterTheme:IsActive()) then return false end
+	return Engine:IsMainLayout()
+end
+
+Theme.ResolveMedia = function(self, name)
+	if (media[name] and self:IsActive()) then return path(name) end
+end
+
+-- This theme's file for a native name whether or not the theme is active, for
+-- elements that let the player pick a skin of their own (CooldownManager.lua).
+Theme.ResolveOwnMedia = function(self, name)
+	if (media[name]) then return path(name) end
+end
+
+Theme.ResolvePath = function(self, original)
+	local name = type(original) == "string" and original:match("[\\/]Assets[\\/]([^\\/]+)%.tga$")
+	return (name and self:ResolveMedia(name)) or original
+end
+
+-- Replaces media paths only. Casing tint must be white (manifest), so the
+-- colour paired with each replaced texture loses its tint but keeps alpha
+-- (ThemeEngine.lua). Lazily copied: source tables and other profiles are untouched.
+local replaceOptions = { resolve = function(name) return Theme:ResolveMedia(name) end }
+local CachedConfig = Engine:NewConfigCache(function(name, original)
+	local config = Engine:CopyLayout(original)
+	Engine:ReplaceMedia(config, replaceOptions)
+	return config
+end)
+
+Theme.GetConfig = function(self, name, original)
+	if (not self:IsActive()) then return original end
+	return CachedConfig(name, original)
+end
+
+-- Mana stays sapphire and the ice crystal stays the player's choice.
+Theme.UseIceCrystal = function(self, requested) return requested end
+Theme.GetPowerColor = function(self, token) end
+
+local OrnamentFrame = function(bar, key)
+	local frame = bar[key]
+	if (not frame) then
+		frame = CreateFrame("Frame", nil, bar)
+		frame:SetAllPoints(bar)
+		frame:EnableMouse(false)
+		frame.Art = frame:CreateTexture(nil, "ARTWORK")
+		bar[key] = frame
+	end
+	frame:SetFrameLevel(bar:GetFrameLevel() + 4)
+	return frame
+end
+
+local Endcap = function(bar, flip)
+	local frame = OrnamentFrame(bar, "MageOrnaments")
+	endcapBars[bar] = flip and true or false
+	local art = EndcapArt()
+	-- Critters keep their own native casing, never a compressed long endcap.
+	local compact = bar:GetWidth() < bar:GetHeight()*2
+	local dx, dy = EndcapOffset()
+	local key = art and art:match("^ornament%-(.-)%-fitted$") or "none"
+	Engine:StyleAlignedHealthEndcap(frame, frame.Art, bar, path, compact and "none" or key,
+		healthDips, flip, EndcapScale(), dx, dy, capTextEdges)
+end
+
+Theme.StyleHealth = function(self, owner, db, flip)
+	if (not self:IsActive()) then return end
+	local bar = owner.Health
+	bar.ThemeTextOwner, bar.ThemeTextLayout = owner, db
+	local name = db and type(db.HealthBackdropTexture) == "string" and
+		(db.HealthBackdropTexture:match("[\\/]Mage[\\/]([^\\/]+)%.tga$") or Engine.AssetName(db.HealthBackdropTexture))
+	local longCase = name == "hp_cap_case" or name == "hp_mid_case" or name == "hp_low_case" or name == "hp_boss_case"
+	-- Whole painted rails follow the same native backdrop as Paladin's front
+	-- layer. Fill and prediction remain below; None restores the complete dip.
+	local rails = bar.MageRails
+	if (longCase and bar.Backdrop) then
+		if (not rails) then
+			rails = CreateFrame("Frame", nil, bar)
+			rails:EnableMouse(false)
+			rails.Art = rails:CreateTexture(nil, "ARTWORK")
+			bar.MageRails = rails
+		end
+		rails:SetFrameLevel(bar:GetFrameLevel() + 1)
+		rails.Art:SetTexture(path(name.."-over"))
+		rails.Art:SetAllPoints(bar.Backdrop)
+		rails.Art:SetTexCoord(flip and 1 or 0, flip and 0 or 1, 0, 1)
+		rails:Show()
+	elseif (rails) then rails:Hide() end
+	bar.ThemeEndcapAssembly = longCase and bar.Backdrop
+		and { name = name, path = path, back = bar.Backdrop, glow = name.."-fitted-glow", threat = bar.MageThreat,
+			bareThreat = path(name.."-glow"), front = rails and rails.Art } or nil
+	-- Compact bars share the cast casing and have no endcap slot.
+	if (db and type(db.HealthBarTexture) == "string" and db.HealthBarTexture:find("cast_bar", 1, true)) then
+		if (bar.MageOrnaments) then bar.MageOrnaments:Hide() end
+		Engine:PlaceHealthPercent(bar, flip, false)
+		if (bar.MageOrnaments) then
+			bar.MageOrnaments.EndcapShown = false
+			if (bar.MageOrnaments.Threat) then bar.MageOrnaments.Threat:Hide() end
+		end
+		endcapBars[bar] = nil
+		return
+	end
+	Endcap(bar, flip)
+end
+
+-- The staff's neutral glow follows our own native threat texture: its
+-- visibility and colour. No unit threat values are queried or compared.
+Theme.StyleThreat = function(self, owner, flip)
+	if (not self:IsActive()) then return end
+	local indicator = owner.ThreatIndicator
+	local native = indicator and indicator.textures and indicator.textures.Health
+	if (native and owner.Health.ThemeEndcapAssembly) then
+		owner.Health.MageBareThreat = path(owner.Health.ThemeEndcapAssembly.name.."-glow")
+		owner.Health.MageThreat = native
+		owner.Health.ThemeEndcapAssembly.threat = native
+		owner.Health.ThemeEndcapAssembly.bareThreat = owner.Health.MageBareThreat
+		native:ClearAllPoints(); native:SetAllPoints(owner.Health.Backdrop)
+		native:SetTexCoord(flip and 1 or 0, flip and 0 or 1, 0, 1)
+		Engine:SetEndcapTerminal(owner.Health, false)
+	end
+	local frame = owner.Health and owner.Health.MageOrnaments
+	if (not native or not frame or not owner.Health.ThemeEndcapAssembly) then return end
+	local art = EndcapArt() or "ornament-aluneth-fitted"
+	local key = art:match("^ornament%-(.-)%-fitted$")
+	Engine:StyleEndcapThreat(frame, frame.Art, native,
+		path("ornament-"..key.."-"..owner.Health.ThemeEndcapAssembly.name.."-glow"), flip)
+end
+
+-- Atiesh on the player cast bar's left end. The native casing, shield and
+-- protected-cast colours are untouched.
+local CastHead = function(cast)
+	local frame = OrnamentFrame(cast, "MageCastHead")
+	castBars[cast] = true
+	Engine:SetCastEndcapTerminal(cast, path, castSettings.GetKey() ~= "none")
+	frame:SetShown(castSettings.GetKey() ~= "none")
+	if (castSettings.GetKey() == "none") then return end
+	local size = CAST_HEAD_SLOT.size*castSettings.GetScale()
+	local dx, dy = castSettings.GetOffset()
+	frame.Art:SetTexture(path("cast-head-fitted"))
+	frame.Art:ClearAllPoints()
+	frame.Art:SetSize(size, size)
+	-- Centre-anchored, so a size change grows it in place.
+	frame.Art:SetPoint("CENTER", cast, "LEFT", CAST_HEAD_SLOT.x - dx, CAST_HEAD_SLOT.y + dy)
+	frame:Show()
+end
+
+Theme.StyleCastbar = function(self, cast)
+	if (not self:IsActive()) then return end
+	CastHead(cast)
+end
+
+-- The north ornament follows the existing moving compass anchor. Rotation,
+-- radius and minimap geometry stay owned by the original compass code.
+Theme.StyleCompass = function(self, compass)
+	if (not self:IsActive() or not compass or not compass.north) then return end
+	local art = compass.MageNorth
+	if (not art) then art = compass:CreateTexture(nil, "OVERLAY"); compass.MageNorth = art end
+	art:SetTexture(path("minimap-north"))
+	art:SetSize(32, 32)
+	art:SetPoint("CENTER", compass.north, "CENTER", 0, 0)
+	compass.north:SetAlpha(0) -- The texture already contains the N.
+end
+
+-- A compact water-elemental seal joins the pet casing at its left end.
+-- Parent visibility follows the pet frame; no unit data or hit rect changes.
+Theme.StylePet = function(self, owner)
+	if (not self:IsActive() or not owner or not owner.Health) then return end
+	local frame = OrnamentFrame(owner.Health, "MagePetBadge")
+	frame.Art:SetTexture(path("badge-water-elemental"))
+	frame.Art:SetSize(32, 32)
+	frame.Art:ClearAllPoints()
+	frame.Art:SetPoint("RIGHT", owner.Health, "LEFT", -2, 0)
+	frame:Show()
+end
+
+-- Plates set their backdrop outside the layout tables.
+Theme.StyleNameplate = function(self, owner)
+	if (not self:IsActive()) then return end
+	for _, bar in ipairs({ owner.Health, owner.Castbar }) do
+		if (bar and bar.Backdrop) then
+			bar.Backdrop:SetTexture(path("nameplate_backdrop"))
+			bar.Backdrop:SetVertexColor(1, 1, 1)
+		end
+	end
+end
+
+Theme.StyleUtilityButton = function(self, button)
+	if (not self:IsActive()) then return end
+	button.Texture:SetTexture(path("config_button")); button.Texture:SetVertexColor(1, 1, 1)
+	button.Highlight:SetTexture(path("config_button_bright")); button.Highlight:SetVertexColor(1, 1, 1)
+end
+
+--- The school badge on the crystal case. Called for the main player crystal
+--- through Core/ThemeEffects.lua; hides itself when the theme is not in use.
+Theme.StyleCrystal = function(self, power)
+	local frame = power.MageBadge
+	if (not self:IsActive() or not power.Case) then
+		if (frame) then frame:Hide() end
+		crystals[power] = nil
+		return
+	end
+	crystals[power] = true
+	if (not frame) then
+		frame = CreateFrame("Frame", nil, power)
+		frame:SetAllPoints(power)
+		frame:EnableMouse(false)
+		frame.Art = frame:CreateTexture(nil, "OVERLAY")
+		power.MageBadge = frame
+	end
+	-- Above the case, which the Mage crystal lifts into its own frame.
+	frame:SetFrameLevel(power:GetFrameLevel() + 6)
+	frame.Art:SetTexture(path(BADGES[School()] or BADGES.arcane))
+	frame.Art:SetSize(BADGE_SLOT.size, BADGE_SLOT.size)
+	frame.Art:ClearAllPoints()
+	frame.Art:SetPoint("CENTER", power.Case, "CENTER", 0, -power.Case:GetHeight()*BADGE_SLOT.yFraction)
+	frame:Show()
+end
+
+--- Redraws ornaments after a choice changes: endcaps, cast heads, glows and badges.
+Theme.RefreshOrnaments = function(self)
+	if (not self:IsActive()) then return end
+	for bar, flip in pairs(endcapBars) do Endcap(bar, flip) end
+	for cast in pairs(castBars) do CastHead(cast) end
+	for power in pairs(crystals) do self:StyleCrystal(power) end
+end
+
+-- GetEndcapChoices, GetEndcap(Scale/Offset), SetEndcap(Scale/Offset) and
+-- ResetEndcapPlacement come from the engine's endcap settings above.
+
+Theme.Command = function(self, input)
+	local command, option = (input or ""):lower():match("^%s*(%S*)%s*(%S*)%s*$")
+	if (command=="preview" and ns.ThemeBarPreview) then ns.ThemeBarPreview:Show();return end
+	if (command == "status") then
+		self:Print((self:IsActive() and "Mage theme: on" or "Mage theme: off").."; endcap: "..EndcapKey())
+		return
+	end
+	if (command == "endcap") then
+		if (not endcaps[option]) then
+			self:Print("/azmage endcap [school|aluneth|felomelorn|ebonchill|atiesh|dragonwrath|none]")
+			return
+		end
+		if (InCombatLockdown()) then self:Print("Change the Mage theme outside combat."); return end
+		self:SetEndcap(option)
+		return
+	end
+	if (command ~= "" and command ~= "on" and command ~= "off" and command ~= "toggle") then
+		self:Print("/azmage [on|off|toggle|status] or /azmage endcap <name>")
+		return
+	end
+	local effects = ns.ThemeEffects
+	if (not effects) then return end
+	local enabling = command == "on" or ((command == "" or command == "toggle") and not self:IsActive())
+	if (InCombatLockdown()) then self:Print("Change the Mage theme outside combat."); return end
+	effects:SetTheme(enabling and "mage" or "azerite")
+end
+
+Theme.OnInitialize = function(self) self:RegisterChatCommand("azmage", "Command") end
+
+Theme.ProfileChanged = Engine.ProfileChanged
+
+Theme.OnEnable = function(self)
+	-- Chosen at load; a profile switching it on or off reloads (ThemeEngine.lua).
+	Engine:WatchProfile(self)
+	if (self.loadedActive) then Engine:StyleOptionsKit(path("border-tooltip"), path("border-aura")) end
+end

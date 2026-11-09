@@ -1,0 +1,589 @@
+--[[
+
+	The MIT License (MIT)
+
+	Copyright (c) 2024 Lars Norberg
+	Copyright (c) 2026 Jonas "JuNNeZ" Andersen (JuNNeZ Edition modifications)
+
+--]]
+local _, ns = ...
+
+-- Integrated from Rui's RUEM retail patch set, adapted to the current branch.
+if (not ns.IsRetail) then return end
+
+local WorldMapMod = ns:NewModule("WorldMap", "LibMoreEvents-1.0", "AceHook-3.0")
+local defaults = { profile = {
+	enabled = true
+} }
+
+-- Lua API
+local ipairs = ipairs
+local next = next
+local pairs = pairs
+local pcall = pcall
+local select = select
+local string_format = string.format
+local string_gsub = string.gsub
+
+-- WoW API
+local CreateFrame = CreateFrame
+local GetBestMapForUnit = C_Map and C_Map.GetBestMapForUnit
+local GetPlayerMapPosition = C_Map and C_Map.GetPlayerMapPosition
+local InCombatLockdown = InCombatLockdown
+local issecretvalue = issecretvalue
+
+-- WoW API
+-- SetCVar is deprecated in favour of C_CVar.SetCVar, which expects a string
+-- value, so the conversion happens here rather than at every call site.
+local SetCVarValue = function(name, value)
+	local stringValue = tostring(value)
+	if (C_CVar and C_CVar.SetCVar) then
+		return C_CVar.SetCVar(name, stringValue)
+	end
+	if (type(SetCVar) == "function") then
+		return SetCVar(name, stringValue)
+	end
+end
+
+-- AzeriteUI API
+local GetMedia = ns.API.GetMedia
+local UIHider = ns.Hider
+
+-- Localization
+local L = {
+	Player = PLAYER,
+	Mouse = MOUSE_LABEL
+}
+
+local IsWorldMapEnabled = function()
+	return WorldMapMod and WorldMapMod.db and WorldMapMod.db.profile and WorldMapMod.db.profile.enabled
+end
+
+-- True while moving, sizing, reparenting or showing this frame would be blocked.
+-- Stock Blizzard never protects the map, but another addon's secure frame under or
+-- anchored to it does, and then our hooks' calls on it are blocked in combat. Protection
+-- spreads to parents, not children, so each frame is asked on its own. Fails closed: an
+-- unreadable or secret IsProtected answer counts as protected.
+local IsLocked = function(frame)
+	if (not InCombatLockdown()) then
+		return false
+	end
+	local ok, isProtected = pcall(frame.IsProtected, frame)
+	if (not ok) or (issecretvalue and issecretvalue(isProtected)) then
+		return true
+	end
+	return isProtected and true or false
+end
+
+local IsMapLocked = function()
+	return IsLocked(WorldMapFrame)
+end
+
+-- Protected calls skipped while the map was locked, replayed by FlushPending.
+-- settings: UpdateSettings; style: the restricted half of ApplyStyled*State;
+-- size: our maximized size; anchor: our maximized position.
+local pending = {}
+
+local QueuePending = function(what)
+	pending[what] = true
+	WorldMapMod:RegisterEvent("PLAYER_REGEN_ENABLED", "OnEvent")
+end
+
+-- The size Blizzard's UpdateMaximizedSize last gave the map, before our shrink.
+local stockWidth, stockHeight
+
+local GetFormattedCoordinates = function(x, y)
+	return string_gsub(string_format("|cfff0f0f0%.2f|r", x * 100), "%.(.+)", "|cffa0a0a0.%1|r"),
+		string_gsub(string_format("|cfff0f0f0%.2f|r", y * 100), "%.(.+)", "|cffa0a0a0.%1|r")
+end
+
+local CalculateScale = function()
+	local min, max = 0.65, 0.95
+	local uiMin, uiMax = 0.65, 1.15
+	local uiScale = UIParent:GetEffectiveScale()
+	if (uiScale < uiMin) then
+		return min
+	elseif (uiScale > uiMax) then
+		return max
+	else
+		return ((uiScale - uiMin) / (uiMax - uiMin)) * (max - min) + min
+	end
+end
+
+local Coords_OnUpdate = function(self, elapsed)
+	self.elapsed = self.elapsed + elapsed
+	if (self.elapsed < .02) then
+		return
+	end
+
+	local pX, pY, cX, cY
+	local mapID = GetBestMapForUnit("player")
+	if (mapID) then
+		local pos = GetPlayerMapPosition(mapID, "player")
+		if (pos) then
+			pX, pY = pos:GetXY()
+		end
+	end
+	if (WorldMapFrame.ScrollContainer:IsMouseOver()) then
+		cX, cY = WorldMapFrame.ScrollContainer:GetNormalizedCursorPosition()
+	end
+
+	if (pX and pY and pX > 0 and pY > 0) then
+		self.Player:SetFormattedText("%s:|r   %s, %s", L.Player, GetFormattedCoordinates(pX, pY))
+	else
+		self.Player:SetText(" ")
+	end
+	if (cX and cY and cX > 0 and cY > 0 and cX < 100 and cY < 100) then
+		self.Cursor:SetFormattedText("%s:|r   %s, %s", L.Mouse, GetFormattedCoordinates(cX, cY))
+	else
+		self.Cursor:SetText(" ")
+	end
+
+	self.elapsed = 0
+end
+
+-- The protected calls of each style wait out a locked frame; alpha, the background
+-- texture and our own frames are safe in combat and always applied.
+local ApplyStyledMaximizedState = function()
+	if (IsMapLocked()) then
+		QueuePending("style")
+	else
+		WorldMapFrame:SetParent(UIParent)
+		WorldMapFrame:SetScale(1)
+	end
+	if (IsLocked(WorldMapFrame.NavBar)) then
+		QueuePending("style")
+	else
+		WorldMapFrame.NavBar:Hide()
+	end
+	if (IsLocked(WorldMapFrameCloseButton)) then
+		QueuePending("style")
+	else
+		WorldMapFrameCloseButton:ClearAllPoints()
+		WorldMapFrameCloseButton:SetPoint("TOPLEFT", 4, -70)
+	end
+	-- No SetUIPanelAttribute here. Blizzard sets the maximized map's panel
+	-- layout itself; an attribute written by an addon taints UIParent's panel
+	-- manager, and the next map opened in combat had its quest pins blocked
+	-- (ADDON_ACTION_BLOCKED on Button:SetPassThroughButtons).
+	-- No OnFrameSizeChanged here either. Called from addon code it rebuilt the canvas zoom
+	-- levels and every pin under our taint, and hovering an area POI then hit secret tooltip
+	-- widget sizes (LayoutFrame.lua:491). Blizzard's Maximize calls it after our size hook,
+	-- and SetMapID rebuilds the canvas on every map change.
+	WorldMapFrame.BorderFrame:SetAlpha(0)
+	WorldMapFrameBg:Hide()
+	WorldMapFrame.AzeriteBackdrop:Show()
+	WorldMapFrame.AzeriteBorder:Show()
+	WorldMapFrame.AzeriteCoords:Show()
+end
+
+local ApplyStyledMinimizedState = function()
+	if (not WorldMapFrame:IsMaximized()) then
+		if (IsMapLocked()) then
+			QueuePending("style")
+		else
+			WorldMapFrame:ClearAllPoints()
+			WorldMapFrame:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 16, -94)
+		end
+		if (IsLocked(WorldMapFrame.NavBar)) then
+			QueuePending("style")
+		else
+			WorldMapFrame.NavBar:Show()
+		end
+		if (IsLocked(WorldMapFrameCloseButton)) then
+			QueuePending("style")
+		else
+			WorldMapFrameCloseButton:ClearAllPoints()
+			WorldMapFrameCloseButton:SetPoint("TOPRIGHT", 5, 5)
+		end
+		WorldMapFrame.BorderFrame:SetAlpha(1)
+		WorldMapFrameBg:Show()
+		WorldMapFrame.AzeriteBackdrop:Hide()
+		WorldMapFrame.AzeriteBorder:Hide()
+		WorldMapFrame.AzeriteCoords:Hide()
+	end
+end
+
+local SetMaximizedPosition = function()
+	WorldMapFrame:ClearAllPoints()
+	WorldMapFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 30)
+end
+
+-- Shrinks from the size Blizzard last set, not the current one, so running it
+-- again (a replay, or UpdateSettings on an already styled map) never compounds.
+local SetMaximizedSize = function()
+	local width, height = stockWidth, stockHeight
+	if (not width or not height) then
+		width, height = WorldMapFrame:GetSize()
+	end
+	local scale = CalculateScale()
+	local magicNumber = (1 - scale) * 100
+	WorldMapFrame:SetSize((width * scale) - (magicNumber + 2), (height * scale) - 2)
+end
+
+local WorldMapFrame_SyncState = function()
+	if (not IsWorldMapEnabled()) then
+		return
+	end
+	if (WorldMapFrame:IsMaximized()) then
+		-- Blizzard has already placed the map at its own TOP anchor; ours follows after combat,
+		-- and not while the map is still at Blizzard's full size (centred, it would reach past the top).
+		if (IsMapLocked() or pending.size) then
+			QueuePending("anchor")
+			return
+		end
+		pending.anchor = nil
+		SetMaximizedPosition()
+	end
+end
+
+local WorldMapFrame_UpdateMaximizedSize = function()
+	if (not WorldMapFrame:IsMaximized()) then
+		return
+	end
+	-- Blizzard has just sized the map. Reading it is safe, and it is recorded
+	-- even with the module off so switching it on later starts from this size.
+	stockWidth, stockHeight = WorldMapFrame:GetSize()
+	if (not IsWorldMapEnabled()) then
+		return
+	end
+	if (IsMapLocked()) then
+		QueuePending("size")
+		return
+	end
+	pending.size = nil
+	SetMaximizedSize()
+end
+
+local WorldMapFrame_Maximize = function()
+	if (not IsWorldMapEnabled()) then
+		return
+	end
+	ApplyStyledMaximizedState()
+end
+
+local WorldMapFrame_Minimize = function()
+	if (not IsWorldMapEnabled()) then
+		return
+	end
+	ApplyStyledMinimizedState()
+end
+
+local StoreOverlayFrameState = function(self, button)
+	if (not button or self.overlayState[button]) then
+		return
+	end
+	local state = {}
+	if (button.Icon) then
+		state.borderAlpha = button.Border and button.Border.GetAlpha and button.Border:GetAlpha() or nil
+		state.backgroundAlpha = button.Background and button.Background.GetAlpha and button.Background:GetAlpha() or nil
+	else
+		state.regions = {}
+		for i = 1, button:GetNumRegions() do
+			local region = select(i, button:GetRegions())
+			if (region and region.GetObjectType and region:GetObjectType() == "Texture") then
+				state.regions[#state.regions + 1] = {
+					region = region,
+					texture = region.GetTexture and region:GetTexture() or nil
+				}
+			end
+		end
+		if (button.Button) then
+			state.buttonShown = button.Button:IsShown()
+		end
+		if (button.Text) then
+			state.textShown = button.Text:IsShown()
+		end
+	end
+	self.overlayState[button] = state
+end
+
+local ApplyOverlayFrameState = function(self, enabled)
+	if (not WorldMapFrame or not WorldMapFrame.overlayFrames) then
+		return
+	end
+	for _, button in pairs(WorldMapFrame.overlayFrames) do
+		if (type(button) == "table" and button.Icon) then
+			StoreOverlayFrameState(self, button)
+			local state = self.overlayState[button]
+			if (enabled) then
+				if (button.Border) then button.Border:SetAlpha(0) end
+				if (button.Background) then button.Background:SetAlpha(0) end
+			elseif (state) then
+				if (button.Border and state.borderAlpha ~= nil) then button.Border:SetAlpha(state.borderAlpha) end
+				if (button.Background and state.backgroundAlpha ~= nil) then button.Background:SetAlpha(state.backgroundAlpha) end
+			end
+		elseif (type(button) == "table") then
+			StoreOverlayFrameState(self, button)
+			local state = self.overlayState[button]
+			if (enabled) then
+				if (state and state.regions) then
+					for _, regionState in ipairs(state.regions) do
+						if (regionState.region) then
+							regionState.region:SetTexture(nil)
+						end
+					end
+				end
+				if (button.Button) then button.Button:Hide() end
+				if (button.Text) then button.Text:Hide() end
+			elseif (state) then
+				if (state.regions) then
+					for _, regionState in ipairs(state.regions) do
+						if (regionState.region) then
+							regionState.region:SetTexture(regionState.texture)
+						end
+					end
+				end
+				if (button.Button and state.buttonShown) then button.Button:Show() end
+				if (button.Text and state.textShown) then button.Text:Show() end
+			end
+		end
+	end
+end
+
+local RestoreBlizzardState = function(self)
+	-- Only undo what we applied. With the module off at login there is nothing to restore, and
+	-- calling SynchronizeDisplayState from addon code would taint UIParent's panel manager.
+	if (not self.Styled or not self.StyleApplied) then
+		return
+	end
+	self.StyleApplied = nil
+	if (self.originalBlackoutTexture and WorldMapFrame.BlackoutFrame and WorldMapFrame.BlackoutFrame.Blackout) then
+		WorldMapFrame.BlackoutFrame.Blackout:SetTexture(self.originalBlackoutTexture)
+	end
+	if (WorldMapFrame.BlackoutFrame) then
+		WorldMapFrame.BlackoutFrame:EnableMouse(true)
+	end
+	if (not InCombatLockdown()) then
+		WorldMapFrame:EnableMouse(true)
+	end
+	if (WorldMapFrame.BorderFrame) then
+		WorldMapFrame.BorderFrame:SetAlpha(1)
+	end
+	if (WorldMapFrame.NavBar) then
+		WorldMapFrame.NavBar:Show()
+	end
+	if (WorldMapFrameBg) then
+		WorldMapFrameBg:Show()
+	end
+	if (WorldMapFrameCloseButton) then
+		WorldMapFrameCloseButton:ClearAllPoints()
+		WorldMapFrameCloseButton:SetPoint("TOPRIGHT", 5, 5)
+	end
+	if (WorldMapFrame.AzeriteBackdrop) then WorldMapFrame.AzeriteBackdrop:Hide() end
+	if (WorldMapFrame.AzeriteBorder) then WorldMapFrame.AzeriteBorder:Hide() end
+	if (WorldMapFrame.AzeriteCoords) then WorldMapFrame.AzeriteCoords:Hide() end
+	if (self.originalMinimizeButtonParent and WorldMapFrame.BorderFrame and WorldMapFrame.BorderFrame.MaximizeMinimizeFrame) then
+		WorldMapFrame.BorderFrame.MaximizeMinimizeFrame.MinimizeButton:SetParent(self.originalMinimizeButtonParent)
+	end
+	if (WorldMapFrameButton and self.originalFrameButtonParent) then
+		WorldMapFrameButton:SetParent(self.originalFrameButtonParent)
+		WorldMapFrameButton:Show()
+	end
+	ApplyOverlayFrameState(self, false)
+	if (WorldMapFrame.UpdateMaximizedSize and WorldMapFrame:IsMaximized()) then
+		WorldMapFrame:UpdateMaximizedSize()
+	end
+	if (WorldMapFrame.SynchronizeDisplayState) then
+		WorldMapFrame:SynchronizeDisplayState()
+	end
+	if (not WorldMapFrame:IsMaximized()) then
+		WorldMapFrame:ClearAllPoints()
+	end
+end
+
+WorldMapMod.UpdateSettings = function(self)
+	if (not self.Styled or not self.db or not self.db.profile) then
+		return
+	end
+	-- Switching off calls Blizzard's map and panel code, and styling a locked map is blocked.
+	-- /az classic and /az legacy reach this in combat (the /az panel queues its own writes).
+	if (InCombatLockdown() and (not self.db.profile.enabled or IsMapLocked())) then
+		QueuePending("settings")
+		return
+	end
+	pending.settings = nil
+	if (self.db.profile.enabled) then
+		self.StyleApplied = true
+		if (not InCombatLockdown()) then
+			WorldMapFrame:EnableMouse(false)
+			SetCVarValue("miniWorldMap", 0)
+		end
+		if (WorldMapFrame.BlackoutFrame) then
+			WorldMapFrame.BlackoutFrame:EnableMouse(false)
+		end
+		if (WorldMapFrame.BlackoutFrame and WorldMapFrame.BlackoutFrame.Blackout) then
+			WorldMapFrame.BlackoutFrame.Blackout:SetTexture(nil)
+		end
+		if (self.originalMinimizeButtonParent and WorldMapFrame.BorderFrame and WorldMapFrame.BorderFrame.MaximizeMinimizeFrame) then
+			WorldMapFrame.BorderFrame.MaximizeMinimizeFrame.MinimizeButton:SetParent(UIHider)
+		end
+		if (WorldMapFrameButton) then
+			WorldMapFrameButton:SetParent(UIHider)
+			WorldMapFrameButton:Hide()
+		end
+		ApplyOverlayFrameState(self, true)
+		if (WorldMapFrame:IsMaximized()) then
+			pending.size = nil
+			SetMaximizedSize()
+			ApplyStyledMaximizedState()
+		else
+			ApplyStyledMinimizedState()
+		end
+	else
+		RestoreBlizzardState(self)
+	end
+end
+
+-- Replays what a locked map skipped with our own setters; it never calls Blizzard's map
+-- or panel methods itself (FixLog 2026-10-14/15). A pending UpdateSettings that switches
+-- the module off still runs RestoreBlizzardState, as switching it off out of combat does.
+local FlushPending = function()
+	if (not next(pending)) then
+		WorldMapMod:UnregisterEvent("PLAYER_REGEN_ENABLED", "OnEvent")
+		return
+	end
+	if (IsMapLocked()) then
+		return
+	end
+	-- In combat it queues itself again when it still must wait.
+	if (pending.settings) then
+		WorldMapMod:UpdateSettings()
+	end
+	if (not IsWorldMapEnabled()) then
+		pending.style, pending.size, pending.anchor = nil, nil, nil
+	end
+	local isMaximized = WorldMapFrame:IsMaximized()
+	if (pending.style) then
+		pending.style = nil
+		if (isMaximized) then
+			ApplyStyledMaximizedState()
+		else
+			ApplyStyledMinimizedState()
+		end
+	end
+	-- Resizing an open map leaves its canvas built for the old size, so a pending
+	-- size waits for WorldMapOnHide; the next open rebuilds the canvas at ours.
+	if (pending.size and not WorldMapFrame:IsShown()) then
+		pending.size = nil
+		if (isMaximized) then
+			SetMaximizedSize()
+		end
+	end
+	-- Not on a map still at Blizzard's full size: centred, it would reach past the top edge.
+	-- A hidden map is placed by our SynchronizeDisplayState hook when it opens.
+	if (pending.anchor and not pending.size) then
+		pending.anchor = nil
+		if (isMaximized and WorldMapFrame:IsShown()) then
+			SetMaximizedPosition()
+		end
+	end
+	if (not next(pending)) then
+		WorldMapMod:UnregisterEvent("PLAYER_REGEN_ENABLED", "OnEvent")
+	end
+end
+
+WorldMapMod.SetUpMap = function(self)
+	if (self.Styled) then
+		return
+	end
+
+	local backdrop = CreateFrame("Frame", nil, WorldMapFrame, BackdropTemplateMixin and "BackdropTemplate")
+	backdrop:Hide()
+	backdrop:SetFrameLevel(WorldMapFrame:GetFrameLevel())
+	backdrop:SetPoint("TOP", 0, 25 - 66)
+	backdrop:SetPoint("LEFT", -25, 0)
+	backdrop:SetPoint("BOTTOM", 0, -25)
+	backdrop:SetPoint("RIGHT", 25, 0)
+	backdrop:SetBackdrop({
+		bgFile = [[Interface\Tooltips\UI-Tooltip-Background]],
+		insets = { left = 25, right = 25, top = 25, bottom = 25 }
+	})
+	backdrop:SetBackdropColor(0, 0, 0, .95)
+	WorldMapFrame.AzeriteBackdrop = backdrop
+
+	local border = CreateFrame("Frame", nil, WorldMapFrame, BackdropTemplateMixin and "BackdropTemplate")
+	border:Hide()
+	border:SetFrameLevel(WorldMapFrame:GetFrameLevel() + 10)
+	border:SetAllPoints(backdrop)
+	border:SetBackdrop({ edgeSize = 32, edgeFile = GetMedia("better-blizzard-border-small-alternate") })
+	border:SetBackdropBorderColor(.35, .35, .35, 1)
+	WorldMapFrame.AzeriteBorder = border
+
+	local coords = CreateFrame("Frame", nil, WorldMapFrame)
+	coords:SetFrameStrata(WorldMapFrame.BorderFrame:GetFrameStrata())
+	coords:SetFrameLevel(WorldMapFrame.BorderFrame:GetFrameLevel() + 10)
+	coords.elapsed = 0
+	WorldMapFrame.AzeriteCoords = coords
+
+	local player = coords:CreateFontString()
+	player:SetFontObject(NumberFont_Shadow_Med)
+	player:SetFont(player:GetFont(), 14, "THINOUTLINE")
+	player:SetShadowColor(0, 0, 0, 0)
+	player:SetTextColor(255/255, 234/255, 137/255)
+	player:SetAlpha(.85)
+	player:SetDrawLayer("OVERLAY")
+	player:SetJustifyH("LEFT")
+	player:SetJustifyV("BOTTOM")
+	player:SetPoint("BOTTOMLEFT", border, "TOPLEFT", 32, -16)
+	coords.Player = player
+
+	local cursor = coords:CreateFontString()
+	cursor:SetFontObject(NumberFont_Shadow_Med)
+	cursor:SetFont(cursor:GetFont(), 14, "THINOUTLINE")
+	cursor:SetShadowColor(0, 0, 0, 0)
+	cursor:SetTextColor(255/255, 234/255, 137/255)
+	cursor:SetAlpha(.85)
+	cursor:SetDrawLayer("OVERLAY")
+	cursor:SetJustifyH("RIGHT")
+	cursor:SetJustifyV("BOTTOM")
+	cursor:SetPoint("BOTTOMRIGHT", border, "TOPRIGHT", -32, -16)
+	coords.Cursor = cursor
+
+	coords:SetScript("OnUpdate", Coords_OnUpdate)
+	self.originalBlackoutTexture = WorldMapFrame.BlackoutFrame and WorldMapFrame.BlackoutFrame.Blackout and WorldMapFrame.BlackoutFrame.Blackout:GetTexture() or nil
+	self.originalMinimizeButtonParent = WorldMapFrame.BorderFrame and WorldMapFrame.BorderFrame.MaximizeMinimizeFrame and WorldMapFrame.BorderFrame.MaximizeMinimizeFrame.MinimizeButton:GetParent() or nil
+	self.originalFrameButtonParent = WorldMapFrameButton and WorldMapFrameButton:GetParent() or nil
+	self.overlayState = self.overlayState or {}
+
+	self:SecureHook(WorldMapFrame, "Maximize", WorldMapFrame_Maximize)
+	self:SecureHook(WorldMapFrame, "Minimize", WorldMapFrame_Minimize)
+	self:SecureHook(WorldMapFrame, "SynchronizeDisplayState", WorldMapFrame_SyncState)
+	self:SecureHook(WorldMapFrame, "UpdateMaximizedSize", WorldMapFrame_UpdateMaximizedSize)
+	if (EventRegistry) then
+		EventRegistry:RegisterCallback("WorldMapOnHide", FlushPending, self)
+	end
+
+	self.Styled = true
+	self:UpdateSettings()
+end
+
+WorldMapMod.OnEvent = function(self, event, ...)
+	if (event == "ADDON_LOADED") then
+		local addon = ...
+		if (addon == "Blizzard_WorldMap") then
+			self:SetUpMap()
+			self:UnregisterEvent("ADDON_LOADED")
+		end
+	elseif (event == "PLAYER_ENTERING_WORLD") then
+		if (IsWorldMapEnabled() and not InCombatLockdown()) then
+			SetCVarValue("miniWorldMap", 0)
+		end
+	elseif (event == "PLAYER_REGEN_ENABLED") then
+		FlushPending()
+	end
+end
+
+WorldMapMod.OnInitialize = function(self)
+	self.db = ns.db:RegisterNamespace("WorldMap", defaults)
+end
+
+WorldMapMod.OnEnable = function(self)
+	local IsLoaded = C_AddOns and C_AddOns.IsAddOnLoaded or IsAddOnLoaded
+	if (IsLoaded("Blizzard_WorldMap")) then
+		self:SetUpMap()
+	else
+		self:RegisterEvent("ADDON_LOADED", "OnEvent")
+	end
+	self:RegisterEvent("PLAYER_ENTERING_WORLD", "OnEvent")
+end

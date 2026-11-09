@@ -1,0 +1,5508 @@
+--[[
+
+	The MIT License (MIT)
+
+	Copyright (c) 2026 Lars Norberg
+	Copyright (c) 2026 Jonas "JuNNeZ" Andersen (JuNNeZ Edition modifications)
+
+	Permission is hereby granted, free of charge, to any person obtaining a copy
+	of this software and associated documentation files (the "Software"), to deal
+	in the Software without restriction, including without limitation the rights
+	to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+	copies of the Software, and to permit persons to whom the Software is
+	furnished to do so, subject to the following conditions:
+
+	The above copyright notice and this permission notice shall be included in all
+	copies or substantial portions of the Software.
+
+	THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+	IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+	FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+	AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+	LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+	OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+	SOFTWARE.
+
+--]]
+-- Part of AzeriteUI5_JuNNeZ_Edition_Debug, loaded on demand (Core/DebugLoader.lua).
+-- That addon's own `...` names the companion, so the main addon's namespace is read
+-- from the global Core/Core.lua publishes under its name. Harnesses pass it directly.
+local Addon, ns = ...
+do
+	local main = _G["AzeriteUI5_JuNNeZ_Edition"]
+	if (type(main) == "table") then Addon, ns = "AzeriteUI5_JuNNeZ_Edition", main end
+end
+local API = ns.API
+local Debugging = ns:NewModule("Debugging", "LibMoreEvents-1.0", "AceConsole-3.0")
+
+-- GLOBALS: EnableAddOn, GetAddOnInfo
+-- GLOBALS: IsInInstance, IsInGroup, IsInRaid, GetNumGroupMembers, GetNumSubgroupMembers
+-- GLOBALS: SecureCmdOptionParse, LE_PARTY_CATEGORY_HOME, LE_PARTY_CATEGORY_INSTANCE
+
+-- Lua API
+local ipairs = ipairs
+local next = next
+local pairs = pairs
+local ChatPrint = print
+local DiagnosticPrint
+-- File-local routing also covers asynchronous diagnostic callbacks. Never hook
+-- global print: the logger and unrelated addons keep their own output paths.
+local print = function(...)
+	if (DiagnosticPrint) then return DiagnosticPrint(...) end
+	return ChatPrint(...)
+end
+local select = select
+local tostring = tostring
+local type = type
+local math_abs = math.abs
+local math_ceil = math.ceil
+local math_max = math.max
+local math_min = math.min
+local string_format = string.format
+local string_lower = string.lower
+local string_match = string.match
+local table_concat = table.concat
+local table_insert = table.insert
+local table_sort = table.sort
+local unpack = unpack
+local PrintPlayerOrbDebug
+local UpdateTestMenu
+local GetRuntimeTestModule
+local ApplyRuntimeTestPresentation
+
+local function IsDevMode()
+	return (ns and (ns.IsDevelopment or (ns.db and ns.db.global and ns.db.global.enableDevelopmentMode)))
+end
+
+local function CanUseRuntimeTestMode()
+	return ns and ns.PlayerName == "Junnez"
+end
+
+local RUNTIME_TEST_DEFS = {
+	{ key = "player", label = "Player Frame", style = "Player", module = "PlayerFrame", count = 1, layout = "single", unit = "player" },
+	{ key = "playeralt", label = "Player Alternate", style = "PlayerAlternate", module = "PlayerFrameAlternate", count = 1, layout = "single", unit = "player" },
+	{ key = "castbar", label = "Player Castbar", style = "PlayerCastBar", module = "PlayerCastBarFrame", count = 1, layout = "single", unit = "player" },
+	{ key = "classpower", label = "Class Power", style = "PlayerClassPower", module = "PlayerClassPowerFrame", count = 1, layout = "single", unit = "player" },
+	{ key = "pet", label = "Pet Frame", style = "Pet", module = "PetFrame", count = 1, layout = "single", unit = "player" },
+	{ key = "target", label = "Target Frame", style = "Target", module = "TargetFrame", count = 1, layout = "single", unit = "player" },
+	{ key = "tot", label = "Target of Target", style = "ToT", module = "ToTFrame", count = 1, layout = "single", unit = "player" },
+	{ key = "focus", label = "Focus Frame", style = "Focus", module = "FocusFrame", count = 1, layout = "single", unit = "player" },
+	{ key = "boss", label = "Boss Frames", style = "Boss", module = "BossFrames", count = 5, layout = "boss", unit = "player", prefix = "Boss" },
+	{ key = "party", label = "Party Frames", style = "Party", module = "PartyFrames", count = 5, layout = "group", unit = "player", prefix = "Party" },
+	{ key = "raid5", label = "Raid Frames (5)", style = "Raid5", module = "RaidFrame5", count = 5, layout = "group", unit = "player", prefix = "Raid" },
+	{ key = "raid25", label = "Raid Frames (25)", style = "Raid25", module = "RaidFrame25", count = 25, layout = "group", unit = "player", prefix = "Raid", headerPreview = true },
+	{ key = "raid40", label = "Raid Frames (40)", style = "Raid40", module = "RaidFrame40", count = 40, layout = "group", unit = "player", prefix = "Raid", headerPreview = true },
+	{ key = "arena", label = "Arena Frames", style = "Arena", module = "ArenaFrames", count = 5, layout = "group", unit = "player", prefix = "Arena" },
+	{ key = "nameplates", label = "Nameplate Preview", style = "NamePlates", module = "NamePlates", count = 10, layout = "nameplates", unit = "player", prefix = "Nameplate" }
+}
+
+local RUNTIME_TEST_PRESETS = {
+	{ key = "party5", label = "Party 5", sets = { party = true }, counts = { party = 5 } },
+	{ key = "raid10", label = "Raid 10", sets = { raid25 = true }, counts = { raid25 = 10 } },
+	{ key = "raid20", label = "Raid 20", sets = { raid25 = true }, counts = { raid25 = 20 } },
+	{ key = "raid25", label = "Raid 25", sets = { raid25 = true }, counts = { raid25 = 25 } },
+	{ key = "raid40", label = "Raid 40", sets = { raid40 = true }, counts = { raid40 = 40 } },
+	{ key = "arena3", label = "Arena 3", sets = { arena = true }, counts = { arena = 3 } },
+	{ key = "arena5", label = "Arena 5", sets = { arena = true }, counts = { arena = 5 } },
+	{ key = "boss5", label = "Boss 1-5", sets = { boss = true }, counts = { boss = 5 } }
+}
+
+local RUNTIME_TEST_CLASS_DISTRIBUTIONS = {
+	{ key = "mixed", label = "Mixed" },
+	{ key = "healers", label = "All Healers" },
+	{ key = "melee", label = "Melee Heavy" },
+	{ key = "duplicates", label = "Duplicate Classes" }
+}
+
+local RUNTIME_TEST_HEALTH_SCENARIOS = {
+	{ key = "full", label = "Full Health" },
+	{ key = "mixed", label = "Mixed Damage" },
+	{ key = "critical", label = "Critical" },
+	{ key = "offline", label = "Offline" },
+	{ key = "dead", label = "Dead / Ghost" },
+	{ key = "outofrange", label = "Out of Range" },
+	{ key = "aggro", label = "Aggro" }
+}
+
+local RUNTIME_TEST_AURA_SCENARIOS = {
+	{ key = "none", label = "None" },
+	{ key = "dispel", label = "Dispellable Debuffs" },
+	{ key = "boss", label = "Boss Debuffs" },
+	{ key = "mixed", label = "Mixed Debuffs" },
+	{ key = "externals", label = "Helpful Externals" },
+	{ key = "buffs", label = "Short Buffs" },
+	{ key = "priority", label = "Priority Debuff" }
+}
+
+local RUNTIME_TEST_CAST_SCENARIOS = {
+	{ key = "none", label = "None" },
+	{ key = "enemycast", label = "Enemy Cast" },
+	{ key = "enemychannel", label = "Enemy Channel" },
+	{ key = "interruptible", label = "Interruptible" },
+	{ key = "uninterruptible", label = "Uninterruptible" },
+	{ key = "playercast", label = "Player Cast" },
+	{ key = "bosscast", label = "Boss Cast" }
+}
+
+local RUNTIME_TEST_MOUSEOVER_MODES = {
+	{ key = "none", label = "None" },
+	{ key = "first", label = "First Frame" },
+	{ key = "all", label = "All Frames" }
+}
+
+local RUNTIME_TEST_NAMEPLATE_PACKS = {
+	{ key = "one", label = "1" },
+	{ key = "five", label = "5" },
+	{ key = "ten", label = "10" }
+}
+
+local RUNTIME_TEST_NAMEPLATE_VARIANTS = {
+	{ key = "enemy", label = "Enemy" },
+	{ key = "friendly", label = "Friendly" },
+	{ key = "mixed", label = "Mixed" }
+}
+
+local function GetRuntimeTestDefinition(key)
+	for _, def in ipairs(RUNTIME_TEST_DEFS) do
+		if (def.key == key) then
+			return def
+		end
+	end
+end
+
+local function FindRuntimeTestOption(options, key)
+	for index, option in ipairs(options) do
+		if (option.key == key) then
+			return option, index
+		end
+	end
+	return options[1], 1
+end
+
+local function GetRuntimeTestOptionLabel(options, key)
+	local option = FindRuntimeTestOption(options, key)
+	return option and option.label or "Unknown"
+end
+
+local function CycleRuntimeTestOption(options, key, step)
+	local _, index = FindRuntimeTestOption(options, key)
+	local count = #options
+	index = index + (step or 1)
+	if (index > count) then
+		index = 1
+	elseif (index < 1) then
+		index = count
+	end
+	return options[index].key
+end
+
+local function EnsureRuntimeTestState()
+	if (not ns or not ns.db or not ns.db.global) then
+		return nil
+	end
+	local globalDB = ns.db.global
+	globalDB.runtimeUnitTestMode = globalDB.runtimeUnitTestMode and true or false
+	globalDB.runtimeUnitTestMenuEnabled = globalDB.runtimeUnitTestMenuEnabled and true or false
+	if (type(globalDB.runtimeUnitTestSets) ~= "table") then
+		globalDB.runtimeUnitTestSets = {}
+	end
+	if (type(globalDB.runtimeUnitTestCounts) ~= "table") then
+		globalDB.runtimeUnitTestCounts = {}
+	end
+	for _, def in ipairs(RUNTIME_TEST_DEFS) do
+		if (globalDB.runtimeUnitTestSets[def.key] == nil) then
+			globalDB.runtimeUnitTestSets[def.key] = false
+		end
+		if (type(globalDB.runtimeUnitTestCounts[def.key]) ~= "number") then
+			globalDB.runtimeUnitTestCounts[def.key] = def.count
+		end
+	end
+	globalDB.runtimeUnitTestPreset = globalDB.runtimeUnitTestPreset or RUNTIME_TEST_PRESETS[1].key
+	globalDB.runtimeUnitTestClassDistribution = globalDB.runtimeUnitTestClassDistribution or RUNTIME_TEST_CLASS_DISTRIBUTIONS[1].key
+	globalDB.runtimeUnitTestHealthScenario = globalDB.runtimeUnitTestHealthScenario or RUNTIME_TEST_HEALTH_SCENARIOS[2].key
+	globalDB.runtimeUnitTestAuraScenario = globalDB.runtimeUnitTestAuraScenario or RUNTIME_TEST_AURA_SCENARIOS[1].key
+	globalDB.runtimeUnitTestCastScenario = globalDB.runtimeUnitTestCastScenario or RUNTIME_TEST_CAST_SCENARIOS[1].key
+	globalDB.runtimeUnitTestMouseoverMode = globalDB.runtimeUnitTestMouseoverMode or RUNTIME_TEST_MOUSEOVER_MODES[1].key
+	globalDB.runtimeUnitTestNameplatePack = globalDB.runtimeUnitTestNameplatePack or RUNTIME_TEST_NAMEPLATE_PACKS[1].key
+	globalDB.runtimeUnitTestNameplateVariant = globalDB.runtimeUnitTestNameplateVariant or RUNTIME_TEST_NAMEPLATE_VARIANTS[1].key
+	globalDB.runtimeUnitTestDebugOverlay = globalDB.runtimeUnitTestDebugOverlay ~= false
+	globalDB.runtimeUnitTestShowOnlyOne = globalDB.runtimeUnitTestShowOnlyOne and true or false
+	globalDB.runtimeUnitTestHidePrimary = globalDB.runtimeUnitTestHidePrimary and true or false
+	globalDB.runtimeUnitTestCompactSpacing = globalDB.runtimeUnitTestCompactSpacing and true or false
+	globalDB.runtimeUnitTestLargeSpacing = globalDB.runtimeUnitTestLargeSpacing and true or false
+	globalDB.runtimeUnitTestMaxVisible = globalDB.runtimeUnitTestMaxVisible and true or false
+	return globalDB
+end
+
+local function IsRuntimeTestMode()
+	local globalDB = EnsureRuntimeTestState()
+	return globalDB and globalDB.runtimeUnitTestMenuEnabled and true or false
+end
+
+local function IsRuntimeTestSetEnabled(key)
+	local globalDB = EnsureRuntimeTestState()
+	return globalDB and globalDB.runtimeUnitTestSets and globalDB.runtimeUnitTestSets[key] and true or false
+end
+
+local function HasEnabledRuntimeTestSets()
+	for _, def in ipairs(RUNTIME_TEST_DEFS) do
+		if (IsRuntimeTestSetEnabled(def.key)) then
+			return true
+		end
+	end
+	return false
+end
+
+local function SetRuntimeTestSetEnabled(key, enabled)
+	local globalDB = EnsureRuntimeTestState()
+	if (globalDB and globalDB.runtimeUnitTestSets and GetRuntimeTestDefinition(key)) then
+		globalDB.runtimeUnitTestSets[key] = enabled and true or false
+	end
+end
+
+local function SetAllRuntimeTestSets(enabled)
+	for _, def in ipairs(RUNTIME_TEST_DEFS) do
+		SetRuntimeTestSetEnabled(def.key, enabled)
+	end
+end
+
+local function GetRuntimeTestStateValue(key)
+	local globalDB = EnsureRuntimeTestState()
+	return globalDB and globalDB[key]
+end
+
+local function SetRuntimeTestStateValue(key, value)
+	local globalDB = EnsureRuntimeTestState()
+	if (globalDB) then
+		globalDB[key] = value
+	end
+end
+
+local function GetRuntimeTestFrameCount(def)
+	local globalDB = EnsureRuntimeTestState()
+	if (not globalDB) then
+		return def.count
+	end
+
+	local count = globalDB.runtimeUnitTestCounts[def.key] or def.count
+	if (def.key == "nameplates") then
+		local pack = globalDB.runtimeUnitTestNameplatePack
+		if (pack == "five") then
+			count = 5
+		elseif (pack == "ten") then
+			count = 10
+		else
+			count = 1
+		end
+	end
+
+	if (globalDB.runtimeUnitTestMaxVisible) then
+		count = def.count
+	end
+	if (globalDB.runtimeUnitTestShowOnlyOne and def.count > 1) then
+		count = 1
+	end
+
+	return math_max(1, math_min(def.count, count))
+end
+
+local function GetRuntimeTestStartIndex(def)
+	local globalDB = EnsureRuntimeTestState()
+	if (not globalDB or not globalDB.runtimeUnitTestHidePrimary) then
+		return 1
+	end
+	if (globalDB.runtimeUnitTestShowOnlyOne) then
+		return 1
+	end
+	if (def.count > 1) then
+		return 2
+	end
+	return 1
+end
+
+local function ApplyRuntimeTestPreset()
+	local globalDB = EnsureRuntimeTestState()
+	if (not globalDB) then
+		return
+	end
+
+	for _, def in ipairs(RUNTIME_TEST_DEFS) do
+		globalDB.runtimeUnitTestSets[def.key] = false
+		globalDB.runtimeUnitTestCounts[def.key] = def.count
+	end
+
+	local preset = FindRuntimeTestOption(RUNTIME_TEST_PRESETS, globalDB.runtimeUnitTestPreset)
+	if (preset and preset.sets) then
+		for key, enabled in pairs(preset.sets) do
+			globalDB.runtimeUnitTestSets[key] = enabled and true or false
+		end
+	end
+	if (preset and preset.counts) then
+		for key, count in pairs(preset.counts) do
+			globalDB.runtimeUnitTestCounts[key] = count
+		end
+	end
+end
+
+local function SetRuntimeTestMode(enabled)
+	local globalDB = EnsureRuntimeTestState()
+	if (not globalDB) then
+		return
+	end
+	if (enabled and not CanUseRuntimeTestMode()) then
+		enabled = false
+	end
+	globalDB.runtimeUnitTestMenuEnabled = enabled and true or false
+	-- Keep the older raid5/arena-only test hook dormant.
+	globalDB.runtimeUnitTestMode = false
+	if (enabled and not HasEnabledRuntimeTestSets()) then
+		ApplyRuntimeTestPreset()
+	end
+	if (not enabled) then
+		globalDB.runtimeUnitTestMenuEnabled = false
+	end
+	if (Debugging and Debugging.RefreshRuntimeTestPreviews) then
+		Debugging:RefreshRuntimeTestPreviews()
+	end
+end
+
+local function GetRelativePointAnchor(point)
+	point = type(point) == "string" and point:upper() or "TOP"
+	if (point == "TOP") then
+		return "BOTTOM", 0, -1
+	elseif (point == "BOTTOM") then
+		return "TOP", 0, 1
+	elseif (point == "LEFT") then
+		return "RIGHT", 1, 0
+	elseif (point == "RIGHT") then
+		return "LEFT", -1, 0
+	elseif (point == "TOPLEFT") then
+		return "BOTTOMRIGHT", 1, -1
+	elseif (point == "TOPRIGHT") then
+		return "BOTTOMLEFT", -1, -1
+	elseif (point == "BOTTOMLEFT") then
+		return "TOPRIGHT", 1, 1
+	elseif (point == "BOTTOMRIGHT") then
+		return "TOPLEFT", -1, 1
+	end
+	return "BOTTOM", 0, -1
+end
+
+local function GetPreviewLabel(def, index)
+	if (def.count == 1) then
+		return def.label
+	end
+	return string_format("%s %d", def.prefix or def.label, index)
+end
+
+local function GetRuntimeTestMetadata(index)
+	local distribution = GetRuntimeTestStateValue("runtimeUnitTestClassDistribution")
+	local mixedClasses = { "WARRIOR", "PRIEST", "MAGE", "DRUID", "PALADIN", "ROGUE", "HUNTER", "SHAMAN", "WARLOCK", "MONK", "DEATHKNIGHT", "DEMONHUNTER", "EVOKER" }
+	local healerClasses = { "PRIEST", "DRUID", "PALADIN", "SHAMAN", "MONK", "EVOKER" }
+	local meleeClasses = { "WARRIOR", "PALADIN", "ROGUE", "DEATHKNIGHT", "DEMONHUNTER", "MONK", "SHAMAN" }
+	local duplicateClass = { "MAGE" }
+	local role = "DAMAGER"
+	local classToken = "MAGE"
+
+	if (distribution == "healers") then
+		classToken = healerClasses[((index - 1) % #healerClasses) + 1]
+		role = "HEALER"
+	elseif (distribution == "melee") then
+		classToken = meleeClasses[((index - 1) % #meleeClasses) + 1]
+		role = (index == 1) and "TANK" or "DAMAGER"
+	elseif (distribution == "duplicates") then
+		classToken = duplicateClass[1]
+		role = "DAMAGER"
+	else
+		classToken = mixedClasses[((index - 1) % #mixedClasses) + 1]
+		local roleCycle = { "TANK", "HEALER", "DAMAGER" }
+		role = roleCycle[((index - 1) % #roleCycle) + 1]
+	end
+
+	return classToken, role
+end
+
+local function GetRuntimeTestHealthState(index)
+	local scenario = GetRuntimeTestStateValue("runtimeUnitTestHealthScenario")
+	if (scenario == "full") then
+		return 100, "Ready", 1
+	elseif (scenario == "critical") then
+		return 12 + ((index - 1) % 3) * 4, "Critical", 1
+	elseif (scenario == "offline") then
+		return 0, "Offline", .4
+	elseif (scenario == "dead") then
+		return 0, "Dead", .55
+	elseif (scenario == "outofrange") then
+		return 74, "Out of Range", .45
+	elseif (scenario == "aggro") then
+		return 68, "Aggro", 1
+	end
+
+	local values = { 100, 83, 67, 49, 31, 17 }
+	local value = values[((index - 1) % #values) + 1]
+	local label = (value <= 25 and "Danger") or (value <= 50 and "Wounded") or "Stable"
+	return value, label, 1
+end
+
+local function IsRuntimeTestMouseoverActive(index)
+	local mode = GetRuntimeTestStateValue("runtimeUnitTestMouseoverMode")
+	return mode == "all" or (mode == "first" and index == 1)
+end
+
+local function GetRuntimeTestAuraData()
+	local scenario = GetRuntimeTestStateValue("runtimeUnitTestAuraScenario")
+	if (scenario == "dispel") then
+		return {
+			{ texture = "Interface\\Icons\\Spell_Holy_DispelMagic", color = { .2, .6, 1 }, label = "Magic" },
+			{ texture = "Interface\\Icons\\Spell_Nature_RemoveCurse", color = { .6, .2, 1 }, label = "Curse" },
+			{ texture = "Interface\\Icons\\Spell_Nature_NullifyPoison", color = { .2, 1, .2 }, label = "Poison" }
+		}
+	elseif (scenario == "boss") then
+		return {
+			{ texture = "Interface\\Icons\\Ability_Creature_Cursed_02", color = { 1, .2, .2 }, label = "Boss" },
+			{ texture = "Interface\\Icons\\Ability_Druid_InfectedWounds", color = { 1, .6, .1 }, label = "Major" }
+		}
+	elseif (scenario == "mixed") then
+		return {
+			{ texture = "Interface\\Icons\\Ability_Creature_Poison_05", color = { .2, 1, .2 }, label = "Poison" },
+			{ texture = "Interface\\Icons\\Spell_Shadow_CurseOfTounges", color = { .6, .2, 1 }, label = "Curse" },
+			{ texture = "Interface\\Icons\\Spell_Shadow_AbominationExplosion", color = { .8, .8, .2 }, label = "Disease" }
+		}
+	elseif (scenario == "externals") then
+		return {
+			{ texture = "Interface\\Icons\\Spell_Holy_GuardianSpirit", color = { 1, 1, 1 }, label = "GS" },
+			{ texture = "Interface\\Icons\\INV_Ability_Paladin_BlessedHands", color = { 1, .8, .2 }, label = "BoP" }
+		}
+	elseif (scenario == "buffs") then
+		return {
+			{ texture = "Interface\\Icons\\Spell_Holy_PowerWordShield", color = { .4, .8, 1 }, label = "Shield" },
+			{ texture = "Interface\\Icons\\Spell_Nature_Rejuvenation", color = { .3, 1, .3 }, label = "HoT" },
+			{ texture = "Interface\\Icons\\Spell_Holy_SealOfSacrifice", color = { 1, .9, .3 }, label = "DR" }
+		}
+	elseif (scenario == "priority") then
+		return {
+			{ texture = "Interface\\Icons\\Ability_Creature_Disease_02", color = { 1, .15, .15 }, label = "Priority" }
+		}
+	end
+	return {}
+end
+
+local function GetRuntimeTestCastData(index)
+	local scenario = GetRuntimeTestStateValue("runtimeUnitTestCastScenario")
+	if (scenario == "none") then
+		return nil
+	elseif (scenario == "enemychannel") then
+		return { label = "Enemy Channel", texture = "Interface\\Icons\\Spell_Shadow_MindFlay", progress = 28 + (index * 9), reverse = true, color = { .45, .65, 1 } }
+	elseif (scenario == "interruptible" or scenario == "interrupt") then
+		return { label = "Interruptible", texture = "Interface\\Icons\\Spell_Frost_FrostBolt02", progress = 62, reverse = false, color = { 1, .75, .2 }, notInterruptible = false }
+	elseif (scenario == "uninterruptible") then
+		return { label = "Uninterruptible", texture = "Interface\\Icons\\Spell_Shadow_ShadowBolt", progress = 62, reverse = false, color = { 1, .35, .35 }, notInterruptible = true }
+	elseif (scenario == "playercast") then
+		return { label = "Player Cast", texture = "Interface\\Icons\\Spell_Arcane_Arcane01", progress = 54, reverse = false, color = { 1, .8, .2 } }
+	elseif (scenario == "bosscast") then
+		return { label = "Boss Ability", texture = "Interface\\Icons\\Ability_BossMagmaw_MoltenTantrum", progress = 74, reverse = false, color = { 1, .25, .25 } }
+	end
+	return { label = "Enemy Cast", texture = "Interface\\Icons\\Spell_Fire_Fireball02", progress = 48 + (index * 7), reverse = false, color = { 1, .55, .2 } }
+end
+
+local function ResolveRuntimeTestColor(color, fallbackR, fallbackG, fallbackB)
+	if (type(color) == "table") then
+		if (color.r and color.g and color.b) then
+			return color.r, color.g, color.b
+		end
+		return color[1] or fallbackR, color[2] or fallbackG, color[3] or fallbackB
+	end
+	return fallbackR, fallbackG, fallbackB
+end
+
+local function GetRuntimeTestModuleProfile(def)
+	local module = GetRuntimeTestModule(def)
+	return module and module.db and module.db.profile
+end
+
+local function GetRuntimeTestClassColor(def, classToken)
+	local profile = GetRuntimeTestModuleProfile(def)
+	local useBlizzardColors = profile and profile.useBlizzardHealthColors
+	if (useBlizzardColors) then
+		local blizzClass = (ns.oUF and ns.oUF.colors and ns.oUF.colors.class and ns.oUF.colors.class[classToken]) or (ns.Colors and ns.Colors.blizzclass and ns.Colors.blizzclass[classToken])
+		return ResolveRuntimeTestColor(blizzClass, .9, .9, .9)
+	end
+	local classColor = ns.Colors and ns.Colors.class and ns.Colors.class[classToken]
+	return ResolveRuntimeTestColor(classColor, .9, .9, .9)
+end
+
+local function GetRuntimeTestHealthColorMode(def, isMouseover)
+	local profile = GetRuntimeTestModuleProfile(def)
+	local useClassColors = true
+	local mouseoverOnly = false
+	if (profile and profile.useClassColors == false) then
+		useClassColors = false
+	end
+	if (useClassColors and profile and profile.useClassColorOnMouseoverOnly) then
+		mouseoverOnly = true
+	end
+	return useClassColors and ((not mouseoverOnly) or isMouseover), mouseoverOnly
+end
+
+local function ApplyRuntimeTestBarColor(statusBar, r, g, b)
+	if (not statusBar) then
+		return
+	end
+	if (statusBar.SetStatusBarColor) then
+		statusBar:SetStatusBarColor(r, g, b, 1)
+	end
+	if (statusBar.GetStatusBarTexture) then
+		local texture = statusBar:GetStatusBarTexture()
+		if (texture and texture.SetVertexColor) then
+			texture:SetVertexColor(r, g, b, 1)
+		end
+	end
+end
+
+local function ApplyRuntimeTestCastbar(castbar, castData)
+	if (not castbar) then
+		return false
+	end
+	if (not castData) then
+		castbar:Hide()
+		return true
+	end
+
+	local progress = math_max(0, math_min(100, castData.progress or 0))
+	castbar:SetMinMaxValues(0, 100)
+	if (castbar.SetReverseFill) then
+		castbar:SetReverseFill(castData.reverse and true or false)
+	end
+	castbar.notInterruptible = castData.notInterruptible and true or false
+	castbar:SetValue(progress)
+	ApplyRuntimeTestBarColor(castbar, castData.color[1], castData.color[2], castData.color[3])
+
+	if (castbar.Text and castbar.Text.SetText) then
+		castbar.Text:SetText(castData.label)
+	end
+	if (castbar.Time and castbar.Time.SetFormattedText) then
+		castbar.Time:SetFormattedText("%.1f", math_max(0, (100 - progress) / 20))
+	end
+	if (castbar.Delay and castbar.Delay.SetText) then
+		castbar.Delay:SetText("")
+	end
+	if (castbar.SafeZone) then
+		castbar.SafeZone:Hide()
+	end
+	if (castbar.Shield and castbar.Shield.SetShown) then
+		castbar.Shield:SetShown(castData.notInterruptible and true or false)
+	end
+
+	castbar:Show()
+	return true
+end
+
+local function GetRuntimeTestNameplateVariant(index)
+	local variant = GetRuntimeTestStateValue("runtimeUnitTestNameplateVariant")
+	if (variant == "friendly") then
+		return "Friendly"
+	elseif (variant == "mixed") then
+		return (index % 2 == 0) and "Friendly" or "Enemy"
+	end
+	return "Enemy"
+end
+
+local function EnsureRuntimeTestWidgets(frame)
+	if (frame.__AzeriteUI_RuntimeTestWidgets) then
+		return frame.__AzeriteUI_RuntimeTestWidgets
+	end
+
+	local widgets = {}
+	local overlay = CreateFrame("Frame", nil, frame)
+	overlay:SetAllPoints()
+	overlay:SetFrameLevel(frame:GetFrameLevel() + 30)
+	widgets.overlay = overlay
+
+	local backdrop = overlay:CreateTexture(nil, "ARTWORK", nil, 1)
+	backdrop:SetPoint("TOPLEFT", 2, -2)
+	backdrop:SetSize(232, 30)
+	backdrop:SetColorTexture(0, 0, 0, .55)
+	widgets.backdrop = backdrop
+
+	local label = overlay:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+	label:SetPoint("TOPLEFT", 8, -6)
+	label:SetWidth(220)
+	label:SetJustifyH("LEFT")
+	widgets.label = label
+
+	local state = overlay:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+	state:SetPoint("TOPLEFT", label, "BOTTOMLEFT", 0, -2)
+	state:SetWidth(220)
+	state:SetJustifyH("LEFT")
+	widgets.state = state
+
+	local auraFrame = CreateFrame("Frame", nil, overlay)
+	auraFrame:SetPoint("TOPRIGHT", -4, -4)
+	auraFrame:SetSize(60, 18)
+	widgets.auraFrame = auraFrame
+	widgets.auras = {}
+
+	local castbar = CreateFrame("StatusBar", nil, overlay)
+	castbar:SetPoint("TOPLEFT", frame, "BOTTOMLEFT", 0, -6)
+	castbar:SetPoint("TOPRIGHT", frame, "BOTTOMRIGHT", 0, -6)
+	castbar:SetHeight(10)
+	castbar:SetStatusBarTexture("Interface\\TargetingFrame\\UI-StatusBar")
+	castbar:SetMinMaxValues(0, 100)
+	castbar:SetFrameLevel(overlay:GetFrameLevel() + 1)
+	local castBG = castbar:CreateTexture(nil, "BACKGROUND")
+	castBG:SetAllPoints()
+	castBG:SetColorTexture(.05, .05, .05, .8)
+	local castText = overlay:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+	castText:SetPoint("BOTTOMLEFT", castbar, "TOPLEFT", 0, 2)
+	castText:SetJustifyH("LEFT")
+	local castIcon = overlay:CreateTexture(nil, "ARTWORK")
+	castIcon:SetPoint("RIGHT", castbar, "LEFT", -4, 0)
+	castIcon:SetSize(14, 14)
+	widgets.castbar = castbar
+	widgets.castText = castText
+	widgets.castIcon = castIcon
+
+	local classPowerFrame = CreateFrame("Frame", nil, overlay)
+	classPowerFrame:SetPoint("TOPLEFT", frame, "BOTTOMLEFT", 0, -24)
+	classPowerFrame:SetPoint("TOPRIGHT", frame, "BOTTOMRIGHT", 0, -24)
+	classPowerFrame:SetHeight(10)
+	widgets.classPowerFrame = classPowerFrame
+	widgets.classPowerPoints = {}
+	for pointIndex = 1,6 do
+		local point = CreateFrame("StatusBar", nil, classPowerFrame)
+		point:SetStatusBarTexture("Interface\\TargetingFrame\\UI-StatusBar")
+		point:SetMinMaxValues(0, 1)
+		point:SetValue(1)
+		point:SetHeight(10)
+		point:SetWidth(18)
+		if (pointIndex == 1) then
+			point:SetPoint("LEFT", classPowerFrame, "LEFT", 0, 0)
+		else
+			point:SetPoint("LEFT", widgets.classPowerPoints[pointIndex - 1], "RIGHT", 4, 0)
+		end
+		local bg = point:CreateTexture(nil, "BACKGROUND")
+		bg:SetAllPoints()
+		bg:SetColorTexture(.05, .05, .05, .8)
+		point.bg = bg
+		widgets.classPowerPoints[pointIndex] = point
+	end
+
+	frame.__AzeriteUI_RuntimeTestWidgets = widgets
+	return widgets
+end
+
+local function GetRuntimeTestFallbackSize(def)
+	if (def.key == "castbar") then
+		local config = ns.GetConfig and ns.GetConfig("PlayerCastBar")
+		local size = config and config.CastBarSize
+		return (size and size[1] or 128) + 16, (size and size[2] or 11) + 16
+	elseif (def.key == "classpower") then
+		local config = ns.GetConfig and ns.GetConfig("PlayerClassPower")
+		local size = config and config.ClassPowerFrameSize
+		return size and size[1] or 124, size and size[2] or 32
+	elseif (def.key == "party") then
+		local config = ns.GetConfig and ns.GetConfig("PartyFrames")
+		local size = config and config.UnitSize
+		return size and size[1] or 96, size and size[2] or 30
+	elseif (def.key == "raid5" or def.key == "raid25" or def.key == "raid40") then
+		local config = ns.GetConfig and ns.GetConfig("RaidFrames")
+		local size = config and config.UnitSize
+		return size and size[1] or 66, size and size[2] or 36
+	elseif (def.key == "arena" or def.key == "boss") then
+		return 112, 24
+	end
+	return 112, 24
+end
+
+local function CreateRuntimeTestFallbackFrame(def, parent)
+	local width, height = GetRuntimeTestFallbackSize(def)
+	local frame = CreateFrame("Button", nil, parent, "SecureActionButtonTemplate")
+	frame:SetSize(width, height)
+	frame:EnableMouse(true)
+	if (ns.UnitFrame and ns.UnitFrame.InitializeUnitFrame) then
+		ns.UnitFrame.InitializeUnitFrame(frame)
+	end
+	frame:RegisterForClicks("AnyUp")
+
+	local health = CreateFrame("StatusBar", nil, frame)
+	health:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, 0)
+	health:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, 0)
+	health:SetStatusBarTexture("Interface\\TargetingFrame\\UI-StatusBar")
+	health:SetMinMaxValues(0, 100)
+	health:SetValue(100)
+	local backdrop = health:CreateTexture(nil, "BACKGROUND")
+	backdrop:SetAllPoints()
+	backdrop:SetColorTexture(.08, .08, .08, .85)
+	health.backdrop = backdrop
+	frame.Health = health
+
+	local name = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+	name:SetPoint("CENTER", frame, "CENTER", 0, 0)
+	name:SetJustifyH("CENTER")
+	frame.Name = name
+
+	return frame
+end
+
+local function SetupRuntimeTestInteraction(frame, def, index)
+	if (not frame) then
+		return
+	end
+
+	frame.__AzeriteUI_RuntimeTestDef = def
+	frame.__AzeriteUI_RuntimeTestIndex = index
+	if (frame.__AzeriteUI_RuntimeTestSavedUnit == nil) then
+		frame.__AzeriteUI_RuntimeTestSavedUnit = frame.unit
+	end
+	frame.unit = frame.unit or "player"
+	frame:EnableMouse(true)
+	if (frame.RegisterForClicks) then
+		frame:RegisterForClicks("AnyUp")
+	end
+	if (frame.SetAttribute) then
+		if (frame.__AzeriteUI_RuntimeTestSavedUnitAttribute == nil and frame.GetAttribute) then
+			frame.__AzeriteUI_RuntimeTestSavedUnitAttribute = frame:GetAttribute("unit")
+		end
+		if (frame.__AzeriteUI_RuntimeTestSavedType1Attribute == nil and frame.GetAttribute) then
+			frame.__AzeriteUI_RuntimeTestSavedType1Attribute = frame:GetAttribute("*type1") or frame:GetAttribute("type1")
+		end
+		frame:SetAttribute("unit", frame.unit)
+		frame:SetAttribute("*type1", "target")
+	end
+
+	-- Keep the synthetic menu state, but let real hover override it.
+	if (not frame.__AzeriteUI_RuntimeTestInteractionHooked and frame.HookScript) then
+		frame.__AzeriteUI_RuntimeTestInteractionHooked = true
+		frame:HookScript("OnEnter", function(self)
+			self.__AzeriteUI_RuntimeTestHovered = true
+			if (IsRuntimeTestMode() and self.__AzeriteUI_RuntimeTestDef and self.__AzeriteUI_RuntimeTestIndex) then
+				ApplyRuntimeTestPresentation(self, self.__AzeriteUI_RuntimeTestDef, self.__AzeriteUI_RuntimeTestIndex)
+			end
+		end)
+		frame:HookScript("OnLeave", function(self)
+			self.__AzeriteUI_RuntimeTestHovered = nil
+			if (IsRuntimeTestMode() and self.__AzeriteUI_RuntimeTestDef and self.__AzeriteUI_RuntimeTestIndex) then
+				ApplyRuntimeTestPresentation(self, self.__AzeriteUI_RuntimeTestDef, self.__AzeriteUI_RuntimeTestIndex)
+			end
+		end)
+	end
+end
+
+ApplyRuntimeTestPresentation = function(frame, def, index)
+	local classToken, role = GetRuntimeTestMetadata(index)
+	local healthPct, stateLabel, alpha = GetRuntimeTestHealthState(index)
+	local hovered = (frame and frame.__AzeriteUI_RuntimeTestHovered) and true or IsRuntimeTestMouseoverActive(index)
+	local widgets = EnsureRuntimeTestWidgets(frame)
+	local classR, classG, classB = GetRuntimeTestClassColor(def, classToken)
+	local baseR, baseG, baseB = ResolveRuntimeTestColor(ns.Colors and ns.Colors.green, .1, .9, .1)
+	local showClassColors = GetRuntimeTestHealthColorMode(def, hovered)
+	local classLabel = (LOCALIZED_CLASS_NAMES_MALE and LOCALIZED_CLASS_NAMES_MALE[classToken]) or classToken
+	local previewLabel = GetPreviewLabel(def, index)
+	local auraScenarioLabel = GetRuntimeTestOptionLabel(RUNTIME_TEST_AURA_SCENARIOS, GetRuntimeTestStateValue("runtimeUnitTestAuraScenario"))
+
+	if (def.key == "nameplates") then
+		local variant = GetRuntimeTestNameplateVariant(index)
+		previewLabel = string_format("%s %s", variant, previewLabel)
+		if (not hovered) then
+			if (variant == "Friendly") then
+				baseR, baseG, baseB = .2, .85, .35
+			else
+				baseR, baseG, baseB = .9, .2, .15
+			end
+		end
+	end
+
+	frame:SetAlpha(alpha or 1)
+	if (frame.Name and frame.Name.SetText) then
+		frame.Name:SetText(previewLabel)
+	end
+
+	if (frame.Health and frame.Health.SetMinMaxValues and frame.Health.SetValue) then
+		frame.Health:SetMinMaxValues(0, 100)
+		frame.Health:SetValue(healthPct)
+		frame.Health.colorClass = false
+		frame.Health.colorClassPet = false
+		frame.Health.colorReaction = false
+		frame.Health.colorHealth = false
+		if (showClassColors) then
+			ApplyRuntimeTestBarColor(frame.Health, classR, classG, classB)
+		else
+			ApplyRuntimeTestBarColor(frame.Health, baseR, baseG, baseB)
+		end
+		if (frame.Health.Preview) then
+			if (showClassColors) then
+				ApplyRuntimeTestBarColor(frame.Health.Preview, classR * .7, classG * .7, classB * .7)
+			else
+				ApplyRuntimeTestBarColor(frame.Health.Preview, baseR * .7, baseG * .7, baseB * .7)
+			end
+		end
+	end
+
+	if (widgets) then
+		local showOverlay = GetRuntimeTestStateValue("runtimeUnitTestDebugOverlay")
+		widgets.overlay:Show()
+		widgets.backdrop:SetShown(showOverlay)
+		widgets.label:SetText(string_format("%s | %s | %s", previewLabel, role, classLabel))
+		widgets.state:SetText(string_format("%s %d%% | %s", stateLabel, healthPct, auraScenarioLabel))
+		widgets.label:SetTextColor(classR, classG, classB)
+		widgets.label:SetShown(showOverlay)
+		widgets.state:SetShown(showOverlay)
+
+		local auraData = GetRuntimeTestAuraData()
+		for iconIndex = 1,3 do
+			local icon = widgets.auras[iconIndex]
+			if (not icon) then
+				icon = widgets.auraFrame:CreateTexture(nil, "ARTWORK")
+				icon:SetSize(16, 16)
+				icon:SetPoint("RIGHT", widgets.auraFrame, "RIGHT", -((iconIndex - 1) * 18), 0)
+				widgets.auras[iconIndex] = icon
+			end
+			local aura = auraData[iconIndex]
+			if (aura) then
+				icon:SetTexture(aura.texture)
+				icon:SetVertexColor(aura.color[1], aura.color[2], aura.color[3], 1)
+				icon:Show()
+			else
+				icon:Hide()
+			end
+		end
+		widgets.auraFrame:SetShown(#auraData > 0)
+
+		local castData = GetRuntimeTestCastData(index)
+		local usedNativeCastbar = ApplyRuntimeTestCastbar(frame.Castbar, castData)
+		if (castData and not usedNativeCastbar) then
+			local progress = math_max(0, math_min(100, castData.progress or 0))
+			widgets.castbar:SetMinMaxValues(0, 100)
+			if (widgets.castbar.SetReverseFill) then
+				widgets.castbar:SetReverseFill(castData.reverse and true or false)
+			end
+			widgets.castbar:SetValue(progress)
+			ApplyRuntimeTestBarColor(widgets.castbar, castData.color[1], castData.color[2], castData.color[3])
+			widgets.castText:SetText(castData.label)
+			widgets.castIcon:SetTexture(castData.texture)
+			widgets.castbar:Show()
+			widgets.castText:Show()
+			widgets.castIcon:Show()
+		else
+			widgets.castbar:Hide()
+			widgets.castText:Hide()
+			widgets.castIcon:Hide()
+		end
+
+		local showClassPower = (def.key == "classpower")
+		widgets.classPowerFrame:SetShown(showClassPower)
+		if (showClassPower) then
+			local activePoints = ((index - 1) % 5) + 1
+			for pointIndex, point in ipairs(widgets.classPowerPoints) do
+				point:SetShown(pointIndex <= 6)
+				if (pointIndex <= activePoints) then
+					point:SetValue(1)
+					ApplyRuntimeTestBarColor(point, classR, classG, classB)
+				else
+					point:SetValue(.25)
+					ApplyRuntimeTestBarColor(point, .18, .18, .18)
+				end
+			end
+		end
+	end
+end
+
+local function RefreshTargetDebugTestFrames()
+	local targetMod = ns and ns.GetModule and ns:GetModule("TargetFrame", true)
+	local frame = targetMod and targetMod.frame
+	if (not frame) then
+		return
+	end
+	frame.__AzeriteUI_HealthLabSignature = nil
+	frame.__AzeriteUI_TargetGUID = nil
+	if (frame.PostUpdate) then
+		frame:PostUpdate()
+	end
+	if (frame.Health and frame.Health.ForceUpdate) then
+		frame.Health:ForceUpdate()
+	end
+	if (frame.Castbar and frame.Castbar.ForceUpdate and frame.IsElementEnabled and frame:IsElementEnabled("Castbar")) then
+		frame.Castbar:ForceUpdate()
+	end
+end
+
+GetRuntimeTestModule = function(def)
+	return ns and ns.GetModule and ns:GetModule(def.module, true)
+end
+
+local function GetRuntimeTestAnchor(def)
+	local module = GetRuntimeTestModule(def)
+	if (module and module.IsEnabled and module:IsEnabled() and module.frame) then
+		return module.frame
+	end
+	return UIParent
+end
+
+local function TryPrepareRuntimeTestModule(def, module)
+	if (not module) then
+		return false
+	end
+	if (module.frame) then
+		return true
+	end
+	if (type(module.CreateUnitFrames) ~= "function") then
+		return false
+	end
+
+	local ok = API.TryCall(module.CreateUnitFrames, module)
+	if (not ok) then
+		return false
+	end
+
+	if (module.frame and module.frame.Hide and module.IsEnabled and not module:IsEnabled()) then
+		module.frame:Hide()
+	end
+
+	return module.frame and true or false
+end
+
+local function ForcePreviewFrameUpdate(frame, label)
+	if (not frame) then
+		return
+	end
+	frame:Show()
+	frame:SetAlpha(1)
+	if (frame.Enable) then
+		API.TryCall(frame.Enable, frame)
+	end
+	if (frame.Update) then
+		API.TryCall(frame.Update, frame)
+	end
+	if (frame.UpdateAllElements) then
+		API.TryCall(frame.UpdateAllElements, frame, "RuntimeTest")
+	end
+	if (frame.PostUpdate) then
+		API.TryCall(frame.PostUpdate, frame)
+	end
+	if (frame.Health and frame.Health.ForceUpdate) then
+		API.TryCall(frame.Health.ForceUpdate, frame.Health)
+	end
+	if (frame.Power and frame.Power.ForceUpdate) then
+		API.TryCall(frame.Power.ForceUpdate, frame.Power)
+	end
+	if (frame.Castbar and frame.Castbar.ForceUpdate) then
+		API.TryCall(frame.Castbar.ForceUpdate, frame.Castbar)
+	end
+	local auras = frame.PlayerAuras or frame.Auras
+	if (auras and auras.ForceUpdate) then
+		API.TryCall(auras.ForceUpdate, auras)
+	end
+	if (label and frame.Name and frame.Name.SetText) then
+		API.TryCall(frame.Name.SetText, frame.Name, label)
+	end
+end
+
+local function GetOrderedRuntimeTestHeaderChildren(header)
+	local children = {}
+	local seen = {}
+
+	if (header and header.GetAttribute) then
+		for index = 1, 40 do
+			local child = header:GetAttribute("child" .. index)
+			if (not child) then
+				break
+			end
+			if (not seen[child]) then
+				seen[child] = true
+				children[#children + 1] = child
+			end
+		end
+	end
+
+	if (#children == 0 and header and header.GetNumChildren) then
+		for index = 1, header:GetNumChildren() do
+			local child = select(index, header:GetChildren())
+			if (child and not seen[child]) then
+				seen[child] = true
+				children[#children + 1] = child
+			end
+		end
+	end
+
+	table_sort(children, function(a, b)
+		local aName = a:GetName() or ""
+		local bName = b:GetName() or ""
+		local aIndex = tonumber(string_match(aName, "(%d+)$")) or 0
+		local bIndex = tonumber(string_match(bName, "(%d+)$")) or 0
+		if (aIndex == bIndex) then
+			return aName < bName
+		end
+		return aIndex < bIndex
+	end)
+
+	return children
+end
+
+local function SyncRuntimeTestHeaderPreview(preview, count)
+	if (InCombatLockdown()) then
+		return
+	end
+
+	local module = preview and preview.module
+	local header = preview and preview.header
+	if (not module or not header) then
+		return
+	end
+
+	preview.savedStartingIndex = preview.savedStartingIndex or header:GetAttribute("startingIndex")
+	preview.savedShowSolo = preview.savedShowSolo or header:GetAttribute("showSolo")
+	preview.savedShowPlayer = preview.savedShowPlayer or header:GetAttribute("showPlayer")
+	preview.savedShowParty = preview.savedShowParty or header:GetAttribute("showParty")
+	preview.savedShowRaid = preview.savedShowRaid or header:GetAttribute("showRaid")
+
+	header.forceShow = true
+	header.forceShowAuras = true
+	UnregisterAttributeDriver(header, "state-visibility")
+	RegisterAttributeDriver(header, "state-visibility", "show")
+	header:SetAttribute("showSolo", true)
+	header:SetAttribute("showPlayer", true)
+	header:SetAttribute("showParty", true)
+	header:SetAttribute("showRaid", true)
+	header:SetAttribute("startingIndex", -(count + 1))
+	header:Show()
+
+	if (module.ConfigureChildren) then
+		module:ConfigureChildren()
+	end
+
+	local frames = GetOrderedRuntimeTestHeaderChildren(header)
+	for _, frame in ipairs(frames) do
+		if (frame.__AzeriteUI_RuntimeTestSavedUnit == nil) then
+			frame.__AzeriteUI_RuntimeTestSavedUnit = frame.unit
+		end
+		frame.unit = "player"
+		SetupRuntimeTestInteraction(frame, preview.def, 1)
+		if (frame.SetAttribute) then
+			frame:SetAttribute("unit", "player")
+		end
+		UnregisterUnitWatch(frame)
+		RegisterUnitWatch(frame, true)
+		frame:Show()
+	end
+
+	preview.frames = frames
+end
+
+Debugging.GetRuntimeTestLayout = function(self, def, frames)
+	local module = GetRuntimeTestModule(def)
+	local profile = module and module.db and module.db.profile or {}
+	local first = frames and frames[1]
+	local unitWidth = first and first.GetWidth and first:GetWidth() or 100
+	local unitHeight = first and first.GetHeight and first:GetHeight() or 40
+
+	if (def.layout == "single") then
+		return {
+			point = "CENTER",
+			xOffset = 0,
+			yOffset = 0,
+			unitsPerColumn = 1,
+			maxColumns = 1,
+			columnSpacing = 0,
+			columnAnchorPoint = "LEFT",
+			width = unitWidth,
+			height = unitHeight
+		}
+	end
+
+	if (def.layout == "boss") then
+		return {
+			point = "TOP",
+			xOffset = 0,
+			yOffset = -12,
+			unitsPerColumn = def.count,
+			maxColumns = 1,
+			columnSpacing = 0,
+			columnAnchorPoint = "LEFT"
+		}
+	end
+
+	if (def.layout == "nameplates") then
+		return {
+			point = "TOP",
+			xOffset = 0,
+			yOffset = -18,
+			unitsPerColumn = 10,
+			maxColumns = 1,
+			columnSpacing = 0,
+			columnAnchorPoint = "LEFT"
+		}
+	end
+
+	local spacingScale = 1
+	if (GetRuntimeTestStateValue("runtimeUnitTestCompactSpacing")) then
+		spacingScale = .5
+	elseif (GetRuntimeTestStateValue("runtimeUnitTestLargeSpacing")) then
+		spacingScale = 1.75
+	end
+
+	return {
+		point = profile.point or (def.key == "raid40" and "LEFT" or "TOP"),
+		xOffset = (profile.xOffset or 0) * spacingScale,
+		yOffset = (profile.yOffset or ((def.key == "raid40") and 0 or -12)) * spacingScale,
+		unitsPerColumn = profile.unitsPerColumn or def.count,
+		maxColumns = profile.maxColumns or 1,
+		columnSpacing = (profile.columnSpacing or 0) * spacingScale,
+		columnAnchorPoint = profile.columnAnchorPoint or ((def.key == "raid40" or def.key == "party") and "TOP" or "LEFT")
+	}
+end
+
+Debugging.GetRuntimeTestContainerSize = function(self, def, frames, layout, count)
+	local first = frames and frames[1]
+	local unitWidth = first and first.GetWidth and first:GetWidth() or 100
+	local unitHeight = first and first.GetHeight and first:GetHeight() or 40
+	count = count or (frames and #frames) or def.count
+	local unitsPerColumn = layout.unitsPerColumn or count
+	local maxColumns = layout.maxColumns or 1
+	local point = layout.point or "TOP"
+	local xOffset = layout.xOffset or 0
+	local yOffset = layout.yOffset or 0
+	local columnSpacing = layout.columnSpacing or 0
+	local _, xOffsetMult, yOffsetMult = GetRelativePointAnchor(point)
+	local xMultiplier = math_abs(xOffsetMult)
+	local yMultiplier = math_abs(yOffsetMult)
+	local numColumns
+
+	if (unitsPerColumn and count > unitsPerColumn) then
+		numColumns = math_min(math_ceil(count / unitsPerColumn), maxColumns)
+	else
+		unitsPerColumn = count
+		numColumns = 1
+	end
+
+	local width = xMultiplier * (unitsPerColumn - 1) * unitWidth + ((unitsPerColumn - 1) * (xOffset * xOffsetMult)) + unitWidth
+	local height = yMultiplier * (unitsPerColumn - 1) * unitHeight + ((unitsPerColumn - 1) * (yOffset * yOffsetMult)) + unitHeight
+
+	if (numColumns > 1) then
+		local _, colxMulti, colyMulti = GetRelativePointAnchor(layout.columnAnchorPoint or "LEFT")
+		width = width + ((numColumns - 1) * math_abs(colxMulti) * (width + columnSpacing))
+		height = height + ((numColumns - 1) * math_abs(colyMulti) * (height + columnSpacing))
+	end
+
+	return math_max(width, unitWidth), math_max(height, unitHeight)
+end
+
+Debugging.LayoutRuntimeTestPreview = function(self, preview, frames)
+	local def = preview and preview.def
+	if (not def or not frames or #frames == 0) then
+		return
+	end
+
+	local container = preview.container
+	local anchor = GetRuntimeTestAnchor(def)
+	local layout = self:GetRuntimeTestLayout(def, frames)
+
+	container:ClearAllPoints()
+	container:SetScale(anchor and anchor.GetScale and anchor:GetScale() or 1)
+	container:SetPoint("CENTER", anchor or UIParent, "CENTER", 0, 0)
+
+	if (def.layout == "single") then
+		local frame = frames[1]
+		local width = frame:GetWidth()
+		local height = frame:GetHeight()
+		container:SetSize(math_max(width, 1), math_max(height, 1))
+		frame:ClearAllPoints()
+		frame:SetPoint("CENTER", container, "CENTER", 0, 0)
+		return
+	end
+
+	local width, height = self:GetRuntimeTestContainerSize(def, frames, layout, #frames)
+	container:SetSize(width, height)
+
+	local point = layout.point or "TOP"
+	local relativePoint, xOffsetMult, yOffsetMult = GetRelativePointAnchor(point)
+	local xMultiplier = math_abs(xOffsetMult)
+	local yMultiplier = math_abs(yOffsetMult)
+	local xOffset = layout.xOffset or 0
+	local yOffset = layout.yOffset or 0
+	local unitsPerColumn = layout.unitsPerColumn or #frames
+	local columnSpacing = layout.columnSpacing or 0
+	local columnAnchorPoint = layout.columnAnchorPoint
+	local columnRelPoint, colxMulti, colyMulti
+	if (columnAnchorPoint) then
+		columnRelPoint, colxMulti, colyMulti = GetRelativePointAnchor(columnAnchorPoint)
+	end
+
+	local currentAnchor = container
+	local columnUnitCount = 0
+
+	for buttonNum, frame in ipairs(frames) do
+		frame:ClearAllPoints()
+		columnUnitCount = columnUnitCount + 1
+
+		if (buttonNum == 1) then
+			frame:SetPoint(point, container, point, 0, 0)
+		elseif (columnUnitCount > unitsPerColumn) then
+			columnUnitCount = 1
+			local columnAnchor = frames[buttonNum - unitsPerColumn]
+			if (columnAnchorPoint and columnAnchor) then
+				frame:SetPoint(columnAnchorPoint, columnAnchor, columnRelPoint, colxMulti * columnSpacing, colyMulti * columnSpacing)
+			else
+				frame:SetPoint(point, container, point, 0, 0)
+			end
+		else
+			frame:SetPoint(point, currentAnchor, relativePoint, xMultiplier * xOffset, yMultiplier * yOffset)
+		end
+
+		currentAnchor = frame
+	end
+end
+
+Debugging.EnsureRuntimeTestPreview = function(self, def)
+	self.RuntimeTestPreviews = self.RuntimeTestPreviews or {}
+	local preview = self.RuntimeTestPreviews[def.key]
+	if (preview) then
+		return preview
+	end
+
+	local oUF = ns and ns.oUF
+	if (not oUF) then
+		return nil
+	end
+
+	local module = GetRuntimeTestModule(def)
+	if (not module) then
+		preview = {
+			def = def,
+			container = CreateFrame("Frame", nil, UIParent),
+			frames = {},
+			failed = true,
+			unsupported = true
+		}
+		preview.container:Hide()
+		self.RuntimeTestPreviews[def.key] = preview
+		return preview
+	end
+
+	TryPrepareRuntimeTestModule(def, module)
+
+	preview = {
+		def = def,
+		container = CreateFrame("Frame", nil, UIParent),
+		frames = {},
+		failed = false,
+		fallback = false
+	}
+	preview.container:SetFrameStrata("DIALOG")
+	preview.container:SetClampedToScreen(true)
+	preview.container:Hide()
+
+	if (def.headerPreview) then
+		local header = module.GetUnitFrameOrHeader and module:GetUnitFrameOrHeader() or (module.frame and module.frame.content)
+		if (header) then
+			preview.headerPreview = true
+			preview.module = module
+			preview.header = header
+			preview.container = module.frame or preview.container
+			self.RuntimeTestPreviews[def.key] = preview
+			return preview
+		end
+	end
+
+	if (def.key == "nameplates") then
+		preview.fallback = true
+		for i = 1,def.count do
+			preview.frames[#preview.frames + 1] = CreateRuntimeTestFallbackFrame(def, preview.container)
+		end
+		self.RuntimeTestPreviews[def.key] = preview
+		return preview
+	end
+
+	for i = 1,def.count do
+		local frameName = string_format("%sRuntimeTest%s%d", ns.Prefix or "AzeriteUI", def.key, i)
+		local ok, frameOrErr = API.TryCall(function()
+			oUF:SetActiveStyle(ns.Prefix .. def.style)
+			return ns.UnitFrame.Spawn(def.unit or "player", frameName)
+		end)
+		if (ok and frameOrErr) then
+			local frame = frameOrErr
+			frame:SetParent(preview.container)
+			preview.frames[#preview.frames + 1] = frame
+		else
+			preview.failed = true
+			preview.error = frameOrErr
+			break
+		end
+	end
+
+	if (preview.failed) then
+		for _, frame in ipairs(preview.frames) do
+			frame:Hide()
+		end
+		preview.frames = {}
+		preview.failed = false
+		preview.fallback = true
+		for i = 1,def.count do
+			preview.frames[#preview.frames + 1] = CreateRuntimeTestFallbackFrame(def, preview.container)
+		end
+	end
+
+	self.RuntimeTestPreviews[def.key] = preview
+	return preview
+end
+
+Debugging.HideRuntimeTestPreview = function(self, key)
+	local preview = self.RuntimeTestPreviews and self.RuntimeTestPreviews[key]
+	if (not preview) then
+		return
+	end
+	if (preview.headerPreview) then
+		local header = preview.header
+		local module = preview.module
+		for _, frame in ipairs(preview.frames or {}) do
+			if (frame.__AzeriteUI_RuntimeTestSavedUnit ~= nil) then
+				frame.unit = frame.__AzeriteUI_RuntimeTestSavedUnit
+				frame.__AzeriteUI_RuntimeTestSavedUnit = nil
+			end
+			if (frame.SetAttribute) then
+				frame:SetAttribute("unit", frame.__AzeriteUI_RuntimeTestSavedUnitAttribute)
+				frame:SetAttribute("*type1", frame.__AzeriteUI_RuntimeTestSavedType1Attribute)
+			end
+			frame:EnableMouse(true)
+			UnregisterUnitWatch(frame)
+			RegisterUnitWatch(frame)
+		end
+		if (header) then
+			header.forceShow = nil
+			header.forceShowAuras = nil
+			if (preview.savedStartingIndex ~= nil) then
+				header:SetAttribute("startingIndex", preview.savedStartingIndex)
+			else
+				header:SetAttribute("startingIndex", 1)
+			end
+			header:SetAttribute("showSolo", preview.savedShowSolo)
+			header:SetAttribute("showPlayer", preview.savedShowPlayer)
+			header:SetAttribute("showParty", preview.savedShowParty)
+			header:SetAttribute("showRaid", preview.savedShowRaid)
+		end
+		if (module and module.UpdateHeader) then
+			module:UpdateHeader()
+		end
+		if (module and module.UpdateUnits) then
+			module:UpdateUnits()
+		end
+		return
+	end
+	for _, frame in ipairs(preview.frames) do
+		frame:Hide()
+	end
+	preview.container:Hide()
+end
+
+Debugging.RefreshRuntimeTestPreviews = function(self)
+	if (InCombatLockdown()) then
+		self.__AzeriteUI_PendingRuntimeTestRefresh = true
+		self:RegisterEvent("PLAYER_REGEN_ENABLED", "OnDeferredRuntimeTestRefresh")
+		return
+	end
+
+	self.__AzeriteUI_PendingRuntimeTestRefresh = nil
+	self:UnregisterEvent("PLAYER_REGEN_ENABLED", "OnDeferredRuntimeTestRefresh")
+
+	if (not CanUseRuntimeTestMode()) then
+		local globalDB = EnsureRuntimeTestState()
+		if (globalDB) then
+			globalDB.runtimeUnitTestMenuEnabled = false
+			globalDB.runtimeUnitTestMode = false
+		end
+		for _, def in ipairs(RUNTIME_TEST_DEFS) do
+			self:HideRuntimeTestPreview(def.key)
+		end
+		return
+	end
+
+	for _, def in ipairs(RUNTIME_TEST_DEFS) do
+		local enabled = IsRuntimeTestMode() and IsRuntimeTestSetEnabled(def.key)
+		if (enabled) then
+			local preview = self:EnsureRuntimeTestPreview(def)
+			if (preview and not preview.failed) then
+				if (preview.headerPreview) then
+					SyncRuntimeTestHeaderPreview(preview, GetRuntimeTestFrameCount(def))
+				end
+				local visibleCount = GetRuntimeTestFrameCount(def)
+				local startIndex = GetRuntimeTestStartIndex(def)
+				local activeFrames = {}
+				for frameIndex, frame in ipairs(preview.frames) do
+					if (frameIndex >= startIndex and #activeFrames < visibleCount) then
+						activeFrames[#activeFrames + 1] = frame
+					else
+						frame:Hide()
+					end
+				end
+				if (#activeFrames > 0) then
+					if (not preview.headerPreview) then
+						self:LayoutRuntimeTestPreview(preview, activeFrames)
+					end
+					preview.container:Show()
+					for visibleIndex, frame in ipairs(activeFrames) do
+						local sourceIndex = startIndex + visibleIndex - 1
+						SetupRuntimeTestInteraction(frame, def, sourceIndex)
+						ForcePreviewFrameUpdate(frame, GetPreviewLabel(def, sourceIndex))
+						frame:Show()
+						ApplyRuntimeTestPresentation(frame, def, sourceIndex)
+						if (C_Timer) then
+							local queuedFrame = frame
+							local queuedDef = def
+							local queuedIndex = sourceIndex
+							C_Timer.After(0, function()
+								if (queuedFrame and queuedFrame:IsShown() and IsRuntimeTestMode() and IsRuntimeTestSetEnabled(queuedDef.key)) then
+									ApplyRuntimeTestPresentation(queuedFrame, queuedDef, queuedIndex)
+								end
+							end)
+						end
+					end
+				else
+					preview.container:Hide()
+				end
+			end
+		else
+			self:HideRuntimeTestPreview(def.key)
+		end
+	end
+end
+
+Debugging.OnDeferredRuntimeTestRefresh = function(self)
+	if (InCombatLockdown()) then
+		return
+	end
+	self:RefreshRuntimeTestPreviews()
+	if (self.TestFrame and self.TestFrame:IsShown()) then
+		UpdateTestMenu(self)
+	end
+end
+
+local function PrintTargetFillDebugStatus()
+	print("|cff33ff99", "AzeriteUI target fill debug:")
+	print("|cfff0f0f0  health:", "curve percent -> fake fill -> mirrored visible art")
+	print("|cfff0f0f0  cast:", "live duration percent -> timer fallback -> unit-time fallback")
+
+	-- Live fill direction, read back off the bars themselves. The health bar and
+	-- the castbar overlay the same rectangle, so these two must agree; a mismatch
+	-- is the castbar-orientation bug reappearing.
+	local targetMod = ns and ns.GetModule and ns:GetModule("TargetFrame", true)
+	local frame = targetMod and targetMod.frame
+	if (not frame) then
+		print("|cfff0f0f0  direction:", "target frame unavailable")
+		return
+	end
+
+	local function DescribeGrowth(bar)
+		if (not bar) then
+			return "absent"
+		end
+		local orientation = (bar.GetOrientation and bar:GetOrientation()) or "?"
+		local reverseFill = bar.GetReverseFill and bar:GetReverseFill()
+		local growth
+		if (orientation == "VERTICAL") then
+			growth = reverseFill and "DOWN" or "UP"
+		else
+			growth = reverseFill and "LEFT" or "RIGHT"
+		end
+		return string_format("%s (%s, reverseFill=%s)", growth, tostring(orientation), tostring(reverseFill and true or false))
+	end
+
+	local healthGrowth = DescribeGrowth(frame.Health)
+	local castGrowth = DescribeGrowth(frame.Castbar)
+	print("|cfff0f0f0  health growth:", healthGrowth)
+	print("|cfff0f0f0  cast growth:  ", castGrowth)
+	if (healthGrowth ~= castGrowth) then
+		print("|cffff4444  MISMATCH: the castbar fills against the health bar it overlays.|r")
+	else
+		print("|cff44ff44  match: castbar and health bar fill the same way.|r")
+	end
+
+	local profile = targetMod.db and targetMod.db.profile
+	local usesMirror = not (profile and profile.castBarMirrorTexture == false)
+	print("|cfff0f0f0  castbar art:", usesMirror and "mirror (hp_cap_bar_mirror)" or "tier (HealthBarTexture)",
+		"|cff888888- /azdebugtarget mirror|r")
+	print("|cfff0f0f0  castbar crop:", (profile and profile.castBarCropMode == "native") and "native (statusbar texture is the art - scales)" or "overlay (addon texture, texcoord cropped - default)",
+		"|cff888888- /azdebugtarget crop|r")
+
+	-- Which of the two render paths the castbar is actually on. The native timer
+	-- path is the one that stretched; the fake-fill path always cropped, which is
+	-- why a self-target looked right while a hostile target did not.
+	local cast = frame.Castbar
+	print("|cfff0f0f0  cast render path:", cast and (cast.__AzeriteUI_UseNativeCastVisual and "native timer" or (cast.__AzeriteUI_CastFakePath or "idle")) or "n/a")
+	print("|cfff0f0f0  style tier:", tostring(frame.currentStyle))
+end
+
+local ADDONS = {
+
+	"Blizzard_AchievementUI",
+	"Blizzard_AdventureMap",
+	"Blizzard_AlliedRacesUI",
+	"Blizzard_AnimaDiversionUI",
+	"Blizzard_APIDocumentation",
+	"Blizzard_ArchaeologyUI",
+	"Blizzard_ArdenwealdGardening",
+	"Blizzard_ArenaUI",
+	"Blizzard_ArtifactUI",
+	"Blizzard_AuctionHouseUI",
+	"Blizzard_AuthChallengeUI",
+	"Blizzard_AzeriteEssenceUI",
+	"Blizzard_AzeriteRespecUI",
+	"Blizzard_AzeriteUI",
+	"Blizzard_BarbershopUI",
+	"Blizzard_BattlefieldMap",
+	"Blizzard_BehavioralMessaging",
+	"Blizzard_BlackMarketUI",
+	"Blizzard_BoostTutorial",
+	"Blizzard_Calendar",
+	"Blizzard_ChallengesUI",
+	"Blizzard_Channels",
+	"Blizzard_CharacterCreate",
+	"Blizzard_CharacterCustomize",
+	"Blizzard_ChromieTimeUI",
+	"Blizzard_ClassTalentUI",
+	"Blizzard_ClassTrial",
+	"Blizzard_ClickBindingUI",
+	"Blizzard_ClientSavedVariables",
+	"Blizzard_Collections",
+	"Blizzard_CombatLog",
+	"Blizzard_CombatText",
+	"Blizzard_Commentator",
+	"Blizzard_Communities",
+	"Blizzard_CompactRaidFrames",
+	"Blizzard_Console",
+	"Blizzard_Contribution",
+	"Blizzard_CovenantCallings",
+	"Blizzard_CovenantPreviewUI",
+	"Blizzard_CovenantRenown",
+	"Blizzard_CovenantSanctum",
+	"Blizzard_CovenantToasts",
+	"Blizzard_CUFProfiles",
+	"Blizzard_DeathRecap",
+	"Blizzard_DebugTools",
+	"Blizzard_Deprecated",
+	"Blizzard_EncounterJournal",
+	"Blizzard_EventTrace",
+	"Blizzard_ExpansionLandingPage",
+	"Blizzard_FlightMap",
+	"Blizzard_FrameEffects",
+	"Blizzard_GarrisonTemplates",
+	"Blizzard_GarrisonUI",
+	"Blizzard_GenericTraitUI",
+	"Blizzard_GMChatUI",
+	"Blizzard_GuildBankUI",
+	"Blizzard_GuildControlUI",
+	"Blizzard_GuildUI",
+	"Blizzard_HybridMinimap",
+	"Blizzard_InspectUI",
+	"Blizzard_IslandsPartyPoseUI",
+	"Blizzard_IslandsQueueUI",
+	"Blizzard_ItemInteractionUI",
+	"Blizzard_ItemSocketingUI",
+	"Blizzard_ItemUpgradeUI",
+	"Blizzard_Kiosk",
+	"Blizzard_LandingSoulbinds",
+	"Blizzard_MacroUI",
+	"Blizzard_MainlineSettings",
+	"Blizzard_MajorFactions",
+	"Blizzard_MapCanvas",
+	"Blizzard_MawBuffs",
+	"Blizzard_MoneyReceipt",
+	"Blizzard_MovePad",
+	"Blizzard_NamePlates",
+	"Blizzard_NewPlayerExperience",
+	"Blizzard_NewPlayerExperienceGuide",
+	"Blizzard_ObjectiveTracker",
+	"Blizzard_ObliterumUI",
+	"Blizzard_OrderHallUI",
+	"Blizzard_PartyPoseUI",
+	"Blizzard_PetBattleUI",
+	"Blizzard_PlayerChoice",
+	"Blizzard_Professions",
+	"Blizzard_ProfessionsCrafterOrders",
+	"Blizzard_ProfessionsCustomerOrders",
+	"Blizzard_PTRFeedback",
+	"Blizzard_PTRFeedbackGlue",
+	"Blizzard_PVPMatch",
+	"Blizzard_PVPUI",
+	"Blizzard_QuestNavigation",
+	"Blizzard_RaidUI",
+	"Blizzard_RuneforgeUI",
+	"Blizzard_ScrappingMachineUI",
+	"Blizzard_SecureTransferUI",
+	"Blizzard_SelectorUI",
+	"Blizzard_Settings",
+	"Blizzard_SharedMapDataProviders",
+	"Blizzard_SharedTalentUI",
+	"Blizzard_SocialUI",
+	"Blizzard_Soulbinds",
+	"Blizzard_StoreUI",
+	"Blizzard_SubscriptionInterstitialUI",
+	"Blizzard_TalentUI",
+	"Blizzard_TalkingHeadUI",
+	"Blizzard_TimeManager",
+	"Blizzard_TokenUI",
+	"Blizzard_TorghastLevelPicker",
+	"Blizzard_TrainerUI",
+	"Blizzard_Tutorial",
+	"Blizzard_TutorialTemplates",
+	"Blizzard_UIFrameManager",
+	"Blizzard_UIWidgets",
+	"Blizzard_VoidStorageUI",
+	"Blizzard_WarfrontsPartyPoseUI",
+	"Blizzard_WeeklyRewards",
+	"Blizzard_WorldMap",
+	"Blizzard_WowTokenUI"
+
+}
+
+Debugging.EnableBlizzardAddOns = function(self)
+	local disabled = {}
+	for _,addon in next,ADDONS do
+		local reason = select(5, GetAddOnInfo(addon))
+		if (reason == "DISABLED") then
+			EnableAddOn(addon)
+			disabled[#disabled + 1] = addon
+		end
+	end
+	local num = #disabled
+	if (num == 0) then
+		print("|cff33ff99", "No Blizzard addons were disabled.")
+	else
+		if (num > 1) then
+			print("|cff33ff99", string_format("The following %d Blizzard addons were enabled:", #disabled))
+		else
+			print("|cff33ff99", "The following Blizzard addon was enabled:")
+		end
+		for _,addon in next,ADDONS do
+			print(string_format("|cfff0f0f0%s|r", addon))
+		end
+		print("|cfff00a0aA /reload is required to apply changes!|r")
+	end
+end
+
+Debugging.EnableScriptErrors = function(self)
+	-- SetCVar is deprecated in favour of C_CVar.SetCVar, which expects a string.
+	if (C_CVar and C_CVar.SetCVar) then
+		return C_CVar.SetCVar("scriptErrors", "1")
+	end
+	SetCVar("scriptErrors", "1")
+end
+
+Debugging.EnsureDebugCommands = function(self)
+	if (self.__AzeriteUI_DebugCommandsRegistered) then
+		return
+	end
+	self:RegisterChatCommand("azdebug", "DebugMenu")
+	self:RegisterChatCommand("azdebugkeys", "DebugKeysMenu")
+	self:RegisterChatCommand("azdebugtarget", "TargetDebugMenu")
+	self:RegisterChatCommand("aztest", "TestModeCommand")
+	self:RegisterChatCommand("junnez", "SecretJuNNeZCommand")
+	self:RegisterChatCommand("goldpaw", "SecretGoldpawCommand")
+	self.__AzeriteUI_DebugCommandsRegistered = true
+end
+
+-- Secret JuNNeZ Command - Easter Egg
+Debugging.SecretJuNNeZCommand = function(self)
+	local playerFrame = ns:GetModule("PlayerFrame", true)
+	local targetFrame = ns:GetModule("TargetFrame", true)
+	
+	-- Create Batman-style KAPOW zoom texture frame
+	local centerFrame = CreateFrame("Frame", "JuNNeZCenterTexture", UIParent)
+	centerFrame:SetSize(512, 512)
+	centerFrame:SetPoint("CENTER")
+	centerFrame:SetFrameLevel(250)
+	centerFrame:SetScale(0.1)  -- Start tiny
+	
+	local texture = centerFrame:CreateTexture(nil, "OVERLAY")
+	texture:SetAllPoints(centerFrame)
+	texture:SetTexture(ns.API.GetMedia("JuNNeZKapow"))
+	texture:SetAlpha(1.0)
+	
+	-- Batman KAPOW! Zoom in effect (0.1 -> 1.8 -> 1.0)
+	for i = 1, 15 do
+		C_Timer.After(i * 0.04, function()
+			local scale = 0.1 + (i / 15) * 1.7  -- Zoom from 0.1 to 1.8
+			centerFrame:SetScale(scale)
+		end)
+	end
+	
+	-- SNAP to normal size at peak with sound
+	C_Timer.After(0.65, function()
+		centerFrame:SetScale(1.0)
+		if (SOUNDKIT and SOUNDKIT.UI_ACHIEVEMENT_EARNED) then
+			C_Sound.PlaySound(SOUNDKIT.UI_ACHIEVEMENT_EARNED)
+		end
+	end)
+	
+	-- Hold for effect, then fade out
+	C_Timer.After(2.5, function()
+		for i = 1, 10 do
+			C_Timer.After(i * 0.1, function()
+				texture:SetAlpha(1.0 - (i / 10))
+			end)
+		end
+	end)
+	
+	-- Celebratory messages
+	local messages = {
+		"|cff00ff00JUNNEZ EDITION ACTIVATED!!!|r",
+		"|cffffaa00FEEL THE POWER OF CUSTOM CODE!!!|r",
+		"|cffff00ffMAINTENANCE MODE: FULLY ENGAGED!!!|r",
+		"|cff00ffffBUG FIXES FLOWING LIKE MANA!!!|r",
+		"|cffff7700UPDATED AND MAINTAINED BY JUNNEZ!!!|r",
+		"|cffff00ffCHAOS LEVEL: 9000!!!|r",
+		"|cff00ffffTHIS IS NOT A DRILL!!!|r",
+		"|cffff7700WATCH YOUR SANITY!!!|r"
+	}
+	
+	for i, msg in ipairs(messages) do
+		C_Timer.After((i-1) * 0.5, function()
+			ChatPrint(msg)
+			C_Sound.PlaySound(SOUNDKIT.RAID_WARNING)
+		end)
+	end
+	
+	-- Rainbow color flash for player and target frames
+	local colors = {
+		{1, 0, 0}, -- Red
+		{1, 0.5, 0}, -- Orange
+		{1, 1, 0}, -- Yellow
+		{0, 1, 0}, -- Green
+		{0, 1, 1}, -- Cyan
+		{0, 0, 1}, -- Blue
+		{1, 0, 1}, -- Magenta
+		{0.5, 0, 1}, -- Purple
+		{1, 0.5, 0.5}, -- Pink
+	}
+	
+	local flashFrames = {}
+	if (playerFrame and playerFrame.frame) then
+		table_insert(flashFrames, playerFrame.frame)
+	end
+	if (targetFrame and targetFrame.frame) then
+		table_insert(flashFrames, targetFrame.frame)
+	end
+	
+	-- Create flash animation
+	for colorIndex, color in ipairs(colors) do
+		C_Timer.After(colorIndex * 0.3, function()
+			for _, frame in ipairs(flashFrames) do
+				if (frame and frame.Health) then
+					local health = frame.Health
+					if (health.SetStatusBarColor) then
+						health:SetStatusBarColor(unpack(color))
+						C_Timer.After(0.15, function()
+							if (frame.UpdateHealth) then
+								API.TryCall(frame.UpdateHealth, frame)
+							end
+						end)
+					end
+				end
+			end
+		end)
+	end
+	
+	-- UI Scale bounce
+	local originalScale = UIParent:GetScale()
+	-- Store original health colors before animation
+	local origPlayerColor = {1, 0, 0}
+	local origTargetColor = {1, 0, 0}
+	if (playerFrame and playerFrame.frame and playerFrame.frame.Health) then
+		origPlayerColor = {playerFrame.frame.Health:GetStatusBarColor()}
+	end
+	if (targetFrame and targetFrame.frame and targetFrame.frame.Health) then
+		origTargetColor = {targetFrame.frame.Health:GetStatusBarColor()}
+	end
+	
+	for i = 1, 12 do
+		C_Timer.After(i * 0.15, function()
+			UIParent:SetScale(originalScale * (i % 2 == 0 and 1.03 or 0.97))
+			if (i % 2 == 0) then
+				C_Sound.PlaySound(SOUNDKIT.RAID_WARNING)
+			end
+		end)
+	end
+	C_Timer.After(3.0, function()
+		UIParent:SetScale(originalScale)
+		-- Restore original health colors AFTER all animations complete
+		if (playerFrame and playerFrame.frame and playerFrame.frame.Health) then
+			playerFrame.frame.Health:SetStatusBarColor(unpack(origPlayerColor))
+			if (playerFrame.frame.UpdateHealth) then
+				API.TryCall(playerFrame.frame.UpdateHealth, playerFrame.frame)
+			end
+		end
+		if (targetFrame and targetFrame.frame and targetFrame.frame.Health) then
+			targetFrame.frame.Health:SetStatusBarColor(unpack(origTargetColor))
+			if (targetFrame.frame.UpdateHealth) then
+				API.TryCall(targetFrame.frame.UpdateHealth, targetFrame.frame)
+			end
+		end
+	end)
+	
+	-- Final message and cleanup
+	C_Timer.After(5.0, function()
+		local finalMsg = "|cff00ff00THANKS FOR USING THE JUNNEZ EDITION! CHAOS COMPLETE!!!|r"
+		ChatPrint(finalMsg)
+		if (centerFrame and centerFrame:IsShown()) then
+			centerFrame:Hide()
+		end
+	end)
+	
+	-- Frame destruction timer
+end
+
+-- Secret Goldpaw Command - Tribute to Original Creator
+Debugging.SecretGoldpawCommand = function(self)
+	local playerFrame = ns:GetModule("PlayerFrame", true)
+	local targetFrame = ns:GetModule("TargetFrame", true)
+	
+	-- Create Goldpaw-style zoom texture frame (similar to /junnez)
+	local centerFrame = CreateFrame("Frame", "GoldpawCenterTexture", UIParent)
+	centerFrame:SetSize(512, 512)
+	centerFrame:SetPoint("CENTER")
+	centerFrame:SetFrameLevel(250)
+	centerFrame:SetScale(0.1)  -- Start tiny
+	
+	local texture = centerFrame:CreateTexture(nil, "OVERLAY")
+	texture:SetAllPoints(centerFrame)
+	texture:SetTexture(ns.API.GetMedia("GoldpawKapow"))
+	texture:SetAlpha(1.0)
+	
+	-- Goldpaw zoom in effect (0.1 -> 1.8 -> 1.0)
+	for i = 1, 15 do
+		C_Timer.After(i * 0.04, function()
+			local scale = 0.1 + (i / 15) * 1.7  -- Zoom from 0.1 to 1.8
+			centerFrame:SetScale(scale)
+		end)
+	end
+	
+	-- SNAP to normal size at peak with sound
+	C_Timer.After(0.65, function()
+		centerFrame:SetScale(1.0)
+		if (SOUNDKIT and SOUNDKIT.UI_ACHIEVEMENT_EARNED) then
+			C_Sound.PlaySound(SOUNDKIT.UI_ACHIEVEMENT_EARNED)
+		end
+	end)
+	
+	-- Hold for effect, then fade out
+	C_Timer.After(2.5, function()
+		for i = 1, 10 do
+			C_Timer.After(i * 0.1, function()
+				texture:SetAlpha(1.0 - (i / 10))
+			end)
+		end
+	end)
+	
+	-- Tribute messages for the original creator
+	local messages = {
+		"|cffffcc00Goldpaw - Original Creator of AzeriteUI|r",
+		"|cffffd700Master of UI design and Lua wizardry!|r",
+		"|cfffff569Building beautiful interfaces since forever!|r",
+		"|cffffaa00Thank you for this amazing foundation!|r",
+		"|cffffff00The legend who started it all!|r"
+	}
+	
+	for i, msg in ipairs(messages) do
+		C_Timer.After((i-1) * 0.6, function()
+			ChatPrint(msg)
+			C_Sound.PlaySound(SOUNDKIT.ACHIEVEMENT_MENU_OPEN)
+		end)
+	end
+	
+	-- Golden glow pulse for player and target frames
+	local goldColors = {
+		{1, 0.84, 0}, -- Pure Gold
+		{1, 0.9, 0.3}, -- Light Gold
+		{1, 0.84, 0}, -- Pure Gold
+		{1, 0.75, 0}, -- Deep Gold
+		{1, 0.84, 0}, -- Pure Gold
+		{1, 1, 0.5}, -- Bright Gold
+	}
+	
+	local flashFrames = {}
+	if (playerFrame and playerFrame.frame) then
+		table_insert(flashFrames, playerFrame.frame)
+	end
+	if (targetFrame and targetFrame.frame) then
+		table_insert(flashFrames, targetFrame.frame)
+	end
+	
+	-- Create golden pulse animation
+	for colorIndex, color in ipairs(goldColors) do
+		C_Timer.After(colorIndex * 0.4, function()
+			for _, frame in ipairs(flashFrames) do
+				if (frame and frame.Health) then
+					local health = frame.Health
+					if (health.SetStatusBarColor) then
+						health:SetStatusBarColor(unpack(color))
+						C_Timer.After(0.2, function()
+							if (frame.UpdateHealth) then
+								API.TryCall(frame.UpdateHealth, frame)
+							end
+						end)
+					end
+				end
+			end
+			C_Sound.PlaySound(SOUNDKIT.UI_LEGENDARY_LOOT_TOAST)
+		end)
+	end
+	
+	-- Gentle UI glow (subtle scale pulse)
+	local originalScale = UIParent:GetScale()
+	-- Store original health colors before animation
+	local origPlayerColor = {1, 0, 0}
+	local origTargetColor = {1, 0, 0}
+	if (playerFrame and playerFrame.frame and playerFrame.frame.Health) then
+		origPlayerColor = {playerFrame.frame.Health:GetStatusBarColor()}
+	end
+	if (targetFrame and targetFrame.frame and targetFrame.frame.Health) then
+		origTargetColor = {targetFrame.frame.Health:GetStatusBarColor()}
+	end
+	
+	for i = 1, 4 do
+		C_Timer.After(i * 0.3, function()
+			local scaleMod = 1 + (math.sin(i * 1.5) * 0.01)
+			UIParent:SetScale(originalScale * scaleMod)
+		end)
+	end
+	
+	-- FIXED: Restore colors and scale AFTER all animations complete (2.4 sec for colors)
+	C_Timer.After(3.0, function()
+		UIParent:SetScale(originalScale)
+		-- Restore original health colors
+		if (playerFrame and playerFrame.frame and playerFrame.frame.Health) then
+			playerFrame.frame.Health:SetStatusBarColor(unpack(origPlayerColor))
+			if (playerFrame.frame.UpdateHealth) then
+				API.TryCall(playerFrame.frame.UpdateHealth, playerFrame.frame)
+			end
+		end
+		if (targetFrame and targetFrame.frame and targetFrame.frame.Health) then
+			targetFrame.frame.Health:SetStatusBarColor(unpack(origTargetColor))
+			if (targetFrame.frame.UpdateHealth) then
+				API.TryCall(targetFrame.frame.UpdateHealth, targetFrame.frame)
+			end
+		end
+	end)
+	
+	-- Final tribute message
+	C_Timer.After(3.5, function()
+		ChatPrint("|cffffd700Honoring Goldpaw - The Original Architect!|r")
+		C_Sound.PlaySound(SOUNDKIT.RAID_WARNING)
+		if (centerFrame and centerFrame:IsShown()) then
+			centerFrame:Hide()
+		end
+	end)
+end
+
+Debugging.OnEvent = function(self, event, ...)
+	self:EnableScriptErrors()
+	self:EnsureDebugCommands()
+end
+
+Debugging.OnInitialize = function(self)
+	self:EnsureDebugCommands()
+	if (ns.db and ns.db.global) then
+		EnsureRuntimeTestState()
+		ns.db.global.runtimeUnitTestMode = false
+		ns.db.global.debugHealth = ns.db.global.debugHealth or false
+		ns.db.global.debugHealthChat = ns.db.global.debugHealthChat or false
+		ns.db.global.debugHealthPercent = ns.db.global.debugHealthPercent or false
+		ns.db.global.debugBars = ns.db.global.debugBars or false
+		ns.db.global.debugForceBlizzardRaidBar = ns.db.global.debugForceBlizzardRaidBar or false
+		ns.db.global.debugFixes = ns.db.global.debugFixes or false
+		ns.db.global.debugAuras = ns.db.global.debugAuras or false
+		ns.db.global.debugAurasFilter = ns.db.global.debugAurasFilter or ""
+		ns.db.global.debugActionbars = ns.db.global.debugActionbars or false
+		ns.db.global.debugActionbarsFilter = ns.db.global.debugActionbarsFilter or ""
+		ns.db.global.debugCastbar = ns.db.global.debugCastbar or false
+		ns.db.global.debugPower = ns.db.global.debugPower or false
+		ns.db.global.debugPowerFilter = ns.db.global.debugPowerFilter or ""
+		ns.db.global.debugKeysVerbose = ns.db.global.debugKeysVerbose or false
+		if (not ns.db.global.debugHealthFilter or ns.db.global.debugHealthFilter == "") then
+			ns.db.global.debugHealthFilter = "Target."
+		end
+		ns.API.DEBUG_HEALTH = ns.db.global.debugHealth
+		ns.API.DEBUG_HEALTH_CHAT = ns.db.global.debugHealthChat
+		ns.API.DEBUG_HEALTH_FILTER = ns.db.global.debugHealthFilter
+		ns.API.DEBUG_HEALTH_PCT = ns.db.global.debugHealthPercent
+		ns.API.DEBUG_AURAS = ns.db.global.debugAuras
+		ns.API.DEBUG_AURA_FILTER = ns.db.global.debugAurasFilter
+		ns.API.DEBUG_ACTIONBARS = ns.db.global.debugActionbars
+		ns.API.DEBUG_ACTIONBARS_FILTER = ns.db.global.debugActionbarsFilter
+		ns.API.DEBUG_CASTBAR = ns.db.global.debugCastbar
+		ns.API.DEBUG_POWER = ns.db.global.debugPower
+		ns.API.DEBUG_POWER_FILTER = ns.db.global.debugPowerFilter
+		_G.__AzeriteUI_DEBUG_BARS = ns.db.global.debugBars
+		_G.__AzeriteUI_DEBUG_HEALTH_PCT = ns.db.global.debugHealthPercent
+		_G.__AzeriteUI_DEBUG_AURAS = ns.db.global.debugAuras
+		_G.__AzeriteUI_DEBUG_AURA_FILTER = ns.db.global.debugAurasFilter
+		_G.__AzeriteUI_DEBUG_ACTIONBARS = ns.db.global.debugActionbars
+		_G.__AzeriteUI_DEBUG_ACTIONBARS_FILTER = ns.db.global.debugActionbarsFilter
+		_G.__AzeriteUI_DEBUG_CASTBAR = ns.db.global.debugCastbar
+		_G.__AzeriteUI_DEBUG_POWER = ns.db.global.debugPower
+		_G.__AzeriteUI_DEBUG_POWER_FILTER = ns.db.global.debugPowerFilter
+		_G.__AzeriteUI_DEBUG_KEYS = ns.db.global.debugKeysVerbose
+	end
+	if (ns.WoW10) then
+		self:RegisterEvent("SETTINGS_LOADED", "OnEvent")
+	end
+	self:RegisterEvent("PLAYER_ENTERING_WORLD", "OnEvent")
+	self:RegisterEvent("VARIABLES_LOADED", "OnEvent")
+	self:EnableScriptErrors()
+end
+
+Debugging.ToggleHealthDebug = function(self)
+	ns.API.DEBUG_HEALTH = not ns.API.DEBUG_HEALTH
+	if (ns.db and ns.db.global) then
+		ns.db.global.debugHealth = ns.API.DEBUG_HEALTH
+	end
+	local enabled = ns.API.DEBUG_HEALTH
+	print("|cff33ff99", "AzeriteUI health debug:", enabled and "ON" or "OFF")
+
+	local oUF = ns.oUF
+	if (oUF and oUF.objects) then
+		for _, obj in next, oUF.objects do
+			local dbg = obj.HealthDebug
+			if (dbg) then
+				if (enabled) then dbg:Show() else dbg:Hide() end
+			end
+		end
+	end
+end
+
+Debugging.ToggleHealthDebugChat = function(self)
+	ns.API.DEBUG_HEALTH_CHAT = not ns.API.DEBUG_HEALTH_CHAT
+	if (ns.db and ns.db.global) then
+		ns.db.global.debugHealthChat = ns.API.DEBUG_HEALTH_CHAT
+	end
+	print("|cff33ff99", "AzeriteUI health debug chat:", ns.API.DEBUG_HEALTH_CHAT and "ON" or "OFF")
+end
+
+-- Diagnostic method probe. Deliberately silent: this file's job is to report
+-- on a possibly broken UI, so it must never raise on its way to doing that.
+-- Not to be confused with API.SafeCall, which reports failures loudly.
+local function ProbeMethod(obj, method, ...)
+	if (obj and obj[method]) then
+		local ok, a, b, c, d, e = API.TryCall(obj[method], obj, ...)
+		if (ok) then
+			return a, b, c, d, e
+		end
+	end
+	return nil
+end
+
+-- Consolidated onto API.IsSecret (Core/API/SecretValues.lua).
+local IsSecretValue = API.IsSecret or function(value)
+	return type(issecretvalue) == "function" and issecretvalue(value)
+end
+
+local function SecretSafeText(value)
+	if (IsSecretValue(value)) then
+		return "<secret>"
+	end
+	local ok, text = API.TryCall(tostring, value)
+	if (ok and text ~= nil) then
+		return text
+	end
+	return "<unprintable>"
+end
+
+local SafePrintTarget = "debuglog"
+
+local function SafePrintToDebugLog(...)
+	if (type(DLAPI) ~= "table" or type(DLAPI.DebugLog) ~= "function") then
+		return false
+	end
+	local args = {}
+	for i = 1, select("#", ...) do
+		args[i] = SecretSafeText(select(i, ...))
+	end
+	local payload = table_concat(args, " ")
+	local ok = API.TryCall(DLAPI.DebugLog, "AzeriteUI", "%s", payload)
+	return ok and true or false
+end
+
+local function SafePrint(...)
+	local args = {}
+	for i = 1, select("#", ...) do
+		args[i] = SecretSafeText(select(i, ...))
+	end
+	if (SafePrintTarget == "debuglog") then
+		if (SafePrintToDebugLog(unpack(args))) then
+			return
+		end
+	elseif (SafePrintTarget == "both") then
+		SafePrintToDebugLog(unpack(args))
+	end
+	ChatPrint(unpack(args))
+end
+
+-- Public addon-local sink for diagnostics in other owned modules.
+Debugging.PrintDiagnostic = function(self, ...)
+	return SafePrint(...)
+end
+DiagnosticPrint = SafePrint
+
+-- Cooldown-ready gating probe. Nothing is allocated or registered until invoked.
+-- Alpha zero keeps it visually hidden without overriding the engine's shown state.
+do
+	local probe
+	local function Describe(value)
+		local secret = issecretvalue(value)
+		if (secret) then return "<secret>", true end
+		return tostring(value), false
+	end
+	local function Read(method, owner)
+		local ok, value = API.TryCall(method, owner)
+		local text, secret = Describe(value)
+		return value, secret, text.."/secret="..tostring(secret).."/ok="..tostring(ok), ok
+	end
+	-- Resolve only at an explicitly OOC start. Combat samples use cached plain IDs.
+	local function PlainID(value)
+		return not issecretvalue(value) and type(value) == "number" and value > 0
+			and value < math.huge and value % 1 == 0
+	end
+	local function ResolveSpell(id)
+		if (type(C_Spell.GetBaseSpell) ~= "function" or type(C_Spell.GetOverrideSpell) ~= "function") then
+			return nil, nil, "missing base/override spell API"
+		end
+		local ok, base = API.TryCall(C_Spell.GetBaseSpell, id)
+		if (not ok or not PlainID(base)) then return nil, nil, "unreadable base spell" end
+		local current, seen = base, {}
+		for _ = 1, 5 do
+			seen[current] = true
+			local success, override = API.TryCall(C_Spell.GetOverrideSpell, current)
+			if (not success or not PlainID(override)) then return nil, nil, "unreadable override spell" end
+			if (override == current) then return base, current end
+			if (seen[override]) then return nil, nil, "override cycle" end
+			current = override
+		end
+		return nil, nil, "override chain too long"
+	end
+	local function PrepareSources(combatAPI, id, expectedSlot)
+		local ok, combat = API.TryCall(combatAPI)
+		if (not ok or issecretvalue(combat) or combat ~= false) then
+			return nil, nil, "start out of combat to resolve sources"
+		end
+		local base, resolved, why = ResolveSpell(id)
+		if (not resolved) then return nil, nil, why end
+		local module = type(ns.GetModule) == "function" and ns:GetModule("ActionBars", true)
+		local slot
+		if (module and type(module.buttons) == "table") then
+			for button in pairs(module.buttons) do
+				if (type(button.GetAction) == "function" and type(button.GetSpellId) == "function") then
+					local actionOK, kind, action = API.TryCall(button.GetAction, button)
+					local spellOK, spell = API.TryCall(button.GetSpellId, button)
+					if (actionOK and not issecretvalue(kind) and kind == "action" and PlainID(action)
+						and spellOK and PlainID(spell)) then
+						if ((not expectedSlot or action == expectedSlot) and (spell == id or spell == base or spell == resolved)) then
+							-- Duplicate bindings are deterministic: choose the lowest matching slot.
+							if (not slot or action < slot) then slot = action end
+						end
+					end
+				end
+			end
+		end
+		print("|cff33ff99AzeriteUI cdready|r", "MAPPING selected="..id.." base="..base
+			.." resolved="..resolved.." actionSlot="..tostring(slot).." (cached OOC; restart after bar/talent changes)")
+		if (not slot) then return nil, resolved, "no matching AzeriteUI action slot on the active page" end
+		return slot, resolved
+	end
+	local function RecheckActionLane(lane)
+		local combatOK, inCombat = API.TryCall(lane.combatAPI)
+		if (not combatOK or issecretvalue(inCombat) or inCombat ~= false) then
+			lane.pendingMapping = true
+			lane.unavailable = "action mapping changed; restart out of combat"
+			return "deferred until out of combat"
+		end
+		lane.pendingMapping = false
+		local slot, resolved, reason = PrepareSources(lane.combatAPI, lane.spellID, lane.actionSlot)
+		if (slot ~= lane.actionSlot or resolved ~= lane.resolvedSpellID) then
+			lane.unavailable = reason or "cached action mapping changed; restart out of combat"
+			return "mapping mismatch"
+		end
+		if (not C_ActionBar or type(C_ActionBar.GetActionCooldownDuration) ~= "function") then
+			lane.unavailable = "missing C_ActionBar.GetActionCooldownDuration"
+			return "action API unavailable"
+		end
+		lane.unavailable = nil
+		return "mapping verified"
+	end
+	local function SnapshotLane(probe, reason, force)
+		if (not probe or not probe.active) then return end
+		local shown, secretShown, shownText, shownOK = Read(probe.cooldown.IsShown, probe.cooldown)
+		local _, _, visibleText = Read(probe.cooldown.IsVisible, probe.cooldown)
+		local _, _, combatText = Read(probe.combatAPI)
+		local ready = "unknown"
+		if (probe.fed and shownOK and not secretShown and type(shown) == "boolean") then
+			ready = shown and "false" or "true"
+		end
+		local line = "source="..probe.source.." spell="..probe.spellID.." combat="..combatText.." shown="..shownText
+			.." visible="..visibleText.." duration="..probe.durationText
+			.." feedOK="..tostring(probe.fed).." readyViaShown="..ready
+			.." needsSecretForShown="..tostring(secretShown).." doneCount="..probe.doneCount
+			.." actionSlot="..tostring(probe.actionSlot).." unavailable="..tostring(probe.unavailable)
+		if (force or line ~= probe.lastLine) then
+			print("|cff33ff99AzeriteUI cdready|r", "["..reason.."]", line)
+			probe.lastLine = line
+		end
+	end
+	local function Snapshot(reason, force)
+		if (not probe or not probe.active) then return end
+		for _, lane in ipairs(probe.lanes) do SnapshotLane(lane, reason, force) end
+	end
+	local function FeedLane(probe, reason, force)
+		if (not probe or not probe.active) then return end
+		local getter = probe.source == "charges" and C_Spell.GetSpellChargeDuration or C_Spell.GetSpellCooldownDuration
+		if (probe.source == "action-ignoreGCD") then
+			getter = C_ActionBar and C_ActionBar.GetActionCooldownDuration
+		end
+		if (probe.unavailable) then getter = nil end
+		if (probe.source == "charges" and type(C_Spell.GetSpellChargeDuration) ~= "function") then getter = nil end
+		if (type(getter) ~= "function") then
+			probe.durationText, probe.fed = "unavailable", false
+			probe.feeding = true; probe.cooldown:Clear(); probe.feeding = false
+			SnapshotLane(probe, reason, force)
+			return
+		end
+		local ok, duration
+		if (probe.source == "action-ignoreGCD") then ok, duration = API.TryCall(getter, probe.actionSlot, true)
+		elseif (probe.source == "charges") then ok, duration = API.TryCall(getter, probe.spellID)
+		else ok, duration = API.TryCall(getter, probe.spellID, probe.ignoreGCD) end
+		local secret = issecretvalue(duration)
+		-- Never tostring/index/test a secret duration object. Its contents are not read.
+		probe.durationText = (secret and "<secret>" or (ok and duration ~= nil and "<object>" or "nil"))
+			.."/secret="..tostring(secret).."/ok="..tostring(ok)
+		probe.fed = false
+		if (ok and (secret or duration ~= nil)) then
+			probe.feeding = true
+			local feedOK, err = API.TryCall(probe.cooldown.SetCooldownFromDurationObject, probe.cooldown, duration, true)
+			probe.feeding = false
+			probe.fed = feedOK
+			if (not feedOK) then
+				local text, secretError = Describe(err)
+				print("|cffff4444AzeriteUI cdready|r", "source="..probe.source.." feed error="..text.."/secret="..tostring(secretError))
+			end
+		else
+			-- A nil/failed getter is not evidence that the spell is ready.
+			probe.feeding = true
+			probe.cooldown:Clear()
+			probe.feeding = false
+		end
+		SnapshotLane(probe, reason, force)
+	end
+	local function Feed(reason, force)
+		if (not probe or not probe.active) then return end
+		for _, lane in ipairs(probe.lanes) do FeedLane(lane, reason, force) end
+	end
+	local function Stop()
+		if (not probe) then return end
+		probe.active = false
+		probe.generation = probe.generation + 1
+		probe.events:UnregisterAllEvents()
+		probe.events:SetScript("OnEvent", nil)
+		for _, lane in ipairs(probe.lanes) do
+			lane.active = false
+			lane.cooldown:SetScript("OnCooldownDone", nil)
+			lane.cooldown:Clear()
+			lane.cooldown:Hide()
+		end
+	end
+	-- Owned input/state only; the menu does not inspect duration values.
+	Debugging.GetCooldownProbeState = function(self)
+		return probe and probe.active == true or false, probe and probe.spellID
+	end
+	Debugging.CooldownReadyProbe = function(self, input)
+		local token = (type(input) == "string" and input:match("^%s*(.-)%s*$")) or ""
+		local readyModule = type(ns.GetModule) == "function" and ns:GetModule("CooldownManager", true)
+		if (token == "preview" or token == "inspect") then
+			if (not IsDevMode()) then print("AzeriteUI cdready: Development Mode is required."); return end
+			if (readyModule and readyModule.DebugReadyAlerts) then return readyModule:DebugReadyAlerts(token) end
+			print("AzeriteUI cdready: Cooldown Manager module is unavailable.")
+			return
+		end
+		if (token == "off") then
+			if (readyModule and readyModule.StopReadyPreviews) then readyModule:StopReadyPreviews() end
+			Stop()
+			print("|cff33ff99AzeriteUI cdready|r", "OFF (no saved state)")
+			return
+		end
+		if (not IsDevMode()) then
+			Stop()
+			print("|cff33ff99AzeriteUI cdready|r", "Development Mode is required.")
+			return
+		end
+		if (token == "status") then
+			if (probe and probe.active) then Snapshot("status", true)
+			else print("|cff33ff99AzeriteUI cdready|r", "OFF") end
+			return
+		end
+		local spellID = tonumber(token)
+		if (not spellID or spellID <= 0 or spellID % 1 ~= 0 or spellID == math.huge) then
+			print("|cff33ff99AzeriteUI cdready|r", "Usage: /azdebug cdready <spellID>|status|preview|inspect|off")
+			return
+		end
+		Stop()
+		local combatAPI = C_RestrictedActions and C_RestrictedActions.InCombatLockdown
+		if (type(combatAPI) ~= "function") then combatAPI = InCombatLockdown end
+		local missing = {}
+		if (type(issecretvalue) ~= "function") then missing[#missing + 1] = "issecretvalue" end
+		if (not C_Spell or type(C_Spell.GetSpellCooldownDuration) ~= "function") then
+			missing[#missing + 1] = "C_Spell.GetSpellCooldownDuration"
+		end
+		if (type(combatAPI) ~= "function") then
+			missing[#missing + 1] = "C_RestrictedActions.InCombatLockdown / InCombatLockdown"
+		end
+		if (not C_Timer or type(C_Timer.After) ~= "function") then missing[#missing + 1] = "C_Timer.After" end
+		if (#missing > 0) then
+			print("|cffff4444AzeriteUI cdready|r", "UNAVAILABLE: missing "..table_concat(missing, ", "))
+			return
+		end
+		if (not probe) then
+			probe = { generation = 0, events = CreateFrame("Frame", nil, UIParent),
+				cooldown = CreateFrame("Cooldown", nil, UIParent, "CooldownFrameTemplate") }
+			probe.cooldown:SetSize(1, 1)
+			probe.cooldown:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", -100, -100)
+			probe.cooldown:SetAlpha(0)
+			probe.source, probe.ignoreGCD = "cooldown-ignoreGCD", true
+			probe.lanes = { probe }
+			for _, source in ipairs({ "cooldown-withGCD", "charges" }) do
+				local cooldown = CreateFrame("Cooldown", nil, UIParent, "CooldownFrameTemplate")
+				cooldown:SetSize(1, 1)
+				cooldown:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", -100, -100)
+				cooldown:SetAlpha(0)
+				probe.lanes[#probe.lanes + 1] = { source = source, ignoreGCD = false, cooldown = cooldown }
+			end
+			for _, source in ipairs({ "action-ignoreGCD", "resolved-spell" }) do
+				local cooldown = CreateFrame("Cooldown", nil, UIParent, "CooldownFrameTemplate")
+				cooldown:SetSize(1, 1)
+				cooldown:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", -100, -100)
+				cooldown:SetAlpha(0)
+				probe.lanes[#probe.lanes + 1] = { source = source, ignoreGCD = true, cooldown = cooldown }
+			end
+		end
+		for _, probe in ipairs(probe.lanes) do
+			if (type(probe.cooldown.SetCooldownFromDurationObject) ~= "function"
+				or type(probe.cooldown.IsShown) ~= "function" or type(probe.cooldown.IsVisible) ~= "function") then
+				Stop()
+				print("|cffff4444AzeriteUI cdready|r", "UNAVAILABLE: Cooldown duration or visibility method is missing.")
+				return
+			end
+		end
+		local actionSlot, resolved, sourceReason = PrepareSources(combatAPI, spellID)
+		probe.generation = probe.generation + 1
+		for _, probe in ipairs(probe.lanes) do
+			probe.combatAPI = combatAPI
+			probe.spellID, probe.active, probe.doneCount = spellID, true, 0
+			probe.actionSlot, probe.unavailable, probe.pendingMapping = nil, nil, false
+			probe.resolvedSpellID = resolved
+			if (probe.source == "action-ignoreGCD") then
+				probe.actionSlot = actionSlot
+				probe.unavailable = not actionSlot and sourceReason or nil
+				if (not C_ActionBar or type(C_ActionBar.GetActionCooldownDuration) ~= "function") then
+					probe.unavailable = "missing C_ActionBar.GetActionCooldownDuration"
+				end
+			elseif (probe.source == "resolved-spell") then
+				probe.spellID = resolved or spellID
+				probe.unavailable = not resolved and sourceReason or nil
+			end
+			probe.lastLine, probe.durationText, probe.fed = nil, "not fed", false
+			probe.cooldown:SetScript("OnCooldownDone", function(_, ...)
+				if (not probe.active) then return end
+				if (not IsDevMode()) then Stop(); return end
+				probe.doneCount = probe.doneCount + 1
+				local origin = probe.feeding and "during-feed" or "outside-feed"
+				print("|cff33ff99AzeriteUI cdready|r", "OnCooldownDone source="..probe.source.." origin="..origin
+					.." callbackNeedsSecret=false (event observed; readiness still unproven)")
+				for i = 1, select("#", ...) do
+					local text, secret = Describe(select(i, ...))
+					print("|cff33ff99AzeriteUI cdready|r", "source="..probe.source.." callbackArg"..i.."="..text.."/secret="..tostring(secret))
+				end
+				SnapshotLane(probe, "OnCooldownDone", true)
+			end)
+		end
+		probe.events:SetScript("OnEvent", function(_, event, slot)
+			if (not probe.active) then return end
+			if (not IsDevMode()) then Stop(); return end
+			if (issecretvalue(event)) then Snapshot("secret event name", true); return end
+			-- Deliberately do not read event spell IDs; re-feed the user-selected ID.
+			if (event == "ACTIONBAR_SLOT_CHANGED" or event == "ACTIONBAR_PAGE_CHANGED" or event == "UPDATE_BONUS_ACTIONBAR") then
+				local slotText, secretSlot = Describe(slot)
+				for _, lane in ipairs(probe.lanes) do
+					if (lane.source == "action-ignoreGCD") then
+						local decision = "no cached action slot"
+						if (lane.actionSlot) then
+							if (event == "ACTIONBAR_SLOT_CHANGED" and not secretSlot and PlainID(slot) and slot ~= lane.actionSlot) then
+								decision = "unrelated slot; mapping retained"
+							else
+								decision = RecheckActionLane(lane)
+							end
+						end
+						print("|cff33ff99AzeriteUI cdready|r", "SLOT event="..event.." slot="..slotText
+							.."/secret="..tostring(secretSlot).." cached="..tostring(lane.actionSlot).." decision="..decision)
+					end
+				end
+				Feed(event, true)
+			elseif (event == "SPELL_UPDATE_COOLDOWN" or event == "SPELL_UPDATE_CHARGES") then Feed(event)
+			elseif (event == "PLAYER_REGEN_ENABLED") then
+				for _, lane in ipairs(probe.lanes) do
+					if (lane.pendingMapping) then RecheckActionLane(lane) end
+				end
+				Feed(event, true)
+			else Snapshot(event, true) end
+		end)
+		probe.events:RegisterEvent("SPELL_UPDATE_COOLDOWN")
+		if (type(API.IsEventAvailable) == "function" and API.IsEventAvailable("SPELL_UPDATE_CHARGES")) then
+			probe.events:RegisterEvent("SPELL_UPDATE_CHARGES")
+		end
+		for _, event in ipairs({ "ACTIONBAR_SLOT_CHANGED", "ACTIONBAR_PAGE_CHANGED", "UPDATE_BONUS_ACTIONBAR" }) do
+			if (type(API.IsEventAvailable) == "function" and API.IsEventAvailable(event)) then probe.events:RegisterEvent(event) end
+		end
+		probe.events:RegisterEvent("PLAYER_REGEN_DISABLED")
+		probe.events:RegisterEvent("PLAYER_REGEN_ENABLED")
+		local generation, ticks = probe.generation, 0
+		local function Tick()
+			if (not probe.active or probe.generation ~= generation) then return end
+			if (not IsDevMode()) then Stop(); return end
+			for _, lane in ipairs(probe.lanes) do
+				if (lane.pendingMapping) then RecheckActionLane(lane) end
+			end
+			ticks = ticks + 1
+			Feed("tick", ticks % 5 == 0)
+			C_Timer.After(1, Tick)
+		end
+		print("|cff33ff99AzeriteUI cdready|r", "START spell="..spellID
+			.." sources=cooldown-ignoreGCD,cooldown-withGCD,charges,action-ignoreGCD,resolved-spell; alpha=0; one-second re-feed; no duration numbers read; /azdebug cdready off stops it.")
+		Feed("start")
+		C_Timer.After(1, Tick)
+	end
+end
+
+-- Compact opt-in front end for the existing probe and drawing diagnostics.
+-- Both debug entry points use the shipped options panel, never a second popup.
+Debugging.ToggleDebugMenu = function(self)
+	local panel = ns.OptionsKit and ns.OptionsKit.Panel
+	if (not panel) then return end
+	local L = LibStub("AceLocale-3.0"):GetLocale(Addon)
+	panel:SetTab("options")
+	return panel:Open(L["Debug tools"])
+end
+Debugging.ToggleCooldownTestMenu = Debugging.ToggleDebugMenu
+
+local function DumpUnitValue(label, value)
+	SafePrint("|cfff0f0f0  " .. label .. ":", value, IsSecretValue(value) and "(secret)" or "(clean)")
+end
+
+local function ResolveUnitFrame(unit)
+	if (IsSecretValue(unit) or type(unit) ~= "string" or unit == "") then
+		return nil, nil
+	end
+	unit = unit:lower()
+	if (unit == "target") then
+		local mod = ns:GetModule("TargetFrame", true)
+		return mod and mod.frame, "TargetFrame"
+	end
+	if (unit == "player") then
+		local mod = ns:GetModule("PlayerFrame", true)
+		return mod and mod.frame, "PlayerFrame"
+	end
+	if (unit == "targettarget" or unit == "tot") then
+		local mod = ns:GetModule("ToTFrame", true)
+		return mod and mod.frame, "ToTFrame"
+	end
+	return nil, nil
+end
+
+local function DumpElementSnapshot(element, label)
+	if (not element) then
+		SafePrint("|cfff0f0f0  " .. label .. ":", "missing")
+		return
+	end
+	local value = ProbeMethod(element, "GetValue")
+	local minValue, maxValue = ProbeMethod(element, "GetMinMaxValues")
+	SafePrint("|cfff0f0f0  " .. label .. " safe:",
+		"cur", element.safeCur,
+		"min", element.safeMin,
+		"max", element.safeMax,
+		"pct", element.safePercent)
+	SafePrint("|cfff0f0f0  " .. label .. " bar:",
+		"value", value,
+		"min", minValue,
+		"max", maxValue,
+		"mirrorPct", element.__AzeriteUI_MirrorPercent,
+		"texPct", element.__AzeriteUI_TexturePercent)
+end
+
+local function SafeUnitBoolCall(func, ...)
+	if (type(func) ~= "function") then
+		return nil
+	end
+	local ok, value = API.TryCall(func, ...)
+	if (not ok or type(value) ~= "boolean") then
+		return nil
+	end
+	return value
+end
+
+local function SafeUnitNumberCall(func, ...)
+	if (type(func) ~= "function") then
+		return nil
+	end
+	local ok, value = API.TryCall(func, ...)
+	if (not ok or type(value) ~= "number") then
+		return nil
+	end
+	return value
+end
+
+local function DumpUnitSnapshot(unit)
+	if (IsSecretValue(unit) or type(unit) ~= "string" or unit == "") then
+		unit = "target"
+	end
+	SafePrint("|cff33ff99", "AzeriteUI unit snapshot:", unit)
+	if (not UnitExists(unit)) then
+		SafePrint("|cfff0f0f0  unit does not exist")
+		return
+	end
+
+	DumpUnitValue("UnitGUID", UnitGUID(unit))
+	SafePrint("|cfff0f0f0  targetInfo:",
+		"isPlayer", SafeUnitBoolCall(UnitIsPlayer, unit),
+		"playerControlled", SafeUnitBoolCall(UnitPlayerControlled, unit),
+		"canAttack", SafeUnitBoolCall(UnitCanAttack, "player", unit),
+		"canAssist", SafeUnitBoolCall(UnitCanAssist, "player", unit),
+		"isEnemy", SafeUnitBoolCall(UnitIsEnemy, "player", unit),
+		"isFriend", SafeUnitBoolCall(UnitIsFriend, "player", unit),
+		"reaction", SafeUnitNumberCall(UnitReaction, unit, "player"),
+		"tapDenied", SafeUnitBoolCall(UnitIsTapDenied, unit))
+
+	DumpUnitValue("UnitHealth", UnitHealth(unit))
+	DumpUnitValue("UnitHealthMax", UnitHealthMax(unit))
+	if (UnitHealthPercent) then
+		local percent = nil
+		API.TryCall(function()
+			if (CurveConstants and CurveConstants.ScaleTo100) then
+				percent = UnitHealthPercent(unit, true, CurveConstants.ScaleTo100)
+			else
+				percent = UnitHealthPercent(unit)
+			end
+		end)
+		DumpUnitValue("UnitHealthPercent", percent)
+	end
+
+	local powerType = UnitPowerType(unit)
+	DumpUnitValue("UnitPower", UnitPower(unit, powerType))
+	DumpUnitValue("UnitPowerMax", UnitPowerMax(unit, powerType))
+	if (UnitPowerPercent) then
+		local powerPercent = nil
+		API.TryCall(function()
+			if (CurveConstants and CurveConstants.ScaleTo100) then
+				powerPercent = UnitPowerPercent(unit, powerType, true, CurveConstants.ScaleTo100)
+			else
+				powerPercent = UnitPowerPercent(unit, powerType)
+			end
+		end)
+		DumpUnitValue("UnitPowerPercent", powerPercent)
+	end
+
+	local frame, frameName = ResolveUnitFrame(unit)
+	if (frame and frame.unit == unit) then
+		SafePrint("|cfff0f0f0  frame:", frameName, "bound")
+		DumpElementSnapshot(frame.Health, "Health")
+		DumpElementSnapshot(frame.Power, "Power")
+	else
+		SafePrint("|cfff0f0f0  frame:", frameName or "n/a", "not bound to unit token")
+	end
+end
+
+local function DumpPoints(frame, indent)
+	if (not frame) then
+		return
+	end
+	local num = ProbeMethod(frame, "GetNumPoints") or 0
+	for i = 1, num do
+		local point, relTo, relPoint, x, y = ProbeMethod(frame, "GetPoint", i)
+		local relName = relTo and ProbeMethod(relTo, "GetName") or tostring(relTo)
+		SafePrint("|cfff0f0f0 " .. indent .. "point[" .. i .. "]:", point, relName, relPoint, x, y)
+	end
+end
+
+local function GetCVarBoolSafe(name)
+	if (type(name) ~= "string" or name == "") then
+		return nil
+	end
+	if (C_CVar and C_CVar.GetCVarBool) then
+		local value = C_CVar.GetCVarBool(name)
+		if (type(value) == "boolean") then
+			return value
+		end
+	end
+	if (GetCVarBool) then
+		local value = GetCVarBool(name)
+		if (type(value) == "boolean") then
+			return value
+		end
+	end
+	return nil
+end
+
+local function GetCVarSafe(name)
+	if (type(name) ~= "string" or name == "") then
+		return nil
+	end
+	if (C_CVar and C_CVar.GetCVar) then
+		local value = C_CVar.GetCVar(name)
+		if (type(value) == "string") then
+			return value
+		end
+	end
+	if (GetCVar) then
+		local value = GetCVar(name)
+		if (type(value) == "string") then
+			return value
+		end
+	end
+	return nil
+end
+
+local function GetActionBarsModule()
+	local module = ns:GetModule("ActionBars", true)
+	if (module and module.db and module.db.profile) then
+		return module
+	end
+	return nil
+end
+
+local function FindActionButtonByName(buttonName)
+	if (type(buttonName) ~= "string" or buttonName == "") then
+		return nil
+	end
+	local direct = _G[buttonName]
+	if (direct) then
+		return direct
+	end
+	local module = GetActionBarsModule()
+	if (not module or not module.buttons) then
+		return nil
+	end
+	for button in pairs(module.buttons) do
+		if (button and button.GetName and button:GetName() == buttonName) then
+			return button
+		end
+	end
+	return nil
+end
+
+local function GetActionCooldownInfoSafe(actionID)
+	if (type(actionID) ~= "number") then
+		return nil
+	end
+	if (C_ActionBar and C_ActionBar.GetActionCooldown) then
+		local ok, info = API.TryCall(C_ActionBar.GetActionCooldown, actionID)
+		if (ok and type(info) == "table") then
+			return info
+		end
+	end
+	if (GetActionCooldown) then
+		local ok, start, duration, enabled, modRate = API.TryCall(GetActionCooldown, actionID)
+		if (ok) then
+			return {
+				startTime = start,
+				duration = duration,
+				isEnabled = enabled,
+				modRate = modRate
+			}
+		end
+	end
+	return nil
+end
+
+local function GetActionChargeInfoSafe(actionID)
+	if (type(actionID) ~= "number") then
+		return nil
+	end
+	if (C_ActionBar and C_ActionBar.GetActionCharges) then
+		local ok, info = API.TryCall(C_ActionBar.GetActionCharges, actionID)
+		if (ok and type(info) == "table") then
+			return info
+		end
+	end
+	if (GetActionCharges) then
+		local ok, charges, maxCharges, startTime, duration, modRate = API.TryCall(GetActionCharges, actionID)
+		if (ok) then
+			return {
+				currentCharges = charges,
+				maxCharges = maxCharges,
+				cooldownStartTime = startTime,
+				cooldownDuration = duration,
+				chargeModRate = modRate
+			}
+		end
+	end
+	return nil
+end
+
+local function PrintDebugKeysHelp()
+	print("|cff33ff99", "AzeriteUI /azdebugkeys commands:")
+	print("|cfff0f0f0  /azdebugkeys status|r")
+	print("|cfff0f0f0  /azdebugkeys bindings|r")
+	print("|cfff0f0f0  /azdebugkeys cooldown [buttonName]|r")
+	print("|cfff0f0f0  /azdebugkeys holdtest [spellID]|r")
+	print("|cfff0f0f0  /azdebugkeys on|off|toggle|r  (verbose)")
+	print("|cfff0f0f0  /azdebug keys <subcommand>|r  (same commands via /azdebug)")
+end
+
+local function PrintDebugKeysStatus()
+	local module = GetActionBarsModule()
+	local profile = module and module.db and module.db.profile or nil
+	local commandMode = (profile and profile.UseCommandBindingsForHoldCast == true) and true or false
+	local clickOnDown = (profile and profile.clickOnDown == true) and true or false
+	local cvarKeyDown = GetCVarBoolSafe("ActionButtonUseKeyDown")
+	local cvarPressHold = GetCVarBoolSafe("ActionButtonUseKeyHeldSpell")
+	local cvarPressHoldRaw = GetCVarSafe("ActionButtonUseKeyHeldSpell")
+	local holdApi = (C_Spell and C_Spell.IsPressHoldReleaseSpell) and "yes" or "no"
+	local inCombat = (InCombatLockdown and InCombatLockdown()) and "true" or "false"
+	local verbose = (ns.db and ns.db.global and ns.db.global.debugKeysVerbose) and "ON" or "OFF"
+
+	print("|cff33ff99", "AzeriteUI key debug status:")
+	print("|cfff0f0f0  inCombat:", inCombat)
+	print("|cfff0f0f0  bindingMode:", commandMode and "command" or "click-fallback")
+	print("|cfff0f0f0  profile.clickOnDown:", tostring(clickOnDown))
+	print("|cfff0f0f0  CVar ActionButtonUseKeyDown:", tostring(cvarKeyDown))
+	print("|cfff0f0f0  CVar ActionButtonUseKeyHeldSpell:", tostring(cvarPressHold), "raw:", tostring(cvarPressHoldRaw))
+	print("|cfff0f0f0  C_Spell.IsPressHoldReleaseSpell:", holdApi)
+	print("|cfff0f0f0  verbose:", verbose)
+
+	if (module and module.bars) then
+		for index, bar in pairs(module.bars) do
+			local enabled = bar and bar.IsEnabled and bar:IsEnabled() and "true" or "false"
+			local numButtons = (bar and bar.config and bar.config.numbuttons) or 0
+			print("|cfff0f0f0  bar"..tostring(index)..": enabled", enabled, "buttons", tostring(numButtons))
+		end
+	end
+end
+
+local function PrintDebugKeyBindings()
+	local module = GetActionBarsModule()
+	if (not module or not module.bars) then
+		print("|cff33ff99", "AzeriteUI /azdebugkeys:", "ActionBars module unavailable")
+		return
+	end
+	-- The route is the one ActionBar:UpdateBindings recorded when it bound the key, not
+	-- one recomputed from settings: bar 1 keeps the click route whatever the setting
+	-- says. `now` is what the client resolves the key to at this moment, overrides
+	-- included, so a key another binding has taken shows as TAKEN. Run it while a key
+	-- is dead, before reloading (Docs/TODO.md item 7.1).
+	print("|cff33ff99", "AzeriteUI key binding dump:")
+	for barIndex, bar in pairs(module.bars) do
+		if (bar and bar.buttons and bar.config and bar.config.numbuttons and bar.config.numbuttons > 0) then
+			-- A disabled bar's buttons keep the route from before their keys were cleared.
+			local enabled = bar.IsEnabled and bar:IsEnabled() and true or false
+			print("|cfff0f0f0  bar"..tostring(barIndex)..": enabled", tostring(enabled))
+			for buttonIndex = 1, bar.config.numbuttons do
+				local button = bar.buttons[buttonIndex]
+				if (button) then
+					local target = button.keyBoundTarget
+					local route = button.__AzeriteUI_BindingRoute
+					print("|cfff0f0f0    ", tostring(button:GetName()), "slot", tostring(button._state_action), "bind", tostring(target), "mode", tostring(button.__AzeriteUI_BindingMode), "route", tostring(route))
+					if (type(target) == "string" and target ~= "") then
+						for keyNumber = 1, select("#", GetBindingKey(target)) do
+							local key = select(keyNumber, GetBindingKey(target))
+							if (key and key ~= "") then
+								local now = GetBindingAction and GetBindingAction(key, true) or nil
+								local taken = (enabled and route and now ~= route) and "  |cffff4040TAKEN|r" or ""
+								print("|cfff0f0f0      key", tostring(key), "now", tostring(now) .. taken)
+							end
+						end
+					end
+				end
+			end
+		end
+	end
+end
+
+local function PrintDebugKeyCooldown(buttonName)
+	local button = FindActionButtonByName(buttonName)
+	if (not button) then
+		local module = GetActionBarsModule()
+		if (module and module.bars and module.bars[1] and module.bars[1].buttons) then
+			button = module.bars[1].buttons[1]
+		end
+	end
+	if (not button) then
+		print("|cff33ff99", "AzeriteUI /azdebugkeys cooldown:", "button not found")
+		return
+	end
+	local actionID = button._state_action
+	local actionType, actionToken, subType = nil, nil, nil
+	if (type(actionID) == "number" and actionID > 0 and GetActionInfo) then
+		actionType, actionToken, subType = GetActionInfo(actionID)
+	end
+	local cooldownInfo = (type(actionID) == "number" and actionID > 0) and GetActionCooldownInfoSafe(actionID) or nil
+	local chargeInfo = (type(actionID) == "number" and actionID > 0) and GetActionChargeInfoSafe(actionID) or nil
+
+	print("|cff33ff99", "AzeriteUI key cooldown debug:")
+	print("|cfff0f0f0  button:", tostring(button:GetName()))
+	print("|cfff0f0f0  actionID:", tostring(actionID), "actionType:", tostring(actionType), "token:", tostring(actionToken), "subType:", tostring(subType))
+	print("|cfff0f0f0  attrs: useOnKeyDown", SecretSafeText(button:GetAttribute("useOnKeyDown")), "pressAndHoldAction", SecretSafeText(button:GetAttribute("pressAndHoldAction")), "typerelease", SecretSafeText(button:GetAttribute("typerelease")), "LABToggledOnDown", SecretSafeText(button:GetAttribute("LABToggledOnDown")))
+
+	if (cooldownInfo) then
+		print("|cfff0f0f0  cooldown:", "start", SecretSafeText(cooldownInfo.startTime), "duration", SecretSafeText(cooldownInfo.duration), "modRate", SecretSafeText(cooldownInfo.modRate), "isEnabled", SecretSafeText(cooldownInfo.isEnabled))
+	else
+		print("|cfff0f0f0  cooldown:", "nil")
+	end
+	if (chargeInfo) then
+		print("|cfff0f0f0  charges:", "cur", SecretSafeText(chargeInfo.currentCharges), "max", SecretSafeText(chargeInfo.maxCharges), "start", SecretSafeText(chargeInfo.cooldownStartTime), "duration", SecretSafeText(chargeInfo.cooldownDuration), "modRate", SecretSafeText(chargeInfo.chargeModRate))
+	else
+		print("|cfff0f0f0  charges:", "nil")
+	end
+end
+
+local function PrintDebugHoldTest(spellIDText)
+	if (not (C_Spell and C_Spell.IsPressHoldReleaseSpell)) then
+		print("|cff33ff99", "AzeriteUI holdtest:", "C_Spell.IsPressHoldReleaseSpell unavailable")
+		return
+	end
+	local spellID = tonumber(spellIDText or "")
+	if (not spellID) then
+		print("|cff33ff99", "AzeriteUI holdtest:", "spellID required")
+		return
+	end
+	local ok, result = API.TryCall(C_Spell.IsPressHoldReleaseSpell, spellID)
+	print("|cff33ff99", "AzeriteUI holdtest:", "spellID", tostring(spellID), "ok", tostring(ok), "pressHold", SecretSafeText(result))
+end
+
+Debugging.DebugKeysMenu = function(self, input)
+	if (not IsDevMode()) then
+		print("|cff33ff99", "AzeriteUI /azdebugkeys:", "Dev mode is off; limited features may apply.")
+	end
+	local cmd, rest = (input or ""):match("^(%S+)%s*(.-)$")
+	cmd = cmd and string_lower(cmd) or "status"
+
+	if (cmd == "help" or cmd == "?") then
+		return PrintDebugKeysHelp()
+	end
+	if (cmd == "status") then
+		return PrintDebugKeysStatus()
+	end
+	if (cmd == "bindings") then
+		return PrintDebugKeyBindings()
+	end
+	if (cmd == "cooldown") then
+		local buttonName = rest and rest:match("^(%S+)") or nil
+		return PrintDebugKeyCooldown(buttonName)
+	end
+	if (cmd == "holdtest") then
+		local spellIDText = rest and rest:match("^(%S+)") or nil
+		return PrintDebugHoldTest(spellIDText)
+	end
+	local mode = nil
+	if (cmd == "on" or cmd == "off" or cmd == "toggle") then
+		mode = cmd
+	end
+	if (mode) then
+		local db = ns and ns.db and ns.db.global
+		if (db) then
+			local current = db.debugKeysVerbose and true or false
+			if (mode == "toggle") then
+				db.debugKeysVerbose = not current
+			elseif (mode == "on") then
+				db.debugKeysVerbose = true
+			elseif (mode == "off") then
+				db.debugKeysVerbose = false
+			end
+			_G.__AzeriteUI_DEBUG_KEYS = db.debugKeysVerbose and true or false
+		end
+		print("|cff33ff99", "AzeriteUI /azdebugkeys verbose:", (db and db.debugKeysVerbose) and "ON" or "OFF")
+		return
+	end
+	PrintDebugKeysHelp()
+end
+
+local function DumpTexture(tex, label)
+	if (not tex) then
+		return
+	end
+	local name = label or ProbeMethod(tex, "GetName") or "(texture)"
+	local path = ProbeMethod(tex, "GetTexture")
+	local width, height = ProbeMethod(tex, "GetSize")
+	local alpha = ProbeMethod(tex, "GetAlpha")
+	local shown = ProbeMethod(tex, "IsShown")
+	local layer, subLayer = ProbeMethod(tex, "GetDrawLayer")
+	local blend = ProbeMethod(tex, "GetBlendMode")
+	local r, g, b, a = ProbeMethod(tex, "GetVertexColor")
+	local t1, t2, t3, t4 = ProbeMethod(tex, "GetTexCoord")
+	local parent = ProbeMethod(tex, "GetParent")
+	local parentName = parent and ProbeMethod(parent, "GetName") or nil
+	SafePrint("|cfff0f0f0  texture:", name, "path:", path)
+	SafePrint("|cfff0f0f0   size:", width, height, "alpha:", alpha, "shown:", shown, "layer:", layer, "sub:", subLayer, "blend:", blend)
+	SafePrint("|cfff0f0f0   parent:", parentName, "vertex:", r, g, b, a)
+	SafePrint("|cfff0f0f0   texcoord:", t1, t2, t3, t4)
+	DumpPoints(tex, "   ")
+end
+
+local function DumpBar(bar, labelOverride)
+	if (not bar) then
+		return
+	end
+	local label = labelOverride or bar.__AzeriteUI_DebugLabel or "(bar)"
+	local growth = ProbeMethod(bar, "GetGrowth")
+	local orient = ProbeMethod(bar, "GetOrientation")
+	local flipped = ProbeMethod(bar, "IsFlippedHorizontally")
+	local reverse = ProbeMethod(bar, "GetReverseFill")
+	local min, max = ProbeMethod(bar, "GetMinMaxValues")
+	local value = ProbeMethod(bar, "GetValue")
+	local r1, r2, r3, r4 = ProbeMethod(bar, "GetRealTexCoord")
+	local secretPercent = ProbeMethod(bar, "GetSecretPercent")
+	local debugData = ProbeMethod(bar, "GetDebugData")
+	local width, height = ProbeMethod(bar, "GetSize")
+	local alpha = ProbeMethod(bar, "GetAlpha")
+	local shown = ProbeMethod(bar, "IsShown")
+	local level = ProbeMethod(bar, "GetFrameLevel")
+	local scale = ProbeMethod(bar, "GetScale")
+	local effScale = ProbeMethod(bar, "GetEffectiveScale")
+	local strata = ProbeMethod(bar, "GetFrameStrata")
+	local parent = ProbeMethod(bar, "GetParent")
+	local parentName = parent and ProbeMethod(parent, "GetName") or nil
+	local tex = ProbeMethod(bar, "GetStatusBarTexture")
+	local colorR, colorG, colorB, colorA = ProbeMethod(bar, "GetStatusBarColor")
+	local expectedOrient = bar.__AzeriteUI_ExpectedOrientation
+	local expectedFlip = bar.__AzeriteUI_ExpectedFlipped
+	local expectedReverse = bar.__AzeriteUI_ExpectedReverseFill
+	SafePrint("|cff33ff99", "AzeriteUI bar dump:", label)
+	SafePrint("|cfff0f0f0  growth:", growth, "orientation:", orient, "flipped:", flipped, "reverse:", reverse)
+	SafePrint("|cfff0f0f0  min/max/value:", min, max, value, "secretPercent:", secretPercent)
+	SafePrint("|cfff0f0f0  texcoord:", r1, r2, r3, r4, "color:", colorR, colorG, colorB, colorA)
+	SafePrint("|cfff0f0f0  size:", width, height, "alpha:", alpha, "shown:", shown, "level:", level, "parent:", parentName)
+	SafePrint("|cfff0f0f0  scale:", scale, "effectiveScale:", effScale, "strata:", strata)
+	SafePrint("|cfff0f0f0  flags:", "useBlizzard", bar.__AzeriteUI_UseBlizzard, "expectedOrient", expectedOrient, "expectedFlip", expectedFlip, "expectedReverse", expectedReverse)
+	if (bar.__AzeriteUI_CastFakePath or bar.__AzeriteUI_FakeConfiguredAlpha ~= nil or bar.__AzeriteUI_FakeUseStatusBarAlpha ~= nil or bar.__AzeriteUI_FakeUseManualAlpha ~= nil) then
+		SafePrint("|cfff0f0f0  castFake:",
+			"path", bar.__AzeriteUI_CastFakePath,
+			"percent", bar.__AzeriteUI_CastFakePercent,
+			"source", bar.__AzeriteUI_CastCropSource,
+			"explicit", bar.__AzeriteUI_CastLastExplicitPercent,
+			"invert", bar.__AzeriteUI_FakeInvertPercent,
+			"alphaCfg", bar.__AzeriteUI_FakeConfiguredAlpha,
+			"useStatusAlpha", bar.__AzeriteUI_FakeUseStatusBarAlpha,
+			"useManualAlpha", bar.__AzeriteUI_FakeUseManualAlpha,
+			"manualAlpha", bar.__AzeriteUI_FakeAlpha)
+	end
+	if (bar.__AzeriteUI_TargetFakeSource) then
+		SafePrint("|cfff0f0f0  healthFake:",
+			"source", bar.__AzeriteUI_TargetFakeSource,
+			"targetPctSource", bar.__AzeriteUI_TargetPercentSource,
+			"displayPct", bar.__AzeriteUI_TargetDisplayPercent,
+			"safePct", bar.safePercent,
+			"mirrorPct", bar.__AzeriteUI_MirrorPercent,
+			"texPct", bar.__AzeriteUI_TexturePercent,
+			"invertPct", _G.__AzeriteUI_DEBUG_TARGET_HEALTH_FORCE_INVERT,
+			"noInvertPct", _G.__AzeriteUI_DEBUG_TARGET_HEALTH_FORCE_NOINVERT,
+			"rawCurSafe", bar.__AzeriteUI_RawCurSafe,
+			"rawMaxSafe", bar.__AzeriteUI_RawMaxSafe)
+	end
+	DumpPoints(bar, "  ")
+	DumpTexture(tex, label .. ".StatusBarTexture")
+	DumpTexture(bar.FakeFill, label .. ".FakeFill")
+	if (debugData) then
+		SafePrint("|cfff0f0f0  lib:", "orient", debugData.barOrientation, "revFill", debugData.barBlizzardReverseFill, "revH", debugData.reversedH, "revV", debugData.reversedV, "proxy", debugData.proxyShown)
+		if (debugData.proxyTexCoord) then
+			SafePrint("|cfff0f0f0  proxy texcoord:", debugData.proxyTexCoord[1], debugData.proxyTexCoord[2], debugData.proxyTexCoord[3], debugData.proxyTexCoord[4])
+		end
+		if (debugData.proxySize) then
+			SafePrint("|cfff0f0f0  proxy size:", debugData.proxySize[1], debugData.proxySize[2])
+		end
+	end
+end
+
+local function DumpArtTextures(container, label)
+	if (not container) then
+		return
+	end
+	DumpTexture(container.Backdrop, label .. ".Backdrop")
+	DumpTexture(container.Case, label .. ".Case")
+	DumpTexture(container.Shade, label .. ".Shade")
+	DumpTexture(container.Border, label .. ".Border")
+	DumpTexture(container.Overlay, label .. ".Overlay")
+	DumpTexture(container.Gloss, label .. ".Gloss")
+end
+
+local function DumpUnitBars(frame, name)
+	if (not frame) then
+		SafePrint("|cff33ff99", "AzeriteUI bar dump:", name, "not found")
+		return
+	end
+	SafePrint("|cff33ff99", "AzeriteUI bar dump:", name)
+	SafePrint("|cfff0f0f0  unit:", frame.unit, "style:", frame.currentStyle)
+	local fwidth, fheight = ProbeMethod(frame, "GetSize")
+	local fscale = ProbeMethod(frame, "GetScale")
+	local feff = ProbeMethod(frame, "GetEffectiveScale")
+	local fstrata = ProbeMethod(frame, "GetFrameStrata")
+	local flevel = ProbeMethod(frame, "GetFrameLevel")
+	SafePrint("|cfff0f0f0  size:", fwidth, fheight, "scale:", fscale, "effectiveScale:", feff, "strata:", fstrata, "level:", flevel)
+	DumpPoints(frame, "  ")
+	if (name == "TargetFrame") then
+		local cfg = ns.GetConfig("TargetFrame")
+		if (cfg) then
+			SafePrint("|cfff0f0f0  config:", "IsFlippedHorizontally", cfg.IsFlippedHorizontally)
+			if (frame.currentStyle and cfg[frame.currentStyle]) then
+				local styleCfg = cfg[frame.currentStyle]
+				SafePrint("|cfff0f0f0  style:", frame.currentStyle, "HealthBarOrientation", styleCfg.HealthBarOrientation, "HealthBarTexture", styleCfg.HealthBarTexture)
+			end
+		end
+	end
+	DumpBar(frame.Health)
+	if (frame.Health and frame.Health.Percent and frame.Health.Percent.GetText) then
+		SafePrint("|cfff0f0f0  healthPercentText:", ProbeMethod(frame.Health.Percent, "GetText"))
+	end
+	DumpArtTextures(frame.Health, "Health")
+	DumpBar(frame.Health and frame.Health.Preview)
+	DumpBar(frame.Castbar)
+	DumpBar(frame.HealthPrediction and frame.HealthPrediction.absorbBar, "Target.Absorb")
+	DumpBar(frame.Power, "Target.Power")
+	DumpArtTextures(frame.Power, "Power")
+	DumpBar(frame.ManaOrb, "Player.ManaOrb")
+	DumpArtTextures(frame.ManaOrb, "ManaOrb")
+end
+
+-- Native aura buttons hold their shown state, icon and timings as secret values, even out
+-- of combat (Blizzard sets them from aura data), and a secret may not be tested, compared
+-- or joined: "x and ProbeMethod(...) or nil" raised on the first top-right button in game.
+-- SafePrint renders a secret as <secret>; these keep the logic before it from touching one.
+local function ProbeIf(obj, method, ...)
+	if (not obj) then
+		return nil
+	end
+	return ProbeMethod(obj, method, ...)
+end
+
+-- The first of two values that is set, without testing a secret one.
+local function FirstSet(first, second)
+	if (IsSecretValue(first) or first ~= nil) then
+		return first
+	end
+	return second
+end
+
+local function PresenceText(value)
+	if (IsSecretValue(value)) then
+		return "<secret>"
+	end
+	return value and "yes" or "no"
+end
+
+local function DumpAuraButtonState(button, label)
+	if (not button) then
+		return
+	end
+
+	local icon = button.Icon or button.icon
+	local count = button.Count or button.count
+	local cooldown = button.Cooldown or button.cd or button.cooldown
+	local auraInstanceID = button.auraInstanceID
+	local spellID = FirstSet(button.auraSpellID, button.spellID)
+	-- A method call on a restricted aura button raises, so even GetParent goes through ProbeMethod.
+	local parent = ProbeMethod(button, "GetParent")
+	local owner = parent and parent.__owner
+	local unit = owner and owner.unit
+	local resolvedSpellID
+	local resolvedName
+	if (unit and not IsSecretValue(auraInstanceID) and auraInstanceID and C_UnitAuras and C_UnitAuras.GetAuraDataByAuraInstanceID) then
+		local ok, auraData = API.TryCall(C_UnitAuras.GetAuraDataByAuraInstanceID, unit, auraInstanceID)
+		if (ok and type(auraData) == "table" and not IsSecretValue(auraData) and not (issecrettable and issecrettable(auraData))) then
+			resolvedSpellID = FirstSet(auraData.spellId, auraData.spellID)
+			resolvedName = auraData.name
+			if (not IsSecretValue(spellID) and spellID == nil) then
+				spellID = resolvedSpellID
+			end
+		end
+	end
+	local shown = ProbeMethod(button, "IsShown")
+	local visible = ProbeMethod(button, "IsVisible")
+	local alpha = ProbeMethod(button, "GetAlpha")
+	local width, height = ProbeMethod(button, "GetSize")
+	local level = ProbeMethod(button, "GetFrameLevel")
+	local iconTexture = ProbeIf(icon, "GetTexture")
+	local iconAlpha = ProbeIf(icon, "GetAlpha")
+	local iconShown = ProbeIf(icon, "IsShown")
+	local iconDesaturated = ProbeIf(icon, "IsDesaturated")
+	local iconR, iconG, iconB, iconA = ProbeIf(icon, "GetVertexColor")
+	local countText = ProbeIf(count, "GetText")
+	local countShown = ProbeIf(count, "IsShown")
+	local cdShown = ProbeIf(cooldown, "IsShown")
+	local cdStart, cdDuration, cdEnabled = ProbeIf(cooldown, "GetCooldown")
+	local timeLeft = button.timeLeft
+	local expiration = FirstSet(button.auraExpirationTime, button.expirationTime)
+	local duration = button.duration
+
+	SafePrint("|cfff0f0f0", label,
+		"shown", shown,
+		"visible", visible,
+		"alpha", alpha,
+		"size", width, height,
+		"level", level)
+	SafePrint("|cfff0f0f0 ", " aura:",
+		"unit", unit,
+		"instance", auraInstanceID,
+		"spell", spellID,
+		"resolvedSpell", resolvedSpellID,
+		"name", resolvedName,
+		"filter", button.filter,
+		"harmful", button.isHarmful,
+		"harmfulAura", button.isHarmfulAura,
+		"player", button.isPlayer,
+		"stealable", button.isStealable)
+	SafePrint("|cfff0f0f0 ", " visual:",
+		"icon", PresenceText(iconTexture),
+		"iconShown", iconShown,
+		"iconAlpha", iconAlpha,
+		"desat", iconDesaturated,
+		"vertex", iconR, iconG, iconB, iconA,
+		"count", countText,
+		"countShown", countShown)
+	SafePrint("|cfff0f0f0 ", " timing:",
+		"cdShown", cdShown,
+		"start", cdStart,
+		"duration", cdDuration,
+		"enabled", cdEnabled,
+		"storedDuration", duration,
+		"expires", expiration,
+		"timeLeft", timeLeft)
+end
+
+-- Weapon enchant buttons are not in any aura group. The containers keep the frames that
+-- AddItemEnchantment returned, since 12.1.0 has no GetItemEnchantmentFrame to ask for them.
+local function DumpItemEnchantmentFrames(container, label)
+	local frames = container and container.__AzeriteUI_ItemEnchantmentFrames
+	if (type(frames) ~= "table") then
+		return 0
+	end
+
+	local dumped = 0
+	for _, slotName in ipairs({ "MainHand", "OffHand" }) do
+		local frame = frames[slotName]
+		if (type(frame) == "table") then
+			dumped = dumped + 1
+			DumpAuraButtonState(frame, label .. ":enchant:" .. slotName)
+		end
+	end
+	return dumped
+end
+
+local function DumpPlayerAuraSnapshot()
+	local playerFrame = ns:GetModule("PlayerFrame", true)
+	local frame = playerFrame and playerFrame.frame
+	local auras = frame and frame.PlayerAuras
+	if (not auras) then
+		SafePrint("|cff33ff99", "AzeriteUI aura snapshot:", "playerframe auras not found")
+		return
+	end
+
+	SafePrint("|cff33ff99", "AzeriteUI aura snapshot: playerframe")
+	local enchantContainer = auras.itemEnchantmentContainer
+	SafePrint("|cfff0f0f0", "combat", InCombatLockdown and InCombatLockdown(), "unit", frame.unit, "native", true,
+		"enchantRow", (not enchantContainer and "none") or (auras.playerContainer == enchantContainer and "active" or "swapped out"))
+
+	local dumped = 0
+	for _, containerInfo in ipairs({
+		{ auras.playerContainer, "player" },
+		{ auras.vehicleContainer, "vehicle" }
+	}) do
+		local container, unitLabel = containerInfo[1], containerInfo[2]
+		if (container) then
+			local groupKeys = ns.PlayerAuraContainers and ns.PlayerAuraContainers.GroupKeys
+			for _, groupKey in ipairs(groupKeys or {}) do
+				for index = 1, 40 do
+					local button = ProbeMethod(container, "GetAuraGroupFrame", groupKey, index)
+					if (button) then
+						dumped = dumped + 1
+						DumpAuraButtonState(button, unitLabel .. ":" .. groupKey .. "[" .. index .. "]")
+					end
+				end
+			end
+		end
+	end
+	-- The active container's: with the option off, 12.1.0 swaps to one that has no slots.
+	dumped = dumped + DumpItemEnchantmentFrames(auras.playerContainer, "player")
+
+	SafePrint("|cff33ff99", "AzeriteUI aura snapshot: playerframe buttons dumped:", dumped)
+end
+
+-- The header has been native aura containers since 5.3.78. This used to read the
+-- SecureAuraHeader attributes and child list, which no longer exist, so it always
+-- reported zero children.
+local function DumpTopRightAuraSnapshot()
+	local module = ns:GetModule("Auras", true)
+	local frame = module and module.frame
+	if (not frame) then
+		SafePrint("|cff33ff99", "AzeriteUI aura snapshot:", "top-right aura header not found")
+		return
+	end
+
+	local db = module.db and module.db.profile
+	SafePrint("|cff33ff99", "AzeriteUI aura snapshot: top-right")
+	SafePrint("|cfff0f0f0", "combat", InCombatLockdown and InCombatLockdown(), "native", true,
+		"target", UnitExists and UnitExists("target"))
+	-- Fade When Idle and the visibility driver act on this parent frame, not on the
+	-- containers, so its alpha is the one that says whether anything can be seen.
+	-- Parenthesised so only the first of ProbeMethod's five returns is printed.
+	SafePrint("|cfff0f0f0", "frame:",
+		"shown", (ProbeMethod(frame, "IsShown")),
+		"visible", (ProbeMethod(frame, "IsVisible")),
+		"alpha", (ProbeMethod(frame, "GetAlpha")))
+	if (db) then
+		SafePrint("|cfff0f0f0", "settings:",
+			"enabled", db.enabled,
+			"fadeWhenIdle", db.enableAuraFading,
+			"modifier", db.enableModifier and db.modifier or false,
+			"keepWhileTargeting", db.ignoreTarget)
+	end
+
+	local dumped = 0
+	for _, groupInfo in ipairs({
+		{ module.playerAuras, "player" },
+		{ module.vehicleAuras, "vehicle" }
+	}) do
+		local group, unitLabel = groupInfo[1], groupInfo[2]
+		if (group) then
+			SafePrint("|cfff0f0f0", unitLabel .. ":",
+				"shown", (ProbeMethod(group, "IsShown")),
+				"visible", (ProbeMethod(group, "IsVisible")))
+			for _, container in ipairs({ group.buffs, group.debuffs }) do
+				local groupKey = container and container.groupKey
+				if (groupKey) then
+					local count = ProbeMethod(container, "GetAuraGroupFrameCount", groupKey)
+					if (IsSecretValue(count) or type(count) ~= "number") then
+						count = 0
+					end
+					for index = 1, count do
+						local button = ProbeMethod(container, "GetAuraGroupFrame", groupKey, index)
+						if (button) then
+							dumped = dumped + 1
+							DumpAuraButtonState(button, unitLabel .. ":" .. groupKey .. "[" .. index .. "]")
+						end
+					end
+				end
+			end
+			dumped = dumped + DumpItemEnchantmentFrames(group.buffs, unitLabel)
+		end
+	end
+
+	SafePrint("|cff33ff99", "AzeriteUI aura snapshot: top-right buttons dumped:", dumped)
+end
+
+-- Target-frame aura probe. Splits "target auras vanish in combat" into the three
+-- places it can actually break: the API returning nothing, the filter dropping
+-- everything, or the display/anchor pass failing to put buttons on screen.
+local function CountAuraTableEntries(t)
+	if (type(t) ~= "table") then return -1 end
+	local n = 0
+	for _ in next, t do n = n + 1 end
+	return n
+end
+
+local function CountRawUnitAuras(unit, filter)
+	local total, secretIDs, secretTables, blocked = 0, 0, 0, 0
+	if (C_UnitAuras and C_UnitAuras.GetAuraDataByIndex) then
+		for index = 1, 255 do
+			local ok, data = API.TryCall(C_UnitAuras.GetAuraDataByIndex, unit, index, filter)
+			if (not ok) then
+				blocked = blocked + 1
+				break
+			end
+			-- A secret table is not "no aura": the aura exists, the client just will
+			-- not let addon code read it. Count it rather than treating it as the end.
+			if (issecrettable and issecrettable(data)) then
+				secretTables = secretTables + 1
+			elseif (type(data) ~= "table") then
+				break
+			else
+				total = total + 1
+				if (IsSecretValue(data.auraInstanceID)) then
+					secretIDs = secretIDs + 1
+				end
+			end
+		end
+	end
+
+	-- select("#") counts trailing nils, unlike the length operator.
+	local slots = -1
+	if (C_UnitAuras and C_UnitAuras.GetAuraSlots) then
+		local n = select("#", API.TryCall(C_UnitAuras.GetAuraSlots, unit, filter))
+		slots = n - 2
+	end
+
+	return total, secretIDs, slots, secretTables, blocked
+end
+
+local function DumpTargetAuraSnapshot()
+	local targetMod = ns:GetModule("TargetFrame", true)
+	local frame = targetMod and targetMod.frame
+	local auras = frame and frame.Auras
+	if (not auras) then
+		SafePrint("|cff33ff99", "AzeriteUI aura snapshot:", "target frame auras not found")
+		return
+	end
+
+	local unit = frame.unit or "target"
+
+	SafePrint("|cff33ff99", "AzeriteUI aura snapshot: target")
+	SafePrint("|cfff0f0f0", "combat", InCombatLockdown and InCombatLockdown(),
+		"unit", unit,
+		"exists", UnitExists and UnitExists(unit),
+		"elementEnabled", frame.IsElementEnabled and frame:IsElementEnabled("Auras"))
+
+	local helpful, helpfulSecret, helpfulSlots, helpfulTables, helpfulBlocked = CountRawUnitAuras(unit, "HELPFUL")
+	local harmful, harmfulSecret, harmfulSlots, harmfulTables, harmfulBlocked = CountRawUnitAuras(unit, "HARMFUL")
+	SafePrint("|cfff0f0f0", " api HELPFUL:",
+		"readable", helpful, "secretIDs", helpfulSecret,
+		"secretTables", helpfulTables, "pcallFail", helpfulBlocked, "slots", helpfulSlots)
+	SafePrint("|cfff0f0f0", " api HARMFUL:",
+		"readable", harmful, "secretIDs", harmfulSecret,
+		"secretTables", harmfulTables, "pcallFail", harmfulBlocked, "slots", harmfulSlots)
+	SafePrint("|cfff0f0f0", " api env:",
+		"issecrettable", issecrettable and true or false,
+		"issecretvalue", issecretvalue and true or false,
+		"blizzBuff1", UnitBuff and select(1, API.TryCall(UnitBuff, unit, 1)) or "n/a")
+
+	SafePrint("|cfff0f0f0", " cache:",
+		"allBuffs", CountAuraTableEntries(auras.allBuffs),
+		"activeBuffs", CountAuraTableEntries(auras.activeBuffs),
+		"allDebuffs", CountAuraTableEntries(auras.allDebuffs),
+		"activeDebuffs", CountAuraTableEntries(auras.activeDebuffs),
+		"sortedBuffs", auras.sortedBuffs and #auras.sortedBuffs or -1,
+		"sortedDebuffs", auras.sortedDebuffs and #auras.sortedDebuffs or -1)
+
+	SafePrint("|cfff0f0f0", " config:",
+		"numTotal", auras.numTotal, "numBuffs", auras.numBuffs, "numDebuffs", auras.numDebuffs,
+		"visible", auras.visibleButtons, "created", auras.createdButtons, "anchored", auras.anchoredButtons,
+		"allowCombat", auras.allowCombatUpdates, "secretAuras", auras.__AzeriteUI_HasSecretAuras)
+
+	SafePrint("|cfff0f0f0", " container:",
+		"shown", ProbeMethod(auras, "IsShown"), "visible", ProbeMethod(auras, "IsVisible"),
+		"alpha", ProbeMethod(auras, "GetAlpha"),
+		"w", ProbeMethod(auras, "GetWidth"), "h", ProbeMethod(auras, "GetHeight"),
+		"points", ProbeMethod(auras, "GetNumPoints"),
+		"frameShown", ProbeMethod(frame, "IsShown"), "frameAlpha", ProbeMethod(frame, "GetAlpha"))
+
+	local cap = auras.createdButtons or 0
+	if (cap > 8) then cap = 8 end
+	for i = 1, cap do
+		local button = auras[i]
+		if (button) then
+			local icon = button.Icon
+			SafePrint("|cfff0f0f0 ", " button" .. i,
+				"shown", ProbeMethod(button, "IsShown"),
+				"visible", ProbeMethod(button, "IsVisible"),
+				"alpha", ProbeMethod(button, "GetAlpha"),
+				"points", ProbeMethod(button, "GetNumPoints"),
+				"w", ProbeMethod(button, "GetWidth"),
+				"iconShown", icon and ProbeMethod(icon, "IsShown"),
+				"iconAlpha", icon and ProbeMethod(icon, "GetAlpha"))
+		end
+	end
+end
+
+-- Party and Raid5 aura probe. "api" is what a Lua scan of the unit returns right now,
+-- which is 0 in combat on Retail 12.1. "native" is the client-filled container those
+-- frames draw from instead. A healer's HoTs counted under native while api reads 0 is
+-- the combat fix doing its job.
+local function DumpGroupFrameAuraSnapshot(styleSuffix, label)
+	SafePrint("|cff33ff99", "AzeriteUI aura snapshot:", label, "combat", InCombatLockdown and InCombatLockdown())
+
+	local groupKeys = ns.PlayerAuraContainers and ns.PlayerAuraContainers.GroupFrameKeys or {}
+	local styleName = ns.Prefix .. styleSuffix
+	local dumped = 0
+	for frame in next, ns.UnitFrames or {} do
+		if (dumped < 5 and frame.style == styleName and ProbeMethod(frame, "IsVisible")) then
+			dumped = dumped + 1
+			local unit = frame.unit
+			local helpful = unit and CountRawUnitAuras(unit, "HELPFUL") or -1
+			local harmful = unit and CountRawUnitAuras(unit, "HARMFUL") or -1
+			SafePrint("|cfff0f0f0", " frame", ProbeMethod(frame, "GetName"), "unit", unit,
+				"scanElement", frame.IsElementEnabled and frame:IsElementEnabled("Auras"),
+				"api HELPFUL", helpful, "api HARMFUL", harmful)
+
+			local native = frame.NativeAuras
+			local container = native and native.container
+			if (not container) then
+				SafePrint("|cfff0f0f0", "  native: none, the scanning element draws this frame")
+			else
+				SafePrint("|cfff0f0f0", "  native:", "unit", native.unit, "enabled", native.displayEnabled,
+					"shown", ProbeMethod(native, "IsShown"), "alpha", ProbeMethod(native, "GetAlpha"))
+				for _, groupKey in ipairs(groupKeys) do
+					local pool = ProbeMethod(container, "GetAuraGroupFrameCount", groupKey)
+					if (not IsSecretValue(pool) and type(pool) == "number" and pool > 0) then
+						local shown, secret, unreadable = 0, 0, 0
+						for index = 1, pool do
+							local button = ProbeMethod(container, "GetAuraGroupFrame", groupKey, index)
+							local isShown = ProbeIf(button, "IsShown")
+							-- Comparing a secret raises just like testing one, so it is sorted out first.
+							if (IsSecretValue(isShown)) then
+								secret = secret + 1
+							elseif (isShown == true) then
+								shown = shown + 1
+							elseif (isShown == nil) then
+								-- Aura buttons refuse addon calls once aura data is secret.
+								unreadable = unreadable + 1
+							end
+						end
+						SafePrint("|cfff0f0f0", "   ", groupKey, "shown", shown, "secret", secret, "unreadable", unreadable, "pool", pool)
+					end
+				end
+			end
+		end
+	end
+	if (dumped == 0) then
+		SafePrint("|cfff0f0f0", " no visible", label, "frames")
+	end
+end
+
+-- Right-click menu probe. It answers the two questions that separate the causes of a
+-- unit menu missing Blizzard entries: which Blizzard menu the right click resolves to,
+-- and whether any addon has replaced part of Blizzard's menu code, which
+-- issecurevariable names the addon for. Nothing here opens a menu or calls a
+-- protected function; the trace is a secure post-hook.
+local UnitMenuTraceEnabled = false
+local UnitMenuTraceHooked = false
+
+local function ReadUnitFlag(func, ...)
+	if (type(func) ~= "function") then
+		return nil
+	end
+	local ok, value = API.TryCall(func, ...)
+	if (not ok or IsSecretValue(value)) then
+		return nil
+	end
+	return value and true or false
+end
+
+local function FindUnitButtonUnderMouse()
+	local foci = GetMouseFoci and GetMouseFoci()
+	local frame = (type(foci) == "table" and foci[1]) or (GetMouseFocus and GetMouseFocus()) or nil
+	for _ = 1, 12 do
+		if (type(frame) ~= "table") then
+			return nil
+		end
+		local unit = ProbeMethod(frame, "GetAttribute", "unit")
+		if (type(unit) == "string" and not IsSecretValue(unit)) then
+			return frame, unit
+		end
+		frame = ProbeMethod(frame, "GetParent")
+	end
+	return nil
+end
+
+-- Read-only copies of the unit classification in SECURE_ACTIONS.togglemenu, the right
+-- click action oUF gives AzeriteUI unit frames, and in CompactUnitFrame_OpenMenu, the
+-- function behind Blizzard's raid frames. A flag the client hides reads as false.
+local function PredictUnitMenus(unit)
+	unit = unit:lower()
+	local unitType = unit:match("^([a-z]+)%d+$") or unit
+	local isSelf = ReadUnitFlag(UnitIsUnit, unit, "player")
+	local isVehicle = ReadUnitFlag(UnitIsUnit, unit, "vehicle")
+	local isPet = ReadUnitFlag(UnitIsUnit, unit, "pet")
+	local groupMenu = ReadUnitFlag(UnitInRaid, unit) and "RAID_PLAYER" or (ReadUnitFlag(UnitInParty, unit) and "PARTY" or "PLAYER")
+
+	local toggle
+	if (unitType == "party") then
+		toggle = "PARTY"
+	elseif (unitType == "boss") then
+		toggle = "BOSS"
+	elseif (unitType == "focus") then
+		toggle = "FOCUS"
+	elseif (unitType == "arena" or unitType == "arenapet") then
+		toggle = "ARENAENEMY"
+	elseif (isSelf) then
+		toggle = "SELF"
+	elseif (isVehicle) then
+		toggle = "VEHICLE"
+	elseif (isPet) then
+		toggle = "PET"
+	elseif (ReadUnitFlag(UnitIsOtherPlayersBattlePet, unit)) then
+		toggle = "OTHERBATTLEPET"
+	elseif (ReadUnitFlag(UnitIsOtherPlayersPet, unit)) then
+		toggle = "OTHERPET"
+	elseif (ReadUnitFlag(UnitIsPlayer, unit)) then
+		toggle = groupMenu
+	elseif (ReadUnitFlag(UnitIsUnit, unit, "target")) then
+		toggle = "TARGET"
+	end
+
+	local compact
+	if (isSelf) then
+		compact = "SELF"
+	elseif (isVehicle) then
+		compact = "VEHICLE"
+	elseif (isPet) then
+		compact = "PET"
+	elseif (ReadUnitFlag(UnitIsHumanPlayer, unit)) then
+		compact = groupMenu
+	else
+		compact = "TARGET"
+	end
+
+	return toggle or "none (no menu opens)", compact
+end
+
+local function CollectReplacedFunctions(results, label, tbl, seen)
+	if (type(tbl) ~= "table" or seen[tbl]) then
+		return
+	end
+	seen[tbl] = true
+	local ok = API.TryCall(function()
+		for key, value in pairs(tbl) do
+			if (type(key) == "string" and type(value) == "function") then
+				local isSecure, taintedBy = issecurevariable(tbl, key)
+				if (not isSecure) then
+					results[#results + 1] = label .. "." .. key .. " <- " .. tostring(taintedBy)
+				end
+			end
+		end
+	end)
+	if (not ok) then
+		results[#results + 1] = label .. " <unreadable>"
+	end
+end
+
+-- Walks a menu the way UnitPopupManager assembles it, inline submenus included.
+local function CollectMenuEntryTaint(results, label, menu, seen, depth)
+	if (type(menu) ~= "table" or depth > 3) then
+		return
+	end
+	CollectReplacedFunctions(results, label, menu, seen)
+	if (type(menu.GetEntries) ~= "function") then
+		return
+	end
+	local ok, entries = API.TryCall(menu.GetEntries, menu)
+	if (ok and type(entries) == "table") then
+		for index, entry in ipairs(entries) do
+			CollectMenuEntryTaint(results, label .. "[" .. index .. "]", entry, seen, depth + 1)
+		end
+	end
+end
+
+local function DumpUnitMenuDiagnostics()
+	SafePrint("|cff33ff99", "AzeriteUI unit menu probe")
+
+	-- The mouse can rest on a forbidden Blizzard frame, which raises on any lookup.
+	local okFind, frame, unit = API.TryCall(FindUnitButtonUnderMouse)
+	if (not okFind or not frame) then
+		SafePrint("|cfff0f0f0", " no unit frame under the mouse: hover the raid or party frame, then run it from a keybind or macro")
+	else
+		local okResolve, resolved = API.TryCall(SecureButton_GetModifiedUnit, frame, "RightButton")
+		local checkUnit = (okResolve and type(resolved) == "string" and not IsSecretValue(resolved)) and resolved or unit
+		local toggle, compact = PredictUnitMenus(checkUnit)
+		SafePrint("|cfff0f0f0", " frame", ProbeMethod(frame, "GetName"), "unit", unit, "right click unit", checkUnit,
+			"*type2", ProbeMethod(frame, "GetAttribute", "*type2"),
+			"type2", ProbeMethod(frame, "GetAttribute", "type2"),
+			"menu-function", type(ProbeMethod(frame, "GetAttribute", "menu-function")))
+		SafePrint("|cfff0f0f0", " flags:", "UnitIsPlayer", ReadUnitFlag(UnitIsPlayer, checkUnit),
+			"UnitIsHumanPlayer", ReadUnitFlag(UnitIsHumanPlayer, checkUnit),
+			"UnitInRaid", ReadUnitFlag(UnitInRaid, checkUnit), "UnitInParty", ReadUnitFlag(UnitInParty, checkUnit))
+		SafePrint("|cfff0f0f0", " menu:", "togglemenu opens", toggle, "Blizzard raid frames open", compact)
+	end
+
+	local results, seen = {}, {}
+	for _, name in ipairs({ "UnitPopup_OpenMenu", "UnitPopupManager", "UnitPopupMenus", "UnitPopupSharedUtil", "MenuUtil", "SecureUnitButton_OnClick", "CompactUnitFrame_OpenMenu" }) do
+		local isSecure, taintedBy = issecurevariable(name)
+		if (not isSecure) then
+			results[#results + 1] = name .. " <- " .. tostring(taintedBy)
+		end
+	end
+	CollectReplacedFunctions(results, "UnitPopupManager", UnitPopupManager, seen)
+	CollectReplacedFunctions(results, "UnitPopupSharedUtil", UnitPopupSharedUtil, seen)
+	CollectReplacedFunctions(results, "MenuUtil", MenuUtil, seen)
+	for _, which in ipairs({ "RAID_PLAYER", "PARTY", "PLAYER", "TARGET" }) do
+		local menu = type(UnitPopupMenus) == "table" and UnitPopupMenus[which]
+		if (menu) then
+			local isSecure, taintedBy = issecurevariable(UnitPopupMenus, which)
+			if (not isSecure) then
+				results[#results + 1] = "UnitPopupMenus." .. which .. " <- " .. tostring(taintedBy)
+			end
+			CollectMenuEntryTaint(results, which, menu, seen, 1)
+		end
+	end
+
+	if (#results == 0) then
+		SafePrint("|cfff0f0f0", " menu code: no replaced Blizzard menu functions found")
+	else
+		SafePrint("|cfff0f0f0", " menu code: replaced functions (name <- addon):", #results)
+		for index = 1, math.min(#results, 25) do
+			SafePrint("|cfff0f0f0", "  ", results[index])
+		end
+	end
+	SafePrint("|cfff0f0f0", " trace:", UnitMenuTraceEnabled and "ON" or "OFF", "(/azdebug unitmenu trace on)")
+end
+
+local function SetUnitMenuTrace(enabled)
+	UnitMenuTraceEnabled = enabled and true or false
+	if (UnitMenuTraceEnabled and not UnitMenuTraceHooked and type(UnitPopup_OpenMenu) == "function") then
+		UnitMenuTraceHooked = true
+		-- Runs after Blizzard's call has finished, and leaves that call untouched.
+		hooksecurefunc("UnitPopup_OpenMenu", function(which, contextData)
+			if (not UnitMenuTraceEnabled) then
+				return
+			end
+			local okFind, frame = API.TryCall(FindUnitButtonUnderMouse)
+			frame = okFind and frame or nil
+			SafePrint("|cff33ff99", "AzeriteUI unit menu opened:", "menu", which,
+				"unit", type(contextData) == "table" and contextData.unit or nil,
+				"frame", frame and ProbeMethod(frame, "GetName") or nil)
+		end)
+	end
+	print("|cff33ff99", "AzeriteUI unit menu trace:", UnitMenuTraceEnabled and "ON" or "OFF")
+end
+
+local function DumpAuraSnapshot(scope)
+	scope = (type(scope) == "string" and scope:lower()) or "both"
+	local previousTarget = SafePrintTarget
+	SafePrintTarget = "debuglog"
+
+	local handled = true
+	if (scope == "player" or scope == "playerframe") then
+		DumpPlayerAuraSnapshot()
+	elseif (scope == "topright" or scope == "header" or scope == "buffheader") then
+		DumpTopRightAuraSnapshot()
+	elseif (scope == "target" or scope == "targetframe") then
+		DumpTargetAuraSnapshot()
+	elseif (scope == "party") then
+		DumpGroupFrameAuraSnapshot("Party", "party")
+	elseif (scope == "raid5") then
+		DumpGroupFrameAuraSnapshot("Raid5", "raid5")
+	elseif (scope == "both" or scope == "all" or scope == "") then
+		DumpPlayerAuraSnapshot()
+		DumpTopRightAuraSnapshot()
+		DumpTargetAuraSnapshot()
+	else
+		handled = false
+		SafePrint("|cff33ff99", "AzeriteUI aura snapshot:", "unknown scope", tostring(scope), "(use player|topright|target|party|raid5|both)")
+	end
+
+	SafePrintTarget = previousTarget
+
+	if (handled) then
+		if (DLAPI and DLAPI.DebugLog) then
+			print("|cff33ff99", "AzeriteUI aura snapshot:", "written to _debuglog", "scope", scope)
+		else
+			print("|cff33ff99", "AzeriteUI aura snapshot:", "DLAPI unavailable, printed to chat instead")
+		end
+	end
+end
+
+local function GetUnitFrameModules()
+	local mods = {}
+	mods[#mods + 1] = ns:GetModule("PlayerFrame", true)
+	mods[#mods + 1] = ns:GetModule("TargetFrame", true)
+	mods[#mods + 1] = ns:GetModule("ToTFrame", true)
+	mods[#mods + 1] = ns:GetModule("PlayerFrameAlternate", true)
+	return mods
+end
+
+local function PrintScaleStatus()
+	local uiScale = ProbeMethod(UIParent, "GetScale")
+	local desired = ns.API.GetEffectiveScale()
+	print("|cff33ff99", "AzeriteUI scale status:")
+	print("|cfff0f0f0  UIParent scale:", tostring(uiScale), "desired frame scale:", tostring(desired))
+	for _, mod in next, GetUnitFrameModules() do
+		if (mod and mod.frame) then
+			local name = mod.GetName and mod:GetName() or "Unknown"
+			local frameScale = ProbeMethod(mod.frame, "GetScale")
+			local eff = ProbeMethod(mod.frame, "GetEffectiveScale")
+			local saved = mod.db and mod.db.profile and mod.db.profile.savedPosition and mod.db.profile.savedPosition.scale or nil
+			local anchor = mod.anchor
+			local anchorDefault = anchor and anchor.GetDefaultScale and anchor:GetDefaultScale() or nil
+			print("|cfff0f0f0  ", name .. ":", "frame", tostring(frameScale), "effective", tostring(eff), "saved", tostring(saved), "anchorDefault", tostring(anchorDefault))
+		end
+	end
+end
+
+local function GetDebugNamePlateFrame(token)
+	local unit = type(token) == "string" and token:lower() or ""
+	if (unit == "" or unit == "auto") then
+		if (UnitExists("target")) then
+			unit = "target"
+		elseif (UnitExists("softenemy")) then
+			unit = "softenemy"
+		elseif (UnitExists("softinteract")) then
+			unit = "softinteract"
+		elseif (UnitExists("mouseover")) then
+			unit = "mouseover"
+		else
+			unit = "nameplate1"
+		end
+	end
+
+	local frame = nil
+	local resolvedUnit = unit
+	if (C_NamePlate and C_NamePlate.GetNamePlateForUnit) then
+		local plate = C_NamePlate.GetNamePlateForUnit(unit)
+		frame = plate and (plate.unitFrame or plate.UnitFrame)
+	end
+
+	if (not frame and ns.ActiveNamePlates) then
+		for plate in next, ns.ActiveNamePlates do
+			if (plate and plate.unit and ProbeMethod(UnitIsUnit, plate.unit, unit)) then
+				frame = plate
+				resolvedUnit = plate.unit
+				break
+			end
+		end
+	end
+
+	return frame, resolvedUnit
+end
+
+local function PrintNamePlateScaleStatus(token)
+	local mod = ns:GetModule("NamePlates", true)
+	if (not mod or not mod.GetDebugPlateScaleBreakdown) then
+		print("|cff33ff99", "AzeriteUI nameplate scale:", "NamePlates module unavailable")
+		return
+	end
+
+	local frame, resolvedUnit = GetDebugNamePlateFrame(token)
+	if (not frame) then
+		print("|cff33ff99", "AzeriteUI nameplate scale:", "no matching active plate found for", tostring(token or "auto"))
+		return
+	end
+
+	local info = mod:GetDebugPlateScaleBreakdown(frame)
+	if (not info) then
+		print("|cff33ff99", "AzeriteUI nameplate scale:", "unable to inspect plate")
+		return
+	end
+
+	print("|cff33ff99", "AzeriteUI nameplate scale:")
+	SafePrint("|cfff0f0f0  unit:", tostring(resolvedUnit), "frameUnit:", tostring(info.unit))
+	SafePrint("|cfff0f0f0  flags:",
+		"target", tostring(info.target),
+		"softTarget", tostring(info.softTarget),
+		"softEnemy", tostring(info.softEnemy),
+		"softInteract", tostring(info.softInteract),
+		"hostile", tostring(info.hostile),
+		"friendlyNPC", tostring(info.friendlyNPC),
+		"nameOnly", tostring(info.friendlyNameOnly))
+	SafePrint("|cfff0f0f0  scale inputs:",
+		"base", tostring(info.baseScale),
+		"overall", tostring(info.overallScale),
+		"relation", tostring(info.relationScale),
+		"targetDelta", tostring(info.targetScale),
+		"blizzardMode", tostring(info.usingBlizzardGlobalScale))
+	SafePrint("|cfff0f0f0  frame:",
+		"computed", tostring(info.computedScale),
+		"scale", tostring(info.frameScale),
+		"effective", tostring(info.frameEffectiveScale))
+	SafePrint("|cfff0f0f0  parent:",
+		"name", tostring(info.parentName),
+		"scale", tostring(info.parentScale),
+		"effective", tostring(info.parentEffectiveScale),
+		"blizzScale", tostring(info.blizzPlateScale),
+		"blizzEffective", tostring(info.blizzPlateEffectiveScale))
+	SafePrint("|cfff0f0f0  softFrame:",
+		"shown", tostring(info.softTargetFrameShown),
+		"scale", tostring(info.softTargetFrameScale),
+		"effective", tostring(info.softTargetFrameEffectiveScale),
+		"width", tostring(info.softTargetFrameWidth),
+		"height", tostring(info.softTargetFrameHeight))
+end
+
+local function ResetUnitFrameScales()
+	local desired = ns.API.GetEffectiveScale()
+	for _, mod in next, GetUnitFrameModules() do
+		if (mod and mod.db and mod.db.profile and mod.db.profile.savedPosition) then
+			mod.db.profile.savedPosition.scale = desired
+			if (mod.UpdatePositionAndScale) then
+				mod:UpdatePositionAndScale()
+			end
+			if (mod.UpdateAnchor) then
+				mod:UpdateAnchor()
+			end
+		end
+	end
+	print("|cff33ff99", "AzeriteUI unitframe scales reset to:", tostring(desired))
+end
+
+local function GetPlayerPowerOffsetProfile()
+	local mod = ns:GetModule("PlayerFrame", true)
+	local profile = mod and mod.db and mod.db.profile
+	if (not profile) then
+		return nil, nil
+	end
+	profile.powerBarOffsetX = tonumber(profile.powerBarOffsetX) or 0
+	profile.powerBarOffsetY = tonumber(profile.powerBarOffsetY) or 0
+	profile.powerCaseOffsetX = tonumber(profile.powerCaseOffsetX) or 0
+	profile.powerCaseOffsetY = tonumber(profile.powerCaseOffsetY) or 0
+	return mod, profile
+end
+
+local function ApplyPlayerPowerOffsets()
+	local mod = ns:GetModule("PlayerFrame", true)
+	if (mod and mod.Update) then
+		mod:Update()
+		return true
+	end
+	return false
+end
+
+local function PrintPlayerPowerOffsets()
+	local _, profile = GetPlayerPowerOffsetProfile()
+	if (not profile) then
+		print("|cff33ff99", "AzeriteUI power offsets:", "PlayerFrame module not available")
+		return
+	end
+	print("|cff33ff99", "AzeriteUI player power offsets:")
+	print("|cfff0f0f0  bar:", "x", tostring(profile.powerBarOffsetX), "y", tostring(profile.powerBarOffsetY))
+	print("|cfff0f0f0  case:", "x", tostring(profile.powerCaseOffsetX), "y", tostring(profile.powerCaseOffsetY))
+end
+
+PrintPlayerOrbDebug = function()
+	local mod = ns:GetModule("PlayerFrame", true)
+	local frame = mod and mod.frame
+	local orb = frame and frame.ManaOrb
+	local crystal = frame and frame.Power
+	if (not orb) then
+		print("|cff33ff99", "AzeriteUI orb debug:", "Player ManaOrb unavailable")
+		return
+	end
+
+	local tex1, tex2, tex3, tex4 = orb:GetStatusBarTexture()
+	local lib = LibStub and LibStub("LibOrb-1.0", true)
+	local data = lib and lib.orbs and lib.orbs[orb]
+	local native = data and data.nativeStatusBar
+	local nativeMin, nativeMax = nil, nil
+	local orbText = nil
+	if (native and native.GetMinMaxValues) then
+		nativeMin, nativeMax = ProbeMethod(native, "GetMinMaxValues")
+	end
+	if (orb.Value and orb.Value.GetText) then
+		orbText = ProbeMethod(orb.Value, "GetText")
+	end
+
+	print("|cff33ff99", "AzeriteUI player orb debug:")
+	SafePrint("|cfff0f0f0  orb:", "shown", ProbeMethod(orb, "IsShown"), "width", ProbeMethod(orb, "GetWidth"), "height", ProbeMethod(orb, "GetHeight"), "alpha", ProbeMethod(orb, "GetAlpha"))
+	SafePrint("|cfff0f0f0  text:", orbText)
+	SafePrint("|cfff0f0f0  textures:",
+		"t1", tex1 and ProbeMethod(tex1, "GetTexture"), tex1 and ProbeMethod(tex1, "IsShown"), tex1 and ProbeMethod(tex1, "GetAlpha"),
+		"t2", tex2 and ProbeMethod(tex2, "GetTexture"), tex2 and ProbeMethod(tex2, "IsShown"), tex2 and ProbeMethod(tex2, "GetAlpha"),
+		"t3", tex3 and ProbeMethod(tex3, "IsShown"), tex3 and ProbeMethod(tex3, "GetAlpha"),
+		"t4", tex4 and ProbeMethod(tex4, "IsShown"), tex4 and ProbeMethod(tex4, "GetAlpha"))
+	SafePrint("|cfff0f0f0  element:",
+		"cur", orb.cur,
+		"min", orb.min,
+		"max", orb.max,
+		"safeCur", orb.safeCur,
+		"safeMin", orb.safeMin,
+		"safeMax", orb.safeMax,
+		"safePct", orb.safePercent)
+	SafePrint("|cfff0f0f0  liborb:",
+		"barValue", data and data.barValue,
+		"barMin", data and data.barMin,
+		"barMax", data and data.barMax,
+		"barDisplayValue", data and data.barDisplayValue,
+		"scrollShown", data and data.scrollframe and ProbeMethod(data.scrollframe, "IsShown"))
+	SafePrint("|cfff0f0f0  native:",
+		"value", native and ProbeMethod(native, "GetValue"),
+		"min", nativeMin,
+		"max", nativeMax)
+	SafePrint("|cfff0f0f0  crystal:",
+		"shown", crystal and ProbeMethod(crystal, "IsShown"),
+		"cur", crystal and crystal.cur,
+		"safeCur", crystal and crystal.safeCur,
+		"safePct", crystal and crystal.safePercent,
+		"mirrorPct", crystal and crystal.__AzeriteUI_MirrorPercent,
+		"texturePct", crystal and crystal.__AzeriteUI_TexturePercent)
+end
+
+
+local function PrintDebugHelp()
+	print("|cff33ff99", "AzeriteUI /azdebug commands:")
+	print("|cfff0f0f0  /azdebug cdready <spellID>|status|preview|inspect|off|r  (Development Mode: cooldown readiness probe)")
+	print("|cfff0f0f0  /azdebug|r  (toggle menu)")
+	print("|cfff0f0f0  /azdebug status|r")
+	print("|cfff0f0f0  /azdebug group|r  (party/raid header report)")
+	print("|cfff0f0f0  /azdebug secure|r  (secure snippet support and what it costs)")
+	print("|cfff0f0f0  /azdebug secure reset|r  (forget the cached answer and re-probe)")
+	print("|cfff0f0f0  /azdebug micromenu|r  (why a cog-wheel entry does nothing)")
+	print("|cfff0f0f0  /azdebug taint|r  (who tainted Blizzard's action buttons)")
+	print("|cfff0f0f0  /azdebug health [on|off|toggle]|r")
+	print("|cfff0f0f0  /azdebug health filter <text>|r  (example: Target.)")
+	print("|cfff0f0f0  /azdebug healthchat [on|off|toggle]|r")
+	print("|cfff0f0f0  /azdebug bars [on|off|toggle]|r")
+	print("|cfff0f0f0  /azdebug fixes [on|off|toggle]|r")
+	print("|cfff0f0f0  /azdebug dump target|r")
+	print("|cfff0f0f0  /azdebug dump player|r")
+	print("|cfff0f0f0  /azdebug dump tot|r")
+	print("|cfff0f0f0  /azdebug dump all|r")
+	print("|cfff0f0f0  /azdebug aurasnapshot [player|topright|target|party|raid5|both]|r")
+	print("|cfff0f0f0  /azdebug auracost [perUnit]|status|stop|r  (what corner aura dots would cost; 32 in a party measures 160; /reload after)")
+	print("|cfff0f0f0  /azdebug sated|r  (who in the group has Sated/Exhaustion, read directly; run in and out of combat after a lust)")
+	print("|cfff0f0f0  /azdebug execute|r  (the execute marker on the target frame and the target's nameplate: size, crop, alpha)")
+	print("|cfff0f0f0  /azdebug radial [off]|r  (native radial fills: a timed ring and one fed your health, secret or not)")
+	print("|cfff0f0f0  /azdebug svg [off]|r  (does an addon's own .svg file load: vector graphics and a texture)")
+	print("|cfff0f0f0  /azdebug onupdatemode|r  (a new frame's OnUpdate mode)")
+	print("|cfff0f0f0  /azdebug editmode|r  (what Edit Mode is showing: previews, overlays, checkboxes)")
+	print("|cfff0f0f0  /azdebug tooltips|r  (what the compare tooltip joins and the aura tooltip style last did)")
+	print("|cfff0f0f0  /azdebug unitmenu|r  (hover a unit frame; which menu it opens, replaced menu code)")
+	print("|cfff0f0f0  /azdebug unitmenu trace [on|off|toggle]|r")
+	print("|cfff0f0f0  /azdebug nameplates [unit]|r")
+	print("|cfff0f0f0  /azdebug snapshot [unit]|r")
+	print("|cfff0f0f0  /azdebug playerframe|r  (is the player frame shown, faded, off screen, art gone)")
+	print("|cfff0f0f0  /azdebug blizzard enable|r")
+	print("|cfff0f0f0  /azdebug scale|r  (print scale status)")
+	print("|cfff0f0f0  /azdebug scale nameplates [unit]|r")
+	print("|cfff0f0f0  /azdebug scale reset|r")
+	print("|cfff0f0f0  /azdebug keys <subcommand>|r")
+	print("|cfff0f0f0  /azdebug raidbar status|r")
+	print("|cfff0f0f0  /azdebug raidbar [on|off|toggle]|r")
+	print("|cfff0f0f0  /azdebug scripterrors|r")
+	print("|cfff0f0f0  /azdebug secrettest [unit]|r")
+	print("|cfff0f0f0  /aztest|r  (toggle unit test menu, Junnez only)")
+	print("|cfff0f0f0  /aztest status|r")
+	print("|cfff0f0f0  /aztest on|off|toggle|r")
+	print("|cfff0f0f0  /aztest <set> on|off|toggle|r")
+	print("|cfff0f0f0  /aztest list|r")
+end
+
+-- Where the player frame is and why it might not be seen: hidden, faded, off screen, on the wrong
+-- unit, a hidden parent, or its art gone (Luciful, gone after a release, FixLog 2026-10-23).
+local function DumpPlayerFrameState()
+	local function S(value) return SecretSafeText(value) end
+	local function Region(label, region)
+		if (not region) then
+			print("|cfff0f0f0", "  " .. label .. ": none")
+			return
+		end
+		local texture = region.GetTexture and region:GetTexture()
+		print("|cfff0f0f0", string_format("  %s: shown=%s visible=%s alpha=%s texture=%s", label,
+			S(region:IsShown()), S(region.IsVisible and region:IsVisible()), S(region:GetAlpha()), S(texture)))
+	end
+
+	print("|cff33ff99", "AzeriteUI player frame:")
+	print("|cfff0f0f0", string_format("  dead=%s ghost=%s combat=%s", S(UnitIsDead("player")),
+		S(UnitIsGhost("player")), S(InCombatLockdown())))
+	for _, name in ipairs({ "PlayerFrame", "PlayerFrameAlternate", "PlayerFrameParty" }) do
+		local mod = ns:GetModule(name, true)
+		local frame = mod and mod.GetFrame and mod:GetFrame()
+		local profile = mod and mod.db and mod.db.profile
+		print("|cfff0f0f0", string_format("  %s: module=%s enabled=%s frame=%s", name,
+			S(mod and mod:IsEnabled()), S(profile and profile.enabled), frame and (frame:GetName() or "unnamed") or "none"))
+		if (frame and profile and profile.enabled) then
+			local x, y = frame:GetCenter()
+			print("|cfff0f0f0", string_format("  frame: shown=%s visible=%s alpha=%s effectiveAlpha=%s scale=%s center=%s,%s screen=%s,%s",
+				S(frame:IsShown()), S(frame:IsVisible()), S(frame:GetAlpha()),
+				S(frame.GetEffectiveAlpha and frame:GetEffectiveAlpha()), S(frame:GetScale()), S(x), S(y),
+				S(UIParent:GetWidth()), S(UIParent:GetHeight())))
+			print("|cfff0f0f0", string_format("  unit: attribute=%s frame=%s points=%s enabledFlag=%s",
+				S(frame:GetAttribute("unit")), S(frame.unit), S(frame:GetNumPoints()),
+				S(frame.IsEnabled and frame:IsEnabled())))
+			local parent, depth = frame:GetParent(), 0
+			while (parent and depth < 4) do
+				print("|cfff0f0f0", string_format("  parent%d: %s shown=%s alpha=%s", depth + 1,
+					S(parent.GetName and parent:GetName() or "unnamed"), S(parent:IsShown()), S(parent:GetAlpha())))
+				parent, depth = parent:GetParent(), depth + 1
+			end
+			Region("health", frame.Health)
+			Region("health casing", frame.Health and frame.Health.Backdrop)
+			Region("power", frame.Power)
+			Region("mana orb", frame.ManaOrb)
+		end
+	end
+end
+
+local NamePlateScriptTrace
+
+local function PrintNamePlateCastDebug(token)
+	token = type(token) == "string" and token:lower() or nil
+	if (token == "" or token == "all") then
+		token = nil
+	end
+
+	local function IsSecretDebugValue(value)
+		return (type(issecretvalue) == "function" and issecretvalue(value)) and true or false
+	end
+
+	local function SafeDebugString(value)
+		if (IsSecretDebugValue(value)) then
+			return "<secret>"
+		end
+		return tostring(value)
+	end
+
+	-- Counts each plate's OnHide/OnShow from the first run on, to see whether a plate that keeps its
+	-- unit is shown again through OnShow (FixLog 2026-10-23).
+	NamePlateScriptTrace = NamePlateScriptTrace or {}
+	for frame in next, ns.NamePlates or {} do
+		if (not NamePlateScriptTrace[frame] and frame.HookScript) then
+			local trace = { hides = 0, shows = 0 }
+			NamePlateScriptTrace[frame] = trace
+			frame:HookScript("OnHide", function() trace.hides = trace.hides + 1 end)
+			frame:HookScript("OnShow", function(f)
+				trace.shows = trace.shows + 1
+				trace.lastShowActive = ns.ActiveNamePlates[f] and true or false
+			end)
+		end
+	end
+
+	print("|cff33ff99", "AzeriteUI nameplate cast debug:")
+	local found = false
+	for frame in next, ns.ActiveNamePlates do
+		local unit = frame and frame.unit
+		-- A token such as softinteract, target or mouseover matches the plate showing that unit.
+		-- Not gated on UnitExists, which Forever answers false for a game object.
+		local matches = type(unit) == "string" and ((not token) or unit:lower() == token)
+		if (not matches and type(unit) == "string" and token) then
+			local okSame, same = API.TryCall(UnitIsUnit, unit, token)
+			matches = okSame and same == true and not IsSecretDebugValue(same)
+		end
+		if (matches) then
+			found = true
+			local castbar = frame.Castbar
+			local castName, _, _, _, _, _, castID, castNotInterruptible, castSpellID = UnitCastingInfo(unit)
+			local channelName, _, _, _, _, _, channelNotInterruptible, channelSpellID = UnitChannelInfo(unit)
+			local rawSource = "none"
+			local rawName = nil
+			local rawSpellID = nil
+			local rawNotInterruptible = nil
+			local eventNotInterruptible = castbar and castbar.__AzeriteUI_EventNotInterruptible
+			local blizzProtected = nil
+			if (type(castName) == "string" and (not IsSecretDebugValue(castName)) and castName ~= "") then
+				rawSource = "cast"
+				rawName = castName
+				rawSpellID = castSpellID
+				rawNotInterruptible = castNotInterruptible
+			elseif (type(channelName) == "string" and (not IsSecretDebugValue(channelName)) and channelName ~= "") then
+				rawSource = "channel"
+				rawName = channelName
+				rawSpellID = channelSpellID
+				rawNotInterruptible = channelNotInterruptible
+			elseif (type(castName) == "string" and IsSecretDebugValue(castName)) then
+				rawSource = "cast"
+				rawName = castName
+				rawSpellID = castSpellID
+				rawNotInterruptible = castNotInterruptible
+			elseif (type(channelName) == "string" and IsSecretDebugValue(channelName)) then
+				rawSource = "channel"
+				rawName = channelName
+				rawSpellID = channelSpellID
+				rawNotInterruptible = channelNotInterruptible
+			end
+
+			if (ns and ns.ActiveNamePlates and frame and frame.unit and C_NamePlate and C_NamePlate.GetNamePlateForUnit) then
+				local okPlate, plate = API.TryCall(C_NamePlate.GetNamePlateForUnit, frame.unit, issecurefunc and issecurefunc())
+				local unitFrame = okPlate and plate and (plate.UnitFrame or plate.unitFrame)
+				local blizzardCastbar = unitFrame and (unitFrame.castBar or unitFrame.CastBar or unitFrame.castbar or unitFrame.Castbar or unitFrame.CastingBarFrame)
+				local blizzardActive = blizzardCastbar and (blizzardCastbar.casting or blizzardCastbar.channeling or blizzardCastbar.empowering)
+				local blizzardLocked = blizzardCastbar and blizzardCastbar.notInterruptible
+				if (blizzardActive and type(blizzardLocked) == "boolean" and (not IsSecretDebugValue(blizzardLocked)) and blizzardLocked) then
+					blizzProtected = true
+				else
+					blizzProtected = false
+				end
+			end
+
+			print("|cfff0f0f0", string_format(
+				"%s shown=%s canAttack=%s casting=%s channeling=%s spell=%s castID=%s source=%s rawName=%s rawNotInterruptible=%s castbarFlag=%s eventFlag=%s blizzProtected=%s",
+				unit,
+				SafeDebugString(frame and frame.IsShown and frame:IsShown()),
+				SafeDebugString(frame and frame.canAttack),
+				SafeDebugString(castbar and castbar.casting),
+				SafeDebugString(castbar and castbar.channeling),
+				SafeDebugString(rawSpellID),
+				SafeDebugString(castID),
+				SafeDebugString(rawSource),
+				SafeDebugString(rawName),
+				SafeDebugString(rawNotInterruptible),
+				SafeDebugString(castbar and castbar.notInterruptible),
+				SafeDebugString(eventNotInterruptible),
+				SafeDebugString(blizzProtected)))
+
+			-- What the plate was classified as, and whether its bar is up (Classification.lua).
+			local guid = UnitGUID(unit)
+			local guidType = (type(guid) == "string" and not IsSecretDebugValue(guid)) and guid:match("^([^-]+)-") or guid
+			local health = frame.Health
+			print("|cfff0f0f0", string_format(
+				"  class: key=%s object=%s friendlyNPC=%s widgetsOnly=%s guidType=%s isGameObject=%s healthShown=%s healthAlpha=%s valueShown=%s plateAlpha=%s",
+				SafeDebugString(frame.__AzeriteUI_ClassKey),
+				SafeDebugString(frame.isObjectPlate),
+				SafeDebugString(frame.isFriendlyAssistableNPC),
+				SafeDebugString(frame.nameplateShowsWidgetsOnly),
+				SafeDebugString(guidType),
+				SafeDebugString(UnitIsGameObject and UnitIsGameObject(unit)),
+				SafeDebugString(health and health:IsShown()),
+				SafeDebugString(health and health:GetAlpha()),
+				SafeDebugString(health and health.Value and health.Value:IsShown()),
+				SafeDebugString(frame:GetAlpha())))
+			local trace = NamePlateScriptTrace[frame]
+			if (trace) then
+				print("|cfff0f0f0", string_format("  trace since first run: hides=%d shows=%d lastShowActive=%s target=%s softInteract=%s",
+					trace.hides, trace.shows, SafeDebugString(trace.lastShowActive),
+					SafeDebugString(frame.isTarget), SafeDebugString(frame.isSoftInteract)))
+			end
+		end
+	end
+	if (not found) then
+		print("|cfff0f0f0", token and ("no active nameplate matched " .. token) or "no active nameplates")
+	end
+end
+
+local function ParseOnOffToggle(token)
+	if (not token or token == "") then
+		return "toggle"
+	end
+	token = token:lower()
+	if (token == "on" or token == "off" or token == "toggle") then
+		return token
+	end
+	return nil
+end
+
+local function SetDebugFlag(flag, value)
+	if (value == "toggle") then
+		return not flag
+	end
+	if (value == "on") then
+		return true
+	end
+	if (value == "off") then
+		return false
+	end
+	return flag
+end
+
+Debugging.TestModeCommand = function(self, input)
+	if (not CanUseRuntimeTestMode()) then
+		print("|cff33ff99", "AzeriteUI /aztest:", "restricted to the maintainer character")
+		return
+	end
+
+	if (not input or input == "") then
+		return self:ToggleTestMenu()
+	end
+
+	local cmd, rest = input:match("^(%S+)%s*(.-)$")
+	cmd = cmd and cmd:lower() or "status"
+
+	if (cmd == "menu") then
+		return self:ToggleTestMenu()
+	end
+
+	if (cmd == "status") then
+		print("|cff33ff99", "AzeriteUI unit test mode:", IsRuntimeTestMode() and "ON" or "OFF")
+		print("|cfff0f0f0  preset:", GetRuntimeTestOptionLabel(RUNTIME_TEST_PRESETS, GetRuntimeTestStateValue("runtimeUnitTestPreset")))
+		print("|cfff0f0f0  nameplates:", GetRuntimeTestOptionLabel(RUNTIME_TEST_NAMEPLATE_PACKS, GetRuntimeTestStateValue("runtimeUnitTestNameplatePack")), "/", GetRuntimeTestOptionLabel(RUNTIME_TEST_NAMEPLATE_VARIANTS, GetRuntimeTestStateValue("runtimeUnitTestNameplateVariant")))
+		print("|cfff0f0f0  distribution:", GetRuntimeTestOptionLabel(RUNTIME_TEST_CLASS_DISTRIBUTIONS, GetRuntimeTestStateValue("runtimeUnitTestClassDistribution")))
+		print("|cfff0f0f0  health:", GetRuntimeTestOptionLabel(RUNTIME_TEST_HEALTH_SCENARIOS, GetRuntimeTestStateValue("runtimeUnitTestHealthScenario")))
+		print("|cfff0f0f0  auras:", GetRuntimeTestOptionLabel(RUNTIME_TEST_AURA_SCENARIOS, GetRuntimeTestStateValue("runtimeUnitTestAuraScenario")))
+		print("|cfff0f0f0  cast:", GetRuntimeTestOptionLabel(RUNTIME_TEST_CAST_SCENARIOS, GetRuntimeTestStateValue("runtimeUnitTestCastScenario")))
+		print("|cfff0f0f0  mouseover:", GetRuntimeTestOptionLabel(RUNTIME_TEST_MOUSEOVER_MODES, GetRuntimeTestStateValue("runtimeUnitTestMouseoverMode")))
+		for _, def in ipairs(RUNTIME_TEST_DEFS) do
+			local count = GetRuntimeTestFrameCount(def)
+			print("|cfff0f0f0  ", def.key .. ":", IsRuntimeTestSetEnabled(def.key) and "ON" or "OFF", "count:", count)
+		end
+		return
+	end
+
+	if (cmd == "list") then
+		print("|cff33ff99", "AzeriteUI /aztest sets:")
+		for _, def in ipairs(RUNTIME_TEST_DEFS) do
+			print("|cfff0f0f0  ", def.key, "-", def.label)
+		end
+		return
+	end
+
+	local mode = ParseOnOffToggle(cmd)
+	if (mode) then
+		SetRuntimeTestMode(SetDebugFlag(IsRuntimeTestMode(), mode))
+		print("|cff33ff99", "AzeriteUI unit test mode:", IsRuntimeTestMode() and "ON" or "OFF")
+		self:RefreshRuntimeTestPreviews()
+		return
+	end
+
+	local def = GetRuntimeTestDefinition(cmd)
+	local setMode = ParseOnOffToggle(rest)
+	if (def and setMode) then
+		SetRuntimeTestSetEnabled(def.key, SetDebugFlag(IsRuntimeTestSetEnabled(def.key), setMode))
+		if (not IsRuntimeTestMode()) then
+			SetRuntimeTestMode(true)
+		else
+			self:RefreshRuntimeTestPreviews()
+		end
+		print("|cff33ff99", "AzeriteUI unit test set:", def.label, IsRuntimeTestSetEnabled(def.key) and "ON" or "OFF")
+		return
+	end
+
+	print("|cff33ff99", "AzeriteUI /aztest commands:")
+	print("|cfff0f0f0  /aztest|r")
+	print("|cfff0f0f0  /aztest status|r")
+	print("|cfff0f0f0  /aztest on|off|toggle|r")
+	print("|cfff0f0f0  /aztest <set> on|off|toggle|r")
+	print("|cfff0f0f0  /aztest list|r")
+end
+
+UpdateTestMenu = function(self)
+	local frame = self.TestFrame
+	if (not frame) then
+		return
+	end
+	frame.MasterToggle:SetChecked(IsRuntimeTestMode())
+	for key, button in pairs(frame.SetToggles) do
+		button:SetChecked(IsRuntimeTestSetEnabled(key))
+	end
+	for _, control in ipairs(frame.CycleControls or {}) do
+		control.button:SetText(GetRuntimeTestOptionLabel(control.options, GetRuntimeTestStateValue(control.stateKey)))
+	end
+	for _, control in ipairs(frame.BoolControls or {}) do
+		control.button:SetChecked(GetRuntimeTestStateValue(control.stateKey) and true or false)
+	end
+end
+
+Debugging.ToggleTestMenu = function(self)
+	if (not CanUseRuntimeTestMode()) then
+		print("|cff33ff99", "AzeriteUI /aztest:", "restricted to the maintainer character")
+		return
+	end
+
+	local frame = self.TestFrame
+	local created = false
+	if (not frame) then
+		frame = CreateFrame("Frame", "AzeriteUI_TestMenu", UIParent, "BasicFrameTemplateWithInset")
+		frame:SetSize(660, 760)
+		frame:SetPoint("CENTER", UIParent, "CENTER", 350, 60)
+		frame:SetFrameStrata("DIALOG")
+		frame:SetClampedToScreen(true)
+		frame:SetMovable(true)
+		frame:EnableMouse(true)
+		frame:RegisterForDrag("LeftButton")
+		frame:SetScript("OnDragStart", function(f) f:StartMoving() end)
+		frame:SetScript("OnDragStop", function(f) f:StopMovingOrSizing() end)
+		frame.TitleText:SetText("AzeriteUI Unit Test Lab")
+
+		local subtitle = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+		subtitle:SetPoint("TOPLEFT", 14, -32)
+		subtitle:SetText("Maintainer-only preview lab for Junnez")
+
+		local hint = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+		hint:SetPoint("TOPLEFT", 14, -50)
+		hint:SetText("Left-click cycles forward. Right-click cycles backward.")
+
+		local master = CreateFrame("CheckButton", nil, frame, "UICheckButtonTemplate")
+		master:SetPoint("TOPLEFT", 14, -72)
+		master.Text:SetText("Enable Unit Test Mode")
+		master:SetScript("OnClick", function(btn)
+			SetRuntimeTestMode(btn:GetChecked() and true or false)
+			self:RefreshRuntimeTestPreviews()
+			UpdateTestMenu(self)
+		end)
+		frame.MasterToggle = master
+
+		local scroll = CreateFrame("ScrollFrame", nil, frame, "UIPanelScrollFrameTemplate")
+		scroll:SetPoint("TOPLEFT", 10, -102)
+		scroll:SetPoint("BOTTOMRIGHT", -28, 44)
+
+		local content = CreateFrame("Frame", nil, scroll)
+		content:SetSize(600, 1200)
+		scroll:SetScrollChild(content)
+
+		frame.Scroll = scroll
+		frame.ScrollChild = content
+		frame.CycleControls = {}
+		frame.BoolControls = {}
+		frame.SetToggles = {}
+
+		local y = -8
+		local function AddSectionHeader(text)
+			local band = content:CreateTexture(nil, "BACKGROUND")
+			band:SetPoint("TOPLEFT", 12, y + 6)
+			band:SetSize(564, 18)
+			band:SetColorTexture(.08, .08, .08, .75)
+
+			local line = content:CreateTexture(nil, "ARTWORK")
+			line:SetPoint("TOPLEFT", 12, y - 14)
+			line:SetPoint("TOPRIGHT", -12, y - 14)
+			line:SetHeight(1)
+			line:SetColorTexture(.35, .35, .35, .6)
+
+			local label = content:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+			label:SetPoint("TOPLEFT", 18, y + 2)
+			label:SetTextColor(1, .82, .18)
+			label:SetText(text)
+			y = y - 28
+			return label
+		end
+
+		local function AddDescription(text)
+			local label = content:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+			label:SetPoint("TOPLEFT", 24, y)
+			label:SetWidth(548)
+			label:SetJustifyH("LEFT")
+			label:SetText(text)
+			y = y - 28
+		end
+
+		local function AddCycleRow(labelText, stateKey, options, onChange, description)
+			local label = content:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+			label:SetPoint("TOPLEFT", 20, y - 2)
+			label:SetWidth(214)
+			label:SetJustifyH("LEFT")
+			label:SetText(labelText)
+
+			local button = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
+			button:SetSize(230, 22)
+			button:SetPoint("TOPLEFT", 256, y)
+			button:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+			button:SetScript("OnClick", function(_, mouseButton)
+				local step = mouseButton == "RightButton" and -1 or 1
+				local nextKey = CycleRuntimeTestOption(options, GetRuntimeTestStateValue(stateKey), step)
+				SetRuntimeTestStateValue(stateKey, nextKey)
+				if (onChange) then
+					onChange(nextKey)
+				end
+				self:RefreshRuntimeTestPreviews()
+				UpdateTestMenu(self)
+			end)
+			table_insert(frame.CycleControls, { button = button, stateKey = stateKey, options = options })
+			y = y - 26
+			if (description) then
+				AddDescription(description)
+			end
+		end
+
+		local function AddCheckRow(labelText, stateKey, description, onChange)
+			local button = CreateFrame("CheckButton", nil, content, "UICheckButtonTemplate")
+			button:SetPoint("TOPLEFT", 12, y)
+			button.Text:SetText(labelText)
+			button:SetScript("OnClick", function(btn)
+				SetRuntimeTestStateValue(stateKey, btn:GetChecked() and true or false)
+				if (onChange) then
+					onChange(btn:GetChecked() and true or false)
+				end
+				self:RefreshRuntimeTestPreviews()
+				UpdateTestMenu(self)
+			end)
+			table_insert(frame.BoolControls, { button = button, stateKey = stateKey })
+			y = y - 24
+			if (description) then
+				AddDescription(description)
+			end
+		end
+
+		local function AddActionRow(buttons)
+			local x = 16
+			for _, data in ipairs(buttons) do
+				local button = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
+				button:SetSize(data.width or 110, 22)
+				button:SetPoint("TOPLEFT", x, y)
+				button:SetText(data.label)
+				button:SetScript("OnClick", data.onClick)
+				x = x + (data.width or 110) + 8
+			end
+			y = y - 30
+		end
+
+		AddSectionHeader("Quick Actions")
+		AddDescription("Use presets to populate the most common testing rosters fast, then layer scenarios and stress toggles on top.")
+		AddActionRow({
+			{
+				label = "Enable All",
+				width = 100,
+				onClick = function()
+					SetAllRuntimeTestSets(true)
+					SetRuntimeTestMode(true)
+					self:RefreshRuntimeTestPreviews()
+					UpdateTestMenu(self)
+				end
+			},
+			{
+				label = "Groups Only",
+				width = 110,
+				onClick = function()
+					SetAllRuntimeTestSets(false)
+					for _, key in ipairs({ "boss", "party", "raid5", "raid25", "raid40", "arena", "nameplates" }) do
+						SetRuntimeTestSetEnabled(key, true)
+					end
+					SetRuntimeTestMode(true)
+					self:RefreshRuntimeTestPreviews()
+					UpdateTestMenu(self)
+				end
+			},
+			{
+				label = "Clear All",
+				width = 100,
+				onClick = function()
+					SetAllRuntimeTestSets(false)
+					SetRuntimeTestMode(false)
+					self:RefreshRuntimeTestPreviews()
+					UpdateTestMenu(self)
+				end
+			},
+		})
+		AddActionRow({
+			{
+				label = "Apply Preset",
+				width = 110,
+				onClick = function()
+					ApplyRuntimeTestPreset()
+					SetRuntimeTestMode(true)
+					self:RefreshRuntimeTestPreviews()
+					UpdateTestMenu(self)
+				end
+			},
+			{
+				label = "Reset State",
+				width = 110,
+				onClick = function()
+					local globalDB = EnsureRuntimeTestState()
+					if (globalDB) then
+						globalDB.runtimeUnitTestMenuEnabled = false
+						globalDB.runtimeUnitTestPreset = RUNTIME_TEST_PRESETS[1].key
+						globalDB.runtimeUnitTestClassDistribution = RUNTIME_TEST_CLASS_DISTRIBUTIONS[1].key
+						globalDB.runtimeUnitTestHealthScenario = RUNTIME_TEST_HEALTH_SCENARIOS[2].key
+						globalDB.runtimeUnitTestAuraScenario = RUNTIME_TEST_AURA_SCENARIOS[1].key
+						globalDB.runtimeUnitTestCastScenario = RUNTIME_TEST_CAST_SCENARIOS[1].key
+						globalDB.runtimeUnitTestMouseoverMode = RUNTIME_TEST_MOUSEOVER_MODES[1].key
+						globalDB.runtimeUnitTestNameplatePack = RUNTIME_TEST_NAMEPLATE_PACKS[1].key
+						globalDB.runtimeUnitTestNameplateVariant = RUNTIME_TEST_NAMEPLATE_VARIANTS[1].key
+						globalDB.runtimeUnitTestDebugOverlay = true
+						globalDB.runtimeUnitTestShowOnlyOne = false
+						globalDB.runtimeUnitTestHidePrimary = false
+						globalDB.runtimeUnitTestCompactSpacing = false
+						globalDB.runtimeUnitTestLargeSpacing = false
+						globalDB.runtimeUnitTestMaxVisible = false
+						ApplyRuntimeTestPreset()
+					end
+					self:RefreshRuntimeTestPreviews()
+					UpdateTestMenu(self)
+				end
+			},
+			{
+				label = "Reload Previews",
+				width = 120,
+				onClick = function()
+					self:RefreshRuntimeTestPreviews()
+					UpdateTestMenu(self)
+				end
+			}
+		})
+
+		AddSectionHeader("Roster Presets")
+		AddCycleRow("Roster Preset", "runtimeUnitTestPreset", RUNTIME_TEST_PRESETS, function()
+			ApplyRuntimeTestPreset()
+			SetRuntimeTestMode(true)
+		end, "Party 5, raid 10/20/25/40, arena 3/5, and boss packs. Presets reset the enabled frame groups and their visible counts.")
+		AddCycleRow("Nameplate Pack", "runtimeUnitTestNameplatePack", RUNTIME_TEST_NAMEPLATE_PACKS, function()
+		end, "Controls the number of fake nameplates shown when the nameplate preview is enabled.")
+		AddCycleRow("Nameplate Side", "runtimeUnitTestNameplateVariant", RUNTIME_TEST_NAMEPLATE_VARIANTS, function()
+		end, "Switch the nameplate preview between enemy, friendly, or mixed packs to pressure-test reaction styling.")
+
+		AddSectionHeader("Fake Data")
+		AddCycleRow("Role / Class Distribution", "runtimeUnitTestClassDistribution", RUNTIME_TEST_CLASS_DISTRIBUTIONS, nil, "Mixed, all healers, melee-heavy, or duplicate-class rosters for class-color and sorting checks.")
+		AddCycleRow("Health / State Scenario", "runtimeUnitTestHealthScenario", RUNTIME_TEST_HEALTH_SCENARIOS, nil, "Apply stable health, danger, offline, dead, out-of-range, or aggro states across the visible preview frames.")
+		AddCycleRow("Aura / Debuff Scenario", "runtimeUnitTestAuraScenario", RUNTIME_TEST_AURA_SCENARIOS, nil, "Show dispellables, boss debuffs, mixed harmful effects, or helpful externals in the preview overlay.")
+		AddCycleRow("Cast / Castbar Scenario", "runtimeUnitTestCastScenario", RUNTIME_TEST_CAST_SCENARIOS, nil, "Adds a fake castbar preview under the frame set for enemy casts, channels, locked casts, player casts, or boss abilities.")
+		AddCycleRow("Mouseover Simulation", "runtimeUnitTestMouseoverMode", RUNTIME_TEST_MOUSEOVER_MODES, nil, "Force none, the first frame, or all visible frames into a simulated mouseover state.")
+
+		AddSectionHeader("Layout Stress")
+		AddCheckRow("Show Only One Unit", "runtimeUnitTestShowOnlyOne", "Collapse multi-unit previews down to a single unit so you can inspect edge spacing and header behavior.")
+		AddCheckRow("Hide Primary Slot", "runtimeUnitTestHidePrimary", "Skip the first visible slot in multi-unit previews to mimic hidden player / missing lead slots.")
+		AddCheckRow("Compact Spacing", "runtimeUnitTestCompactSpacing", "Halves the group growth offsets and spacing to pressure-test dense layouts.")
+		AddCheckRow("Large Spacing", "runtimeUnitTestLargeSpacing", "Expands the group growth offsets and spacing to expose anchoring drift and overlap.")
+		AddCheckRow("Max Visible", "runtimeUnitTestMaxVisible", "Forces enabled multi-unit sets to show their maximum supported count instead of the preset count.")
+
+		AddSectionHeader("Frame Sets")
+		AddDescription("Mix and match the exact frame families you want active in the lab. Presets give you a starting point, but these toggles remain fully manual.")
+		local function AddSetGroup(defs)
+			for _, def in ipairs(defs) do
+				local btn = CreateFrame("CheckButton", nil, content, "UICheckButtonTemplate")
+				btn:SetPoint("TOPLEFT", 12, y)
+				btn.Text:SetText(def.label .. " (" .. def.key .. ")")
+				btn:SetScript("OnClick", function(button)
+					SetRuntimeTestSetEnabled(def.key, button:GetChecked() and true or false)
+					if (button:GetChecked() and not IsRuntimeTestMode()) then
+						SetRuntimeTestMode(true)
+					else
+						self:RefreshRuntimeTestPreviews()
+					end
+					UpdateTestMenu(self)
+				end)
+				frame.SetToggles[def.key] = btn
+				y = y - 24
+			end
+			y = y - 8
+		end
+
+		AddSectionHeader("Single Frames")
+		AddSetGroup({
+			GetRuntimeTestDefinition("player"),
+			GetRuntimeTestDefinition("playeralt"),
+			GetRuntimeTestDefinition("castbar"),
+			GetRuntimeTestDefinition("classpower"),
+			GetRuntimeTestDefinition("pet"),
+			GetRuntimeTestDefinition("target"),
+			GetRuntimeTestDefinition("tot"),
+			GetRuntimeTestDefinition("focus")
+		})
+
+		AddSectionHeader("Group Frames")
+		AddSetGroup({
+			GetRuntimeTestDefinition("boss"),
+			GetRuntimeTestDefinition("party"),
+			GetRuntimeTestDefinition("raid5"),
+			GetRuntimeTestDefinition("raid25"),
+			GetRuntimeTestDefinition("raid40"),
+			GetRuntimeTestDefinition("arena")
+		})
+
+		AddSectionHeader("Special")
+		AddSetGroup({
+			GetRuntimeTestDefinition("nameplates")
+		})
+
+		AddSectionHeader("Overlay")
+		AddCheckRow("Show Debug Overlay", "runtimeUnitTestDebugOverlay", "Displays role, class, state, health percentage, fake aura markers, and fake cast labels on the preview frames.")
+
+		local footer = content:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+		footer:SetPoint("TOPLEFT", 16, y)
+		footer:SetWidth(560)
+		footer:SetJustifyH("LEFT")
+		footer:SetText("These previews are addon-side lab frames built from AzeriteUI styles. They are meant to test layout, colors, auras, cast visuals, spacing, and interaction logic without requiring real Blizzard roster units.")
+		y = y - 40
+		content:SetHeight(math_abs(y) + 40)
+
+		local close = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+		close:SetSize(80, 22)
+		close:SetPoint("BOTTOMRIGHT", -12, 12)
+		close:SetText("Close")
+		close:SetScript("OnClick", function() frame:Hide() end)
+
+		self.TestFrame = frame
+		created = true
+	end
+
+	if (created) then
+		UpdateTestMenu(self)
+		frame:Show()
+		return
+	end
+
+	if (frame:IsShown()) then
+		frame:Hide()
+	else
+		UpdateTestMenu(self)
+		frame:Show()
+	end
+end
+
+-- Repairs are only exposed as bounded actions; the options renderer queues
+-- these in combat just like other frame-changing settings.
+Debugging.ReattachDebugBars = function(self, unit)
+	if (not IsDevMode() or (unit ~= "PlayerFrame" and unit ~= "TargetFrame")) then return end
+	local mod = ns:GetModule(unit, true)
+	if (not mod or not mod.frame) then return end
+	for _, key in ipairs({ "Health", "Castbar" }) do
+		local bar = mod.frame[key]
+		if (bar and bar.AttachMovementModule) then bar:AttachMovementModule() end
+	end
+end
+
+local function UpdateTargetDebugMenu(self)
+	return
+end
+
+-- Castbar art A/B switch.
+--
+-- The target castbar deliberately wears the mirrored capped-tier art
+-- (`hp_cap_bar_mirror`) for every unit that is not the player, rather than the
+-- current style tier's own HealthBarTexture. That is intentional, but it means
+-- a Boss, Critter, Novice or Hardened target shows capped-tier art on the
+-- castbar and tier art on the health bar underneath. This flips between the two
+-- treatments so the pair can be compared side by side on a live target without
+-- editing the file. The setting is saved, so it survives a /reload.
+local function TargetCastMirrorCommand(arg)
+	local targetMod = ns and ns.GetModule and ns:GetModule("TargetFrame", true)
+	local profile = targetMod and targetMod.db and targetMod.db.profile
+	if (not profile) then
+		print("|cff33ff99", "AzeriteUI target castbar art:", "TargetFrame module unavailable")
+		return
+	end
+
+	-- Absent or true both mean the shipped default, which is the mirrored art.
+	local current = not (profile.castBarMirrorTexture == false)
+	arg = type(arg) == "string" and string_match(string_lower(arg), "^%s*(.-)%s*$") or ""
+
+	local wanted
+	if (arg == "on" or arg == "mirror") then
+		wanted = true
+	elseif (arg == "off" or arg == "tier") then
+		wanted = false
+	elseif (arg == "" or arg == "toggle") then
+		wanted = not current
+	elseif (arg == "status") then
+		wanted = current
+	else
+		print("|cff33ff99", "AzeriteUI target castbar art:", "usage: /azdebugtarget mirror [on|off|toggle|status]")
+		return
+	end
+
+	if (wanted ~= current) then
+		profile.castBarMirrorTexture = wanted
+		RefreshTargetDebugTestFrames()
+	end
+
+	print("|cff33ff99", "AzeriteUI target castbar art:",
+		wanted and "|cffffcc00mirror|r (hp_cap_bar_mirror, shipped default)"
+		or "|cffffcc00tier|r (this target's own HealthBarTexture)")
+	if (wanted ~= current) then
+		print("|cfff0f0f0  applied to the current target; target something else to restyle it too|r")
+	end
+end
+
+-- Castbar crop-mode A/B switch.
+--
+-- "overlay" is the default: the addon's own FakeFill texture is the visible art,
+-- anchored to the statusbar texture so it inherits the engine-computed fill
+-- region, and cropped by texcoord. This is the structure the health bar on this
+-- frame has always used. "native" leaves the statusbar's own texture as the
+-- visible art, which scales rather than fills on a timer-driven bar; it is kept
+-- only so the two can be compared.
+-- Ground truth for "the castbar art still is not filling".
+--
+-- Everything below is read straight off the live frame during a cast, so a report
+-- says which link in the chain is broken rather than which one is suspected:
+-- whether the overlay is the visible layer at all, whether the statusbar texture
+-- is actually being resized, and whether the texcoords we set are the texcoords
+-- that survived. Run it while a target is mid-cast.
+local function PrintTargetCastDump()
+	local targetMod = ns and ns.GetModule and ns:GetModule("TargetFrame", true)
+	local frame = targetMod and targetMod.frame
+	local cast = frame and frame.Castbar
+	if (not cast) then
+		print("|cff33ff99", "AzeriteUI target cast dump:", "no castbar")
+		return
+	end
+
+	local function Describe(value)
+		if (type(issecretvalue) == "function" and issecretvalue(value)) then
+			return "<secret>"
+		end
+		if (type(value) == "number") then
+			return string_format("%.4f", value)
+		end
+		return tostring(value)
+	end
+
+	local function Safe(fn, ...)
+		local results = { pcall(fn, ...) }
+		if (not results[1]) then
+			return "<error>"
+		end
+		local out = {}
+		for i = 2, #results do
+			out[#out + 1] = Describe(results[i])
+		end
+		return (#out > 0) and table.concat(out, ", ") or "<none>"
+	end
+
+	print("|cff33ff99", "AzeriteUI target cast dump:")
+	print("|cfff0f0f0  casting/channeling/empowering:", tostring(cast.casting), tostring(cast.channeling), tostring(cast.empowering))
+	print("|cfff0f0f0  render path:", tostring(cast.__AzeriteUI_CastFakePath), "| useNative:", tostring(cast.__AzeriteUI_UseNativeCastVisual))
+
+	local profile = targetMod.db and targetMod.db.profile
+	print("|cfff0f0f0  crop mode:", tostring(profile and profile.castBarCropMode), "| mirror:", tostring(profile and profile.castBarMirrorTexture))
+
+	print("|cfff0f0f0  bar: orientation", Safe(cast.GetOrientation, cast),
+		"| reverseFill", Safe(cast.GetReverseFill, cast),
+		"| fillStyle", cast.GetFillStyle and Safe(cast.GetFillStyle, cast) or "n/a")
+	print("|cfff0f0f0  bar: minmax", Safe(cast.GetMinMaxValues, cast), "| value", Safe(cast.GetValue, cast))
+	print("|cfff0f0f0  bar: size", Safe(cast.GetSize, cast))
+
+	-- The decisive pair. If the statusbar texture's width tracks the cast but its
+	-- texcoords stay full-range, the engine is resizing without cropping - which
+	-- is the whole reason the visible art has to be an addon-owned overlay.
+	local tex = cast.GetStatusBarTexture and cast:GetStatusBarTexture()
+	if (tex) then
+		print("|cfff0f0f0  sbTexture: size", Safe(tex.GetSize, tex),
+			"| alpha", Safe(tex.GetAlpha, tex),
+			"| shown", tostring(tex:IsShown()))
+		print("|cfff0f0f0  sbTexture: texcoord", Safe(tex.GetTexCoord, tex))
+	else
+		print("|cfff0f0f0  sbTexture:", "none")
+	end
+
+	local fill = cast.FakeFill
+	if (fill) then
+		print("|cfff0f0f0  overlay: size", Safe(fill.GetSize, fill),
+			"| alpha", Safe(fill.GetAlpha, fill),
+			"| shown", tostring(fill:IsShown()))
+		print("|cfff0f0f0  overlay: texcoord", Safe(fill.GetTexCoord, fill))
+		print("|cfff0f0f0  overlay: texture", Safe(fill.GetTexture, fill))
+		print("|cfff0f0f0  overlay: anchored to sbTexture:", tostring(cast.__AzeriteUI_FakeFillFollowsTexture == tex))
+	else
+		print("|cfff0f0f0  overlay:", "none")
+	end
+
+	-- Does the duration object hand back anything at all, and is it readable?
+	local okDuration, duration = pcall(cast.GetTimerDuration, cast)
+	if (not okDuration or duration == nil) then
+		print("|cfff0f0f0  duration object:", "<unavailable>")
+	else
+		local okPct, pct = pcall(function()
+			if (cast.channeling) then
+				return duration:GetRemainingPercent(0)
+			end
+			return duration:GetElapsedPercent(0)
+		end)
+		print("|cfff0f0f0  duration percent:", okPct and Describe(pct) or "<error>",
+			"|cff888888(secret is fine - SetTexCoord accepts it)|r")
+	end
+end
+
+local function TargetCastCropCommand(arg)
+	local targetMod = ns and ns.GetModule and ns:GetModule("TargetFrame", true)
+	local profile = targetMod and targetMod.db and targetMod.db.profile
+	if (not profile) then
+		print("|cff33ff99", "AzeriteUI target castbar crop:", "TargetFrame module unavailable")
+		return
+	end
+
+	local current = (profile.castBarCropMode == "native") and "native" or "overlay"
+	arg = type(arg) == "string" and string_match(string_lower(arg), "^%s*(.-)%s*$") or ""
+
+	local wanted
+	if (arg == "native") then
+		wanted = "native"
+	elseif (arg == "overlay") then
+		wanted = "overlay"
+	elseif (arg == "" or arg == "toggle") then
+		wanted = (current == "native") and "overlay" or "native"
+	elseif (arg == "status") then
+		wanted = current
+	else
+		print("|cff33ff99", "AzeriteUI target castbar crop:", "usage: /azdebugtarget crop [overlay|native|toggle|status]")
+		return
+	end
+
+	if (wanted ~= current) then
+		profile.castBarCropMode = wanted
+		RefreshTargetDebugTestFrames()
+	end
+
+	print("|cff33ff99", "AzeriteUI target castbar crop:",
+		(wanted == "overlay") and "|cffffcc00overlay|r (addon texture anchored to the fill region, cropped by texcoord - default)"
+		or "|cffffcc00native|r (statusbar texture is the art - scales on a timer-driven bar)")
+	if (wanted == "native") then
+		print("|cfff0f0f0  expect the art to scale rather than fill; this mode is for comparison only|r")
+	end
+end
+
+Debugging.ToggleTargetDebugMenu = function(self)
+	local frame = self.TargetDebugFrame
+	local created = false
+	if (not frame) then
+		frame = CreateFrame("Frame", "AzeriteUI_TargetDebugMenu", UIParent, "BasicFrameTemplateWithInset")
+		frame:SetSize(560, 240)
+		frame:SetPoint("CENTER", UIParent, "CENTER", 0, 40)
+		frame:SetFrameStrata("DIALOG")
+		frame:SetClampedToScreen(true)
+		frame:SetMovable(true)
+		frame:EnableMouse(true)
+		frame:RegisterForDrag("LeftButton")
+		frame:SetScript("OnDragStart", function(f) f:StartMoving() end)
+		frame:SetScript("OnDragStop", function(f) f:StopMovingOrSizing() end)
+		frame.TitleText:SetText("AzeriteUI Target Debug")
+		local actionsY = -52
+		local actionsHeader = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+		actionsHeader:SetPoint("TOPLEFT", 12, actionsY)
+		actionsHeader:SetText("Actions")
+		actionsY = actionsY - 26
+
+		local statusBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+		statusBtn:SetSize(120, 22)
+		statusBtn:SetPoint("TOPLEFT", 12, actionsY)
+		statusBtn:SetText("Print Status")
+		statusBtn:SetScript("OnClick", function()
+			self:TargetDebugMenu("status")
+		end)
+
+		local refreshBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+		refreshBtn:SetSize(120, 22)
+		refreshBtn:SetPoint("LEFT", statusBtn, "RIGHT", 8, 0)
+		refreshBtn:SetText("Force Refresh")
+		refreshBtn:SetScript("OnClick", function()
+			RefreshTargetDebugTestFrames()
+			print("|cff33ff99", "AzeriteUI target fill debug:", "target frame refreshed")
+		end)
+
+		local dumpBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+		dumpBtn:SetSize(120, 22)
+		dumpBtn:SetPoint("LEFT", refreshBtn, "RIGHT", 8, 0)
+		dumpBtn:SetText("Dump Target")
+		dumpBtn:SetScript("OnClick", function()
+			self:DebugMenu("dump target")
+		end)
+
+		local snapshotBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+		snapshotBtn:SetSize(120, 22)
+		snapshotBtn:SetPoint("TOPLEFT", 12, actionsY - 28)
+		snapshotBtn:SetText("Snapshot Target")
+		snapshotBtn:SetScript("OnClick", function()
+			self:DebugMenu("snapshot target")
+		end)
+
+		local secretBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+		secretBtn:SetSize(120, 22)
+		secretBtn:SetPoint("LEFT", snapshotBtn, "RIGHT", 8, 0)
+		secretBtn:SetText("Secret Test")
+		secretBtn:SetScript("OnClick", function()
+			self:SecretValueTest("target")
+		end)
+
+		local helpBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+		helpBtn:SetSize(120, 22)
+		helpBtn:SetPoint("LEFT", secretBtn, "RIGHT", 8, 0)
+		helpBtn:SetText("Print Help")
+		helpBtn:SetScript("OnClick", function()
+			self:TargetDebugMenu("help")
+		end)
+
+		local mirrorBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+		mirrorBtn:SetSize(248, 22)
+		mirrorBtn:SetPoint("TOPLEFT", 12, actionsY - 56)
+		mirrorBtn:SetText("Toggle Castbar Art (mirror/tier)")
+		mirrorBtn:SetScript("OnClick", function()
+			TargetCastMirrorCommand("toggle")
+		end)
+
+		local castDumpBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+		castDumpBtn:SetSize(120, 22)
+		castDumpBtn:SetPoint("LEFT", helpBtn, "RIGHT", 8, 0)
+		castDumpBtn:SetText("Dump Cast")
+		castDumpBtn:SetScript("OnClick", function()
+			PrintTargetCastDump()
+		end)
+
+		local cropBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+		cropBtn:SetSize(248, 22)
+		cropBtn:SetPoint("LEFT", mirrorBtn, "RIGHT", 8, 0)
+		cropBtn:SetText("Toggle Castbar Fill (overlay/native)")
+		cropBtn:SetScript("OnClick", function()
+			TargetCastCropCommand("toggle")
+		end)
+
+		local close = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+		close:SetSize(80, 22)
+		close:SetPoint("BOTTOMRIGHT", -12, 12)
+		close:SetText("Close")
+		close:SetScript("OnClick", function() frame:Hide() end)
+
+		self.TargetDebugFrame = frame
+		created = true
+	end
+
+	if (created) then
+		UpdateTargetDebugMenu(self)
+		frame:Show()
+		return
+	end
+
+	if (frame:IsShown()) then
+		frame:Hide()
+	else
+		UpdateTargetDebugMenu(self)
+		frame:Show()
+	end
+end
+
+Debugging.TargetDebugMenu = function(self, input)
+	if (not IsDevMode()) then
+		print("|cff33ff99", "AzeriteUI /azdebugtarget:", "Dev mode is off; limited features may apply.")
+	end
+	if (not input or input == "") then
+		return self:ToggleTargetDebugMenu()
+	end
+	local cmd, rest = input:match("^(%S+)%s*(.-)$")
+	cmd = cmd and cmd:lower() or "status"
+	if (cmd == "menu") then
+		return self:ToggleTargetDebugMenu()
+	end
+	if (cmd == "help" or cmd == "?") then
+		print("|cff33ff99", "AzeriteUI /azdebugtarget commands:")
+		print("|cfff0f0f0  /azdebugtarget|r  (toggle menu)")
+		print("|cfff0f0f0  /azdebugtarget status|r")
+		print("|cfff0f0f0  /azdebugtarget dump|snapshot|refresh|secrettest|r")
+		print("|cfff0f0f0  /azdebugtarget mirror [on|off|toggle|status]|r  (castbar art: mirrored vs tier)")
+		print("|cfff0f0f0  /azdebugtarget crop [overlay|native|toggle|status]|r  (castbar fill: crop vs scale)")
+		print("|cfff0f0f0  /azdebugtarget cast|r  (live castbar dump - run it mid-cast)")
+		return
+	end
+	if (cmd == "mirror") then
+		return TargetCastMirrorCommand(rest)
+	end
+	if (cmd == "crop") then
+		return TargetCastCropCommand(rest)
+	end
+	if (cmd == "cast") then
+		return PrintTargetCastDump()
+	end
+	if (cmd == "status") then
+		return PrintTargetFillDebugStatus()
+	end
+	if (cmd == "dump") then
+		return self:DebugMenu("dump target")
+	end
+	if (cmd == "snapshot") then
+		return self:DebugMenu("snapshot target")
+	end
+	if (cmd == "refresh") then
+		RefreshTargetDebugTestFrames()
+		print("|cff33ff99", "AzeriteUI target fill debug:", "target frame refreshed")
+		return
+	end
+	if (cmd == "secrettest") then
+		return self:SecretValueTest("target")
+	end
+	return self:TargetDebugMenu("help")
+end
+
+-- Ground truth for "my group frames are missing here". Everything below is read
+-- straight from the live client so a report from inside the instance says which of
+-- the three possible causes it is: the state driver evaluating to hide, the secure
+-- header holding no unit buttons, or the module never having been enabled.
+--[[
+	Reports who tainted Blizzard's own action buttons.
+
+	Blizzard's action buttons stay alive and invisible rather than being
+	unregistered, because removing their events has repeatedly proven more
+	taint-prone than leaving them running. On Retail 12.1 those buttons feed
+	secret values into their own cooldown updates, and Blizzard rejects secret
+	values whenever the execution path is tainted. One tainted button therefore
+	turns into thousands of `ActionButton.lua:847` errors per session, plus
+	ADDON_ACTION_BLOCKED on `SetAttribute` from Blizzard's own update path.
+
+	`issecurevariable` names the addon responsible for each field, so this turns
+	"which addon tainted it" from a guess into an answer. Run it after the errors
+	have started, since a button can be clean until something touches it.
+]]
+Debugging.PrintActionButtonTaintReport = function(self)
+	print("|cff33ff99", "AzeriteUI action button taint report:")
+
+	if (type(issecurevariable) ~= "function") then
+		print("|cffff0000  issecurevariable is unavailable; cannot inspect taint.")
+		return
+	end
+
+	-- The fields Blizzard's own update path reads on these buttons. A tainted
+	-- value in any of them drags Blizzard's execution insecure when it is used.
+	local fields = {
+		"SetAlpha", "EnableMouse", "SetMouseClickEnabled", "SetMouseMotionEnabled",
+		"SetAttribute", "SetScript", "Show", "Hide", "action", "cooldown"
+	}
+
+	local groups = {
+		{ prefix = "ActionButton", count = 12 },
+		{ prefix = "MultiBarBottomLeftButton", count = 12 },
+		{ prefix = "MultiBarBottomRightButton", count = 12 },
+		{ prefix = "MultiBarRightButton", count = 12 },
+		{ prefix = "MultiBarLeftButton", count = 12 },
+		{ prefix = "MultiBar5Button", count = 12 },
+		{ prefix = "MultiBar6Button", count = 12 },
+		{ prefix = "MultiBar7Button", count = 12 },
+		{ prefix = "PetActionButton", count = 10 },
+		{ prefix = "StanceButton", count = 10 }
+	}
+
+	local blamed, anyTainted = {}, false
+
+	for _, group in ipairs(groups) do
+		for index = 1, group.count do
+			local name = group.prefix .. index
+			local button = _G[name]
+			if (button) then
+				for _, field in ipairs(fields) do
+					local ok, secure, culprit = pcall(issecurevariable, button, field)
+					if (ok and secure == false) then
+						anyTainted = true
+						local who = culprit or "<unknown>"
+						local entry = blamed[who]
+						if (not entry) then
+							entry = { count = 0, first = name .. "." .. field, fields = {} }
+							blamed[who] = entry
+						end
+						entry.count = entry.count + 1
+						if (not entry.fields[field]) then
+							entry.fields[field] = true
+							entry.fieldList = (entry.fieldList and (entry.fieldList .. ", ") or "") .. field
+						end
+					end
+				end
+			end
+		end
+	end
+
+	if (not anyTainted) then
+		print("|cff00ff00  No taint found on any Blizzard action, pet or stance button.")
+		print("|cfff0f0f0  If the errors are happening now, the taint is somewhere else.")
+		return
+	end
+
+	for who, entry in pairs(blamed) do
+		local mine = (who == "AzeriteUI5_JuNNeZ_Edition")
+		print((mine and "|cffff4444  " or "|cffffcc00  ") .. who .. ": "
+			.. entry.count .. " tainted field(s)")
+		print("|cfff0f0f0     fields: " .. (entry.fieldList or "?"))
+		print("|cfff0f0f0     first:  " .. entry.first)
+	end
+
+	print("|cfff0f0f0  Blizzard rejects secret values under tainted execution, so any")
+	print("|cfff0f0f0  addon listed here can cause the ActionButton.lua:847 spam.")
+end
+
+Debugging.PrintGroupFrameReport = function(self)
+	local isInstance, instanceType = IsInInstance()
+	print("|cff33ff99", "AzeriteUI group frame report:")
+	print("|cfff0f0f0  instance:", tostring(isInstance), "type:", tostring(instanceType))
+	print("|cfff0f0f0  combat:", tostring(InCombatLockdown()))
+	print("|cfff0f0f0  IsInGroup:", tostring(IsInGroup()), "IsInRaid:", tostring(IsInRaid()))
+	if (LE_PARTY_CATEGORY_HOME and LE_PARTY_CATEGORY_INSTANCE) then
+		print("|cfff0f0f0  group home:", tostring(IsInGroup(LE_PARTY_CATEGORY_HOME)),
+			"instance:", tostring(IsInGroup(LE_PARTY_CATEGORY_INSTANCE)))
+	end
+	print("|cfff0f0f0  GetNumGroupMembers:", tostring(GetNumGroupMembers()),
+		"GetNumSubgroupMembers:", tostring(GetNumSubgroupMembers()))
+
+	local units = {}
+	for i = 1, 4 do
+		local unit = "party"..i
+		if (UnitExists(unit)) then
+			units[#units + 1] = unit
+		end
+	end
+	print("|cfff0f0f0  party units:", (#units > 0) and table.concat(units, ", ") or "none")
+
+	for _, name in ipairs({ "PartyFrames", "RaidFrame5", "RaidFrame25", "RaidFrame40" }) do
+		local module = ns:GetModule(name, true)
+		if (not module) then
+			print("|cfff0f0f0 ", name..":", "module missing")
+		else
+			local profile = module.db and module.db.profile
+			local header = module.GetUnitFrameOrHeader and module:GetUnitFrameOrHeader()
+			print("|cfff0f0f0 ", name..":", "moduleEnabled:", tostring(module:IsEnabled()),
+				"profileEnabled:", tostring(profile and profile.enabled))
+			if (not header) then
+				print("|cfff0f0f0     header: none")
+			else
+				local driver = header.visibility
+				local parsed = driver and SecureCmdOptionParse(driver) or "n/a"
+				print("|cfff0f0f0     shown:", tostring(header:IsShown()),
+					"visible:", tostring(header:IsVisible()),
+					"driverSays:", tostring(parsed))
+				print("|cfff0f0f0     driver:", tostring(driver))
+				print("|cfff0f0f0     showParty:", tostring(header:GetAttribute("showParty")),
+					"showRaid:", tostring(header:GetAttribute("showRaid")),
+					"showSolo:", tostring(header:GetAttribute("showSolo")),
+					"groupFilter:", tostring(header:GetAttribute("groupFilter")))
+				local index, assigned = 1, {}
+				while (header:GetAttribute("child"..index)) do
+					local child = header:GetAttribute("child"..index)
+					assigned[#assigned + 1] = string.format("%s(%s,%s)", index,
+						tostring(child:GetAttribute("unit")), tostring(child:IsShown()))
+					index = index + 1
+				end
+				print("|cfff0f0f0     buttons:", (#assigned > 0) and table.concat(assigned, " ") or "none")
+			end
+		end
+	end
+end
+
+Debugging.DebugMenu = function(self, input)
+	if (not IsDevMode()) then
+		print("|cff33ff99", "AzeriteUI /azdebug:", "Dev mode is off; limited features may apply.")
+	end
+	if (not input or input == "") then
+		return self:ToggleDebugMenu()
+	end
+	local cmd, rest = input:match("^(%S+)%s*(.-)$")
+	cmd = cmd and cmd:lower() or "status"
+	if (cmd == "cdready") then
+		return self:CooldownReadyProbe(rest)
+	end
+	if (cmd == "menu") then
+		return self:ToggleDebugMenu()
+	end
+	if (cmd == "help" or cmd == "?") then
+		return PrintDebugHelp()
+	end
+	if (cmd == "status") then
+		local filter = ns.API.DEBUG_HEALTH_FILTER
+		if (not filter or filter == "") then
+			filter = "Target."
+		end
+		print("|cff33ff99", "AzeriteUI debug status:")
+		print("|cfff0f0f0  health:", ns.API.DEBUG_HEALTH and "ON" or "OFF", "filter:", filter)
+		print("|cfff0f0f0  healthchat:", ns.API.DEBUG_HEALTH_CHAT and "ON" or "OFF")
+		print("|cfff0f0f0  bars:", (_G.__AzeriteUI_DEBUG_BARS and "ON" or "OFF"))
+		print("|cfff0f0f0  raidbar force:", (ns.db and ns.db.global and ns.db.global.debugForceBlizzardRaidBar) and "ON" or "OFF")
+		print("|cfff0f0f0  fixes:", (ns.db and ns.db.global and ns.db.global.debugFixes) and "ON" or "OFF")
+		return
+	end
+	if (cmd == "group" or cmd == "groups") then
+		return self:PrintGroupFrameReport()
+	end
+	if (cmd == "secure" or cmd == "snippets") then
+		return self:PrintSecureSnippetReport(rest)
+	end
+	if (cmd == "micromenu" or cmd == "menu") then
+		return self:PrintMicroMenuReport()
+	end
+	if (cmd == "taint") then
+		return self:PrintActionButtonTaintReport()
+	end
+	if (cmd == "raidbar") then
+		if (not IsDevMode()) then
+			print("|cff33ff99", "AzeriteUI /azdebug raidbar:", "Dev mode is required for solo force-show.")
+			return
+		end
+		if (rest == nil or rest == "" or rest == "status") then
+			print("|cff33ff99", "AzeriteUI debug raidbar force:", (ns.db and ns.db.global and ns.db.global.debugForceBlizzardRaidBar) and "ON" or "OFF")
+			return
+		end
+		local mode = ParseOnOffToggle(rest)
+		if (not mode) then
+			return PrintDebugHelp()
+		end
+		if (ns.db and ns.db.global) then
+			ns.db.global.debugForceBlizzardRaidBar = SetDebugFlag(ns.db.global.debugForceBlizzardRaidBar, mode)
+		end
+		if (ns.WoW12BlizzardQuarantine and ns.WoW12BlizzardQuarantine.ApplyCompactFrames) then
+			ns.WoW12BlizzardQuarantine.ApplyCompactFrames()
+		end
+		print("|cff33ff99", "AzeriteUI debug raidbar force:", (ns.db and ns.db.global and ns.db.global.debugForceBlizzardRaidBar) and "ON" or "OFF")
+		print("|cff33ff99", "Tip:", "Use /reload if Blizzard already hid the bar earlier this session.")
+		return
+	end
+	if (cmd == "keys") then
+		return self:DebugKeysMenu(rest)
+	end
+	if (cmd == "health") then
+		local sub, arg = rest:match("^(%S+)%s*(.-)$")
+		sub = sub and sub:lower()
+		if (sub == "filter") then
+			if (arg and arg ~= "") then
+				ns.API.DEBUG_HEALTH_FILTER = arg
+				if (ns.db and ns.db.global) then
+					ns.db.global.debugHealthFilter = arg
+				end
+				print("|cff33ff99", "AzeriteUI health debug filter:", arg)
+			else
+				print("|cff33ff99", "AzeriteUI health debug filter:", ns.API.DEBUG_HEALTH_FILTER or "Target.")
+			end
+			return
+		end
+		local mode = ParseOnOffToggle(sub)
+		if (not mode) then
+			return PrintDebugHelp()
+		end
+		ns.API.DEBUG_HEALTH = SetDebugFlag(ns.API.DEBUG_HEALTH, mode)
+		if (ns.db and ns.db.global) then
+			ns.db.global.debugHealth = ns.API.DEBUG_HEALTH
+		end
+		print("|cff33ff99", "AzeriteUI health debug:", ns.API.DEBUG_HEALTH and "ON" or "OFF")
+		local oUF = ns.oUF
+		if (oUF and oUF.objects) then
+			for _, obj in next, oUF.objects do
+				local dbg = obj.HealthDebug
+				if (dbg) then
+					if (ns.API.DEBUG_HEALTH) then dbg:Show() else dbg:Hide() end
+				end
+			end
+		end
+		return
+	end
+	if (cmd == "healthchat") then
+		local mode = ParseOnOffToggle(rest)
+		if (not mode) then
+			return PrintDebugHelp()
+		end
+		ns.API.DEBUG_HEALTH_CHAT = SetDebugFlag(ns.API.DEBUG_HEALTH_CHAT, mode)
+		if (ns.db and ns.db.global) then
+			ns.db.global.debugHealthChat = ns.API.DEBUG_HEALTH_CHAT
+		end
+		print("|cff33ff99", "AzeriteUI health debug chat:", ns.API.DEBUG_HEALTH_CHAT and "ON" or "OFF")
+		return
+	end
+	if (cmd == "bars") then
+		local mode = ParseOnOffToggle(rest)
+		if (not mode) then
+			return PrintDebugHelp()
+		end
+		_G.__AzeriteUI_DEBUG_BARS = SetDebugFlag(_G.__AzeriteUI_DEBUG_BARS and true or false, mode)
+		if (ns.db and ns.db.global) then
+			ns.db.global.debugBars = _G.__AzeriteUI_DEBUG_BARS and true or false
+		end
+		print("|cff33ff99", "AzeriteUI statusbar/orb debug:", _G.__AzeriteUI_DEBUG_BARS and "ON" or "OFF")
+		print("|cff33ff99", "Tip:", "Reproduce damage/retarget; logs will appear in chat.")
+		return
+	end
+	if (cmd == "fixes") then
+		local mode = ParseOnOffToggle(rest)
+		if (not mode) then
+			return PrintDebugHelp()
+		end
+		if (ns.db and ns.db.global) then
+			ns.db.global.debugFixes = SetDebugFlag(ns.db.global.debugFixes, mode)
+			print("|cff33ff99", "AzeriteUI FixBlizzardBugs debug:", ns.db.global.debugFixes and "ON" or "OFF")
+		end
+		return
+	end
+	if (cmd == "dump") then
+		local sub = rest:match("^(%S+)")
+		if (sub and sub:lower() == "target") then
+			local targetFrame = ns:GetModule("TargetFrame", true)
+			return DumpUnitBars(targetFrame and targetFrame.frame, "TargetFrame")
+		end
+		if (sub and sub:lower() == "player") then
+			local playerFrame = ns:GetModule("PlayerFrame", true)
+			return DumpUnitBars(playerFrame and playerFrame.frame, "PlayerFrame")
+		end
+		if (sub and (sub:lower() == "tot" or sub:lower() == "targetoftarget")) then
+			local totFrame = ns:GetModule("ToTFrame", true)
+			return DumpUnitBars(totFrame and totFrame.frame, "ToTFrame")
+		end
+		if (sub and sub:lower() == "all") then
+			local targetFrame = ns:GetModule("TargetFrame", true)
+			local playerFrame = ns:GetModule("PlayerFrame", true)
+			local totFrame = ns:GetModule("ToTFrame", true)
+			DumpUnitBars(targetFrame and targetFrame.frame, "TargetFrame")
+			DumpUnitBars(playerFrame and playerFrame.frame, "PlayerFrame")
+			return DumpUnitBars(totFrame and totFrame.frame, "ToTFrame")
+		end
+		return PrintDebugHelp()
+	end
+	if (cmd == "aurasnapshot" or cmd == "auras") then
+		local sub = rest:match("^(%S+)") or "both"
+		return DumpAuraSnapshot(sub)
+	end
+	-- Render experiments (RenderProbe.lua): radial fills, addon SVG files, OnUpdate modes.
+	if (cmd == "radial" or cmd == "svg" or cmd == "onupdatemode") then
+		local probe = ns.RenderProbe
+		local run = probe and ({ radial = probe.Radial, svg = probe.Svg, onupdatemode = probe.OnUpdateMode })[cmd]
+		if (run) then return run(rest, print) end
+		print("|cff33ff99", "AzeriteUI /azdebug " .. cmd .. ":", "the render probe is not loaded.")
+		return
+	end
+	-- Execute marker readout (ExecuteProbe.lua).
+	if (cmd == "execute") then
+		if (ns.ExecuteProbe and ns.ExecuteProbe.Run) then
+			return ns.ExecuteProbe.Run(rest, print)
+		end
+		print("|cff33ff99", "AzeriteUI /azdebug execute:", "the execute probe is not loaded.")
+		return
+	end
+	if (cmd == "sated") then
+		if (ns.AuraCostProbe and ns.AuraCostProbe.SatedTest) then
+			return ns.AuraCostProbe.SatedTest(rest, print)
+		end
+		print("|cff33ff99", "AzeriteUI /azdebug sated:", "Retail only; this client has no native aura containers.")
+		return
+	end
+	if (cmd == "auracost") then
+		if (ns.AuraCostProbe and ns.AuraCostProbe.Run) then
+			return ns.AuraCostProbe.Run(rest, print)
+		end
+		print("|cff33ff99", "AzeriteUI /azdebug auracost:", "Retail only; this client has no native aura containers.")
+		return
+	end
+	if (cmd == "tooltips" or cmd == "tooltip") then
+		local tooltips = ns:GetModule("Tooltips", true)
+		if (tooltips and tooltips.PrintDiagnostics) then
+			return tooltips:PrintDiagnostics()
+		end
+		print("|cff33ff99", "AzeriteUI /azdebug tooltips:", "the Tooltips module is not loaded.")
+		return
+	end
+	if (cmd == "editmode") then
+		if (ns.PrintEditModeDiagnostics) then return ns.PrintEditModeDiagnostics() end
+		print("|cff33ff99", "AzeriteUI /azdebug editmode:", "not loaded.")
+		return
+	end
+	if (cmd == "unitmenu") then
+		local sub, token = rest:match("^(%S*)%s*(%S*)")
+		if (sub == "trace") then
+			local mode = ParseOnOffToggle(token)
+			if (not mode) then
+				return PrintDebugHelp()
+			end
+			return SetUnitMenuTrace(SetDebugFlag(UnitMenuTraceEnabled, mode))
+		end
+		return DumpUnitMenuDiagnostics()
+	end
+	if (cmd == "nameplates" or cmd == "nameplate") then
+		local unit = rest:match("^(%S+)")
+		return PrintNamePlateCastDebug(unit)
+	end
+	if (cmd == "snapshot") then
+		local unit = rest:match("^(%S+)")
+		return DumpUnitSnapshot(unit)
+	end
+	if (cmd == "playerframe") then
+		return DumpPlayerFrameState()
+	end
+	if (cmd == "blizzard") then
+		local sub = rest:match("^(%S+)")
+		if (sub and sub:lower() == "enable") then
+			return self:EnableBlizzardAddOns()
+		end
+		return PrintDebugHelp()
+	end
+	if (cmd == "scale") then
+		local sub, arg = rest:match("^(%S+)%s*(.-)$")
+		sub = sub and sub:lower()
+		if (sub and sub:lower() == "reset") then
+			return ResetUnitFrameScales()
+		end
+		if (sub == "nameplates" or sub == "nameplate") then
+			local token = (arg and arg ~= "") and arg or "auto"
+			return PrintNamePlateScaleStatus(token)
+		end
+		return PrintScaleStatus()
+	end
+	if (cmd == "scripterrors") then
+		self:EnableScriptErrors()
+		print("|cff33ff99", "AzeriteUI script errors:", "ENABLED (CVar scriptErrors=1)")
+		return
+	end
+	if (cmd == "secrettest") then
+		return self:SecretValueTest(rest)
+	end
+
+	PrintDebugHelp()
+end
+
+Debugging.ToggleBarsDebug = function(self)
+	local current = _G.__AzeriteUI_DEBUG_BARS and true or false
+	_G.__AzeriteUI_DEBUG_BARS = not current
+	if (ns.db and ns.db.global) then
+		ns.db.global.debugBars = _G.__AzeriteUI_DEBUG_BARS
+	end
+	print("|cff33ff99", "AzeriteUI statusbar/orb debug:", _G.__AzeriteUI_DEBUG_BARS and "ON" or "OFF")
+	print("|cff33ff99", "Tip:", "Reproduce damage/retarget; logs will appear in chat.")
+end
+
+Debugging.ToggleFixesDebug = function(self)
+	if (not IsDevMode()) then
+		print("|cff33ff99", "AzeriteUI FixBlizzardBugs debug:", "Dev mode only")
+		return
+	end
+	if (ns.db and ns.db.global) then
+		ns.db.global.debugFixes = not ns.db.global.debugFixes
+		print("|cff33ff99", "AzeriteUI FixBlizzardBugs debug:", ns.db.global.debugFixes and "ON" or "OFF")
+	end
+end
+
+-- Reports whether this client can compile secure handler snippets, and what the
+-- addon does instead when it cannot. See Core/Client.lua for the detection and
+-- Docs/CLIENT_COMPATIBILITY.md for the evidence.
+Debugging.PrintSecureSnippetReport = function(self, input)
+	if (type(input) == "string" and input:lower():find("reset", 1, true)) then
+		if (ns.db and ns.db.global) then
+			ns.db.global.secureSnippets = nil
+			print("|cff33ff99", "AzeriteUI secure snippets:", ns.SecureSnippetsKnownUnavailable
+				and "cache cleared; this Forever build remains unavailable and will not probe on /reload."
+				or "cache cleared; it will re-probe on the next /reload.")
+		else
+			print("|cff33ff99", "AzeriteUI secure snippets:", "settings not ready.")
+		end
+		return
+	end
+
+	local available = ns.HasSecureSnippets ~= false
+	local source = ns.SecureSnippetsKnownUnavailable and "known broken Forever build, before 70009 (no probe)"
+		or (ns.SecureSnippetsFromCache and "cache (no probe this login)" or "a live probe this login")
+
+	print("|cff33ff99", "AzeriteUI secure snippets:", available and "available" or "UNAVAILABLE")
+	print("|cfff0f0f0  answer from:", source,
+		"build:", tostring(ns.SecureSnippetsBuild))
+	print("|cfff0f0f0  client:", tostring(ns.ClientPatch), "interface:", tostring(select(4, GetBuildInfo())),
+		ns.IsForever and "(Forever)" or (ns.IsRetailContent and "(Retail)" or ""))
+
+	local isAddOnLoaded = (C_AddOns and C_AddOns.IsAddOnLoaded) or IsAddOnLoaded
+	print("|cfff0f0f0  Blizzard_RestrictedAddOnEnvironment loaded:",
+		tostring(type(isAddOnLoaded) == "function" and isAddOnLoaded("Blizzard_RestrictedAddOnEnvironment") or false))
+
+	if (available) then
+		print("|cfff0f0f0  Action bar paging, the cog menu, group headers and the tracker all use their")
+		print("|cfff0f0f0  normal secure paths.")
+		return
+	end
+
+	print("|cffff8800  This client cannot build restricted closures, so every secure snippet fails in")
+	print("|cffff8800  Blizzard_RestrictedAddOnEnvironment/RestrictedExecution.lua:79. That is a client")
+	print("|cffff8800  bug, not an addon one. AzeriteUI works around it:")
+	print("|cfff0f0f0   - Bars page through Blizzard's own state driver; what a button casts stays")
+	print("|cfff0f0f0     correct in combat, and `type` catches up when combat ends.")
+	print("|cfff0f0f0   - Keys use command bindings instead of click bindings.")
+	print("|cfff0f0f0   - Show/hide states use the native visibility driver.")
+	print("|cffff8800  Not available: dragging actions off the bars, the custom flyout, and the")
+	print("|cffff8800  vehicle-exit override on bar 1 button 7 (the dismount button still works).")
+end
+
+-- Why a cog-wheel entry does nothing when clicked.
+--
+-- Every entry but Game Menu forwards to Blizzard's own micro button with a `/click`
+-- macro, and `/click` on a disabled Button is a no-op. So the answer is almost always
+-- "Blizzard has it gated": talents need an earned talent point, Legacy needs renown
+-- above zero, Group Finder a minimum level, the Shop an available store.
+Debugging.PrintMicroMenuReport = function(self)
+	local module = ns:GetModule("MicroMenu", true)
+	if (not module or not module.buttons) then
+		print("|cff33ff99", "AzeriteUI micro menu:", "module not loaded")
+		return
+	end
+
+	print("|cff33ff99", "AzeriteUI micro menu:", #module.buttons, "entries")
+
+	for _, button in ipairs(module.buttons) do
+		local native = button.ref
+		local name = native and native.GetName and native:GetName() or "?"
+		local enabled = native and native.IsEnabled and native:IsEnabled()
+		local shown = native and native.IsShown and native:IsShown()
+		local route = button:GetAttribute("macrotext") or "own OnClick"
+		local reason = native and native.disabledTooltip
+
+		if (type(reason) == "function") then
+			local ok, text = pcall(reason)
+			reason = ok and text or "<tooltip callback failed>"
+		end
+
+		print(("|cfff0f0f0  %-26s native:%s shown:%s entry:%s  %s"):format(
+			name,
+			enabled and "|cff00ff00enabled|r" or "|cffff4444DISABLED|r",
+			shown and "y" or "n",
+			button:IsEnabled() and "on" or "greyed",
+			tostring(route)))
+
+		if (not enabled and reason) then
+			print("|cffff8800      Blizzard's reason:", tostring(reason))
+		end
+	end
+
+	print("|cfff0f0f0  A DISABLED native button cannot be clicked by anything, including")
+	print("|cfff0f0f0  Blizzard's own strip. That is a gate on the character, not a bug here.")
+end
+
+Debugging.SecretValueTest = function(self, input)
+	if (not IsDevMode()) then
+		print("|cff33ff99", "AzeriteUI secret test:", "Dev mode only")
+		return
+	end
+	local unit = (type(input) == "string" and input ~= "" and input) or "target"
+	if (not UnitExists(unit)) then
+		print("|cff33ff99", "AzeriteUI secret test:", "unit unavailable:", tostring(unit))
+		return
+	end
+	local health = UnitHealth and UnitHealth(unit)
+	local maxHealth = UnitHealthMax and UnitHealthMax(unit)
+	local powerType = UnitPowerType and select(1, UnitPowerType(unit)) or 0
+	local power = UnitPower and UnitPower(unit, powerType)
+	local maxPower = UnitPowerMax and UnitPowerMax(unit, powerType)
+	print("|cff33ff99", "AzeriteUI secret test:", unit)
+	print("|cfff0f0f0  health:", tostring(health), "max:", tostring(maxHealth), "secret:", tostring(issecretvalue and issecretvalue(health) or false))
+	print("|cfff0f0f0  power:", tostring(power), "max:", tostring(maxPower), "type:", tostring(powerType), "secret:", tostring(issecretvalue and issecretvalue(power) or false))
+end

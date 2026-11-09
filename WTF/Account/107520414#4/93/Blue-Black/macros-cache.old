@@ -1,0 +1,4 @@
+VER 3 0100000000000001 "Overenge" "134400"
+#showtooltip
+/cast [stance:1] Overpower; [stance:2] Revenge
+END

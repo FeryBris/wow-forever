@@ -1,0 +1,3 @@
+
+EllesmereUIBlizzardSkinDB = nil
+EllesmereUIDragonRidingDB = nil

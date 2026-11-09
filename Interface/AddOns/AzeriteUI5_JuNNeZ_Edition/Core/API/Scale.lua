@@ -1,0 +1,61 @@
+--[[
+
+	The MIT License (MIT)
+
+	Copyright (c) 2026 Lars Norberg
+	Copyright (c) 2026 Jonas "JuNNeZ" Andersen (JuNNeZ Edition modifications)
+
+	Permission is hereby granted, free of charge, to any person obtaining a copy
+	of this software and associated documentation files (the "Software"), to deal
+	in the Software without restriction, including without limitation the rights
+	to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+	copies of the Software, and to permit persons to whom the Software is
+	furnished to do so, subject to the following conditions:
+
+	The above copyright notice and this permission notice shall be included in all
+	copies or substantial portions of the Software.
+
+	THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+	IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+	FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+	AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+	LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+	OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+	SOFTWARE.
+
+--]]
+local _, ns = ...
+local API = ns.API or {}
+ns.API = API
+
+-- GLOBALS: UIParent
+
+-- Global API
+---------------------------------------------------------
+-- Get the scale to set when ignoring parent scale
+API.GetScale = function()
+	return 768/1080
+end
+
+-- The player's master scale for every movable AzeriteUI frame (/lock -> AzeriteUI Scale).
+-- Stored in the core profile; 1 until the database exists.
+API.FRAME_SCALE_MIN, API.FRAME_SCALE_MAX = .5, 2
+API.GetFrameScaleMultiplier = function()
+	local profile = ns.db and ns.db.profile
+	local value = profile and tonumber(profile.frameScale)
+	if (not value or value ~= value) then return 1 end
+	return math.max(API.FRAME_SCALE_MIN, math.min(API.FRAME_SCALE_MAX, value))
+end
+
+-- The effective scale without the master scale, for code that already
+-- multiplies in a saved scale which carries it (the tooltips).
+API.GetBaseEffectiveScale = function()
+	return (768/1080) / UIParent:GetScale()
+end
+
+-- Get the scale to use on custom elements when slaved to UIParent
+-- in order for them to match the scale of custom elements ignoring the parent scale.
+-- Includes the master scale, so every default position and scale built from it follows.
+API.GetEffectiveScale = function()
+	return API.GetBaseEffectiveScale() * API.GetFrameScaleMultiplier()
+end

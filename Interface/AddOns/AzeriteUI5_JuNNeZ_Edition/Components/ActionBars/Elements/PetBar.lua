@@ -1,0 +1,891 @@
+--[[
+
+	The MIT License (MIT)
+
+	Copyright (c) 2026 Lars Norberg
+	Copyright (c) 2026 Jonas "JuNNeZ" Andersen (JuNNeZ Edition modifications)
+
+	Permission is hereby granted, free of charge, to any person obtaining a copy
+	of this software and associated documentation files (the "Software"), to deal
+	in the Software without restriction, including without limitation the rights
+	to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+	copies of the Software, and to permit persons to whom the Software is
+	furnished to do so, subject to the following conditions:
+
+	The above copyright notice and this permission notice shall be included in all
+	copies or substantial portions of the Software.
+
+	THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+	IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+	FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+	AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+	LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+	OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+	SOFTWARE.
+
+--]]
+local _, ns = ...
+
+if (ns.API.IsAddOnEnabled("ConsolePort_Bar")) then return end
+
+local L = LibStub("AceLocale-3.0"):GetLocale((...))
+
+local PetBarMod = ns:NewModule("PetBar", "LibMoreEvents-1.0", "LibFadingFrames-1.0", "AceConsole-3.0", "AceTimer-3.0")
+
+local LFF = LibStub("LibFadingFrames-1.0")
+local LAB = LibStub("LibActionButton-1.0-GE")
+
+local ButtonBar = ns.ButtonBar.prototype
+
+local PetBar = setmetatable({}, { __index = ButtonBar })
+local PetBar_MT = { __index = PetBar }
+
+-- See Core/API/SecureDrivers.lua. Where snippets cannot compile, `_onstate-vis` is
+-- replaced by the native `state-visibility` state, which Blizzard resolves itself.
+local hasSecureSnippets = ns.HasSecureSnippets ~= false
+
+-- GLOBALS: InCombatLockdown, hooksecurefunc
+-- GLOBALS: GetBindingKey, ClearOverrideBindings, SetOverrideBindingClick
+-- GLOBALS: RegisterStateDriver, UnregisterStateDriver
+-- GLOBALS: NUM_PET_ACTION_SLOTS
+
+-- Lua API
+local next = next
+local select = select
+local setmetatable = setmetatable
+local unpack = unpack
+
+-- WoW API
+-- GetCVarBool is deprecated in favour of C_CVar.GetCVarBool. Shadowed as a file
+-- local so the call sites keep working whichever of the two the client exposes.
+local GetCVarBool = (C_CVar and C_CVar.GetCVarBool) or GetCVarBool
+
+-- Addon API
+local Colors = ns.Colors
+local GetMedia = ns.API.GetMedia
+local RegisterCooldown = ns.Widgets.RegisterCooldown
+local UIHider = ns.Hider
+local noop = ns.Noop
+
+local defaults = { profile = ns:Merge({
+	enabled = true,
+	enableBarFading = true, -- whether to enable non-combat/hover button fading
+	fadeInCombat = true, -- whether to keep fading out even in combat
+	fadeAlone = true,
+	fadeFrom = 1, -- which button to start the button fading from
+	numbuttons = NUM_PET_ACTION_SLOTS, -- total number of buttons on the bar
+	layout = "grid", -- currently applied layout type
+	startAt = 1, -- at which button the zigzag pattern should begin
+	growth = "horizontal", -- which direction the bar goes in
+	growthHorizontal = "RIGHT", -- the bar's horizontal growth direction
+	growthVertical = "DOWN", -- the bar's vertical growth direction
+	padding = 8, -- horizontal padding between the buttons
+	breakpadding = 8, -- vertical padding between the buttons
+	breakpoint = NUM_PET_ACTION_SLOTS, -- when to start a new grid row
+	offset = 44/64, -- 44 -- relative offset in the growth direction for the alternate zigzag row as a fraction of button size.
+	hitrects = { -10, -10, -10, -10 },
+	buttonShape = "circle", -- "circle", "rounded" or "square", applied on reload
+	hideElements = {
+		macro = true,
+		hotkey = false,
+		equipped = true,
+		border = true,
+		borderIfEmpty = true
+	}
+}, ns.MovableModulePrototype.defaults) }
+
+-- Generate module defaults on the fly
+-- to recalculate default values relying on
+-- changing factors like user interface scale.
+PetBarMod.GenerateDefaults = function(self)
+	defaults.profile.savedPosition = {
+		scale = ns.API.GetEffectiveScale(),
+		[1] = "BOTTOM",
+		[2] = 0,
+		[3] = 200 * ns.API.GetEffectiveScale()
+	}
+	return defaults
+end
+
+local onEnter = function(self)
+	self.icon.darken:SetAlpha(0)
+	-- Obey tooltip options if the tooltip module is enabled.
+	local tooltips = ns:GetModule("Tooltips", true)
+	if (tooltips and tooltips:IsEnabled() and tooltips.db.profile.hideInCombat and tooltips.db.profile.hideActionBarTooltipsInCombat and InCombatLockdown()) then
+		return
+	end
+	if (self.OnEnter) then
+		self:OnEnter()
+	end
+end
+
+local onLeave = function(self)
+	self.icon.darken:SetAlpha(.1)
+	if (self.OnLeave) then
+		self:OnLeave()
+	end
+end
+
+local style = function(button, shape)
+
+	local db = ns.API.GetShapedButtonConfig(ns.GetConfig("PetActionButton"), shape)
+
+	-- Clean up the button template
+	for _,i in next,{ --[["AutoCastShine",]] "Border", "Name", "NewActionTexture", "NormalTexture", "SpellHighlightAnim", "SpellHighlightTexture",
+		--[[ WoW10 ]] "CheckedTexture", "HighlightTexture", "BottomDivider", "RightDivider", "SlotArt", "SlotBackground" } do
+		if (button[i] and button[i].Stop) then button[i]:Stop() elseif button[i] then button[i]:SetParent(UIHider) end
+	end
+
+
+	local m = db.ButtonMaskTexture
+	local b = "" -- GetMedia("blank")
+
+	button:SetAttribute("buttonlock", true)
+	button:SetAttribute("buttonLock", true)
+	button:SetSize(unpack(db.ButtonSize))
+	button:SetHitRectInsets(unpack(db.ButtonHitRects))
+	button:SetNormalTexture("")
+	button:SetHighlightTexture("")
+	button:SetCheckedTexture("")
+	button:GetHighlightTexture():Hide()
+	button:GetCheckedTexture():Hide()
+
+	-- New 3.4.1 checked texture keeps being reset.
+	hooksecurefunc(button, "SetChecked", function() button:GetCheckedTexture():Hide() end)
+
+	-- Custom slot texture
+	local backdrop = button:CreateTexture(nil, "BACKGROUND", nil, -7)
+	backdrop:SetSize(unpack(db.ButtonBackdropSize))
+	backdrop:SetPoint(unpack(db.ButtonBackdropPosition))
+	backdrop:SetTexture(db.ButtonBackdropTexture)
+	backdrop:SetVertexColor(unpack(db.ButtonBackdropColor))
+	button.backdrop = backdrop
+
+	-- Icon
+	local icon = button.icon
+	icon:SetDrawLayer("BACKGROUND", 1)
+	icon:ClearAllPoints()
+	icon:SetPoint(unpack(db.ButtonIconPosition))
+	icon:SetSize(unpack(db.ButtonIconSize))
+
+	local i = 1
+	while button.icon:GetMaskTexture(i) do
+		button.icon:RemoveMaskTexture(button.icon:GetMaskTexture(i))
+		i = i + 1
+	end
+	if (button.IconMask) then
+		icon:RemoveMaskTexture(button.IconMask)
+	end
+	icon:SetMask(m)
+
+	-- Custom icon darkener
+	local darken = button:CreateTexture(nil, "BACKGROUND", nil, 2)
+	darken:SetAllPoints(button.icon)
+	darken:SetTexture(m)
+	darken:SetVertexColor(0, 0, 0, .1)
+	button.icon.darken = darken
+
+	button.OnEnter = button:GetScript("OnEnter")
+	button.OnLeave = button:GetScript("OnLeave")
+
+	button:SetScript("OnEnter", onEnter)
+	button:SetScript("OnLeave", onLeave)
+
+	-- Some crap WoW10 border I can't figure out how to remove right now.
+	button:DisableDrawLayer("ARTWORK")
+
+	-- Button is pushed
+	-- Responds to mouse and keybinds
+	-- if we allow blizzard to handle it.
+	local pushedTexture = button:CreateTexture(nil, "OVERLAY", nil, 1)
+	pushedTexture:SetVertexColor(1, 1, 1, .05)
+	pushedTexture:SetTexture(m)
+	pushedTexture:SetAllPoints(button.icon)
+	button.pushedTexture = pushedTexture
+
+	button:SetPushedTexture(button.pushedTexture)
+	button:GetPushedTexture():SetBlendMode("ADD")
+	button:GetPushedTexture():SetDrawLayer("OVERLAY", 1)
+
+	-- Autoattack flash
+	local flash = button.Flash
+	flash:SetDrawLayer("OVERLAY", 2)
+	flash:SetAllPoints(icon)
+	flash:SetVertexColor(1, 0, 0, .25)
+	flash:SetTexture(m)
+	flash:Hide()
+
+	-- Button cooldown frame
+	local cooldown = button.cooldown
+	cooldown:SetFrameLevel(button:GetFrameLevel() + 1)
+	cooldown:ClearAllPoints()
+	cooldown:SetAllPoints(button.icon)
+	cooldown:SetReverse(false)
+	cooldown:SetSwipeTexture(m)
+	cooldown:SetDrawSwipe(true)
+	cooldown:SetBlingTexture(b, 0, 0, 0, 0)
+	cooldown:SetDrawBling(false)
+	cooldown:SetEdgeTexture(b)
+	cooldown:SetDrawEdge(false)
+	cooldown:SetHideCountdownNumbers(false)
+
+	-- Custom overlay frame
+	local overlay = CreateFrame("Frame", nil, button)
+	overlay:SetFrameLevel(button:GetFrameLevel() + 3)
+	overlay:SetAllPoints()
+	button.overlay = overlay
+
+	local border = overlay:CreateTexture(nil, "BORDER", nil, 1)
+	border:SetPoint(unpack(db.ButtonBorderPosition))
+	border:SetSize(unpack(db.ButtonBorderSize))
+	border:SetTexture(db.ButtonBorderTexture)
+	border:SetVertexColor(unpack(db.ButtonBorderColor))
+	button.iconBorder = border
+
+	-- Custom spell highlight
+	local spellHighlight = overlay:CreateTexture(nil, "ARTWORK", nil, -7)
+	spellHighlight:SetTexture(db.ButtonSpellHighlightTexture)
+	spellHighlight:SetSize(unpack(db.ButtonSpellHighlightSize))
+	spellHighlight:SetPoint(unpack(db.ButtonSpellHighlightPosition))
+	spellHighlight:Hide()
+	button.spellHighlight = spellHighlight
+
+	-- Custom cooldown count
+	local cooldownCount = overlay:CreateFontString(nil, "ARTWORK", nil, 1)
+	cooldownCount:SetPoint(unpack(db.ButtonCooldownCountPosition))
+	cooldownCount:SetFontObject(db.ButtonCooldownCountFont)
+	cooldownCount:SetJustifyH(db.ButtonCooldownCountJustifyH)
+	cooldownCount:SetJustifyV(db.ButtonCooldownCountJustifyV)
+	cooldownCount:SetTextColor(unpack(db.ButtonCooldownCountColor))
+	button.cooldownCount = cooldownCount
+
+	-- Button charge/stack count
+	local count = button.Count
+	count:SetParent(overlay)
+	count:SetDrawLayer("OVERLAY", 1)
+	count:ClearAllPoints()
+	count:SetPoint(unpack(db.ButtonCountPosition))
+	count:SetFontObject(db.ButtonCountFont)
+	count:SetJustifyH(db.ButtonCountJustifyH)
+	count:SetJustifyV(db.ButtonCountJustifyV)
+
+	-- Button keybind
+	local hotkey = button.HotKey
+	hotkey:SetParent(overlay)
+	hotkey:SetDrawLayer("OVERLAY", 1)
+	hotkey:ClearAllPoints()
+	hotkey:SetPoint(unpack(db.ButtonKeybindPosition))
+	hotkey:SetJustifyH(db.ButtonKeybindJustifyH)
+	hotkey:SetJustifyV(db.ButtonKeybindJustifyV)
+	hotkey:SetFontObject(db.ButtonKeybindFont)
+	hotkey:SetTextColor(unpack(db.ButtonKeybindColor))
+
+	-- Todo: Adjust size of this.
+	local autoCastable = button.AutoCastable
+	if (autoCastable) then
+		autoCastable:SetParent(overlay)
+		autoCastable:ClearAllPoints()
+		autoCastable:SetPoint("TOPLEFT", -db.ButtonAutoCastableOffset, db.ButtonAutoCastableOffset)
+		autoCastable:SetPoint("BOTTOMRIGHT", db.ButtonAutoCastableOffset, -db.ButtonAutoCastableOffset)
+	end
+
+	-- Todo: Check if I should add a round texture here
+	local autoCastShine = button.AutoCastShine
+	if (autoCastShine) then
+		autoCastShine:SetParent(overlay)
+		autoCastShine:ClearAllPoints()
+		autoCastShine:SetPoint("TOPLEFT", -db.ButtonAutoCastShineOffset, db.ButtonAutoCastShineOffset)
+		autoCastShine:SetPoint("BOTTOMRIGHT", db.ButtonAutoCastShineOffset, -db.ButtonAutoCastShineOffset)
+	end
+
+	RegisterCooldown(button.cooldown, button.cooldownCount)
+
+	hooksecurefunc(cooldown, "SetSwipeTexture", function(c,t) if t ~= m then c:SetSwipeTexture(m) end end)
+	hooksecurefunc(cooldown, "SetBlingTexture", function(c,t) if t ~= b then c:SetBlingTexture(b,0,0,0,0) end end)
+	hooksecurefunc(cooldown, "SetEdgeTexture", function(c,t) if t ~= b then c:SetEdgeTexture(b) end end)
+	hooksecurefunc(cooldown, "SetSwipeColor", function(c,r,g,b,a) if not a or a>.76 then c:SetSwipeColor(r,g,b,.75) end end)
+	hooksecurefunc(cooldown, "SetDrawSwipe", function(c,h) if not h then c:SetDrawSwipe(true) end end)
+	hooksecurefunc(cooldown, "SetDrawBling", function(c,h) if h then c:SetDrawBling(false) end end)
+	hooksecurefunc(cooldown, "SetDrawEdge", function(c,h) if h then c:SetDrawEdge(false) end end)
+	hooksecurefunc(cooldown, "SetHideCountdownNumbers", function(c,h) if h then c:SetHideCountdownNumbers(false) end end)
+	hooksecurefunc(cooldown, "SetCooldown", function(c) c:SetAlpha(.75) end)
+
+	hooksecurefunc(button, "SetNormalTexture", function(b,...) if(...~="")then b:SetNormalTexture("") end end)
+	hooksecurefunc(button, "SetHighlightTexture", function(b,...) if(...~="")then b:SetHighlightTexture("") end end)
+	hooksecurefunc(button, "SetCheckedTexture", function(b,...) if(...~="")then b:SetCheckedTexture("") end end)
+
+	-- Disable masque for our buttons,
+	-- they are not compatible.
+	button.AddToMasque = noop
+	button.AddToButtonFacade = noop
+	button.LBFSkinned = nil
+	button.MasqueSkinned = nil
+
+	return button
+end
+
+PetBar.CreateButton = function(self, buttonConfig)
+
+	local id = #self.buttons + 1
+	local button = ns.PetButton.Create(id, self:GetName().."Button"..id, self, buttonConfig)
+	button.header = self
+
+	self:SetFrameRef("Button"..id, button)
+	self.buttons[id] = button
+
+	local keyBoundTarget = "BONUSACTIONBUTTON"..id
+	button.keyBoundTarget = keyBoundTarget
+
+	local buttonConfig = buttonConfig or button.config or {}
+	buttonConfig.keyBoundTarget = keyBoundTarget
+	buttonConfig.clickOnDown = self.config.clickOnDown
+
+	button:UpdateConfig(buttonConfig)
+
+	return button
+end
+
+PetBar.Enable = function(self)
+	ButtonBar.Enable(self)
+	self:Update()
+end
+
+PetBar.Disable = function(self)
+	ButtonBar.Disable(self)
+	self:Update()
+end
+
+PetBar.Update = function(self)
+	if (InCombatLockdown()) then
+		self:UpdateFading()
+		return
+	end
+
+	self:UpdateButtonConfig()
+	self:UpdateButtonCount()
+	self:UpdateButtonLayout()
+	self:UpdateVisibilityDriver()
+	self:UpdateBindings()
+	self:UpdateFading()
+
+	for id,button in next,self.buttons do
+		button:Update()
+	end
+end
+
+PetBar.UpdateFading = function(self)
+
+	local config, buttons = self.config, self.buttons
+
+	if (config.enabled and config.enableBarFading) then
+
+		-- Remove any previous fade registrations.
+		for id = 1, #buttons do
+			LFF:UnregisterFrameForFading(buttons[id])
+		end
+
+		-- Register fading for selected buttons.
+		for id = config.fadeFrom or 1, #buttons do
+			local button = buttons[id]
+			if (button:GetTexture()) then
+				LFF:RegisterFrameForFading(button, config.fadeAlone and self:GetName() or "actionbuttons", unpack(config.hitrects))
+			end
+		end
+
+	else
+
+		-- Unregister all fading.
+		for id, button in next,buttons do
+			LFF:UnregisterFrameForFading(buttons[id])
+		end
+	end
+
+end
+
+PetBar.UpdateBindings = function(self)
+	if (InCombatLockdown()) then return end
+	if (not next(self.buttons)) then return end
+
+	ClearOverrideBindings(self)
+
+	if (not self:IsEnabled()) then return end
+	if (ns.API.IsHouseEditorActive()) then return end
+
+	if (ns.IsRetail) then
+		for id,button in next,self.buttons do
+			local bindingAction = button.keyBoundTarget
+			if (bindingAction) then
+
+				-- iterate through the registered keys for the action
+				local buttonName = button:GetName()
+				for keyNumber = 1,select("#", GetBindingKey(bindingAction)) do
+
+					-- get a key for the action
+					local key = select(keyNumber, GetBindingKey(bindingAction))
+					if (key and (key ~= "")) then
+
+						-- Unlike our LAB-driven action/stance buttons, pet buttons use Blizzard's
+						-- own PetActionButtonMixin_OnClick, which only calls CastPetAction when the
+						-- click's button name is literally "LeftButton" (anything else falls through
+						-- to TogglePetAutocast). LAB recognizes a virtual "Keybind" click and maps it
+						-- back to "LeftButton" internally, but these plain template buttons do not, so
+						-- a "Keybind" click here silently toggled autocast instead of casting the
+						-- action. Use "LeftButton" so the keybind behaves like a real left click.
+						SetOverrideBindingClick(self, false, key, buttonName, "LeftButton") -- assign the key to our own button
+
+					end
+				end
+			end
+		end
+	else
+		for id,button in next,self.buttons do
+			local bindingAction = button.keyBoundTarget
+			if (bindingAction) then
+
+				-- iterate through the registered keys for the action
+				local buttonName = "CLICK "..button:GetName()..":LeftButton"
+				for keyNumber = 1,select("#", GetBindingKey(buttonName)) do
+
+					-- get a key for the action
+					local key = select(keyNumber, GetBindingKey(buttonName))
+					if (key and (key ~= "")) then
+						SetOverrideBinding(self, false, key, bindingAction) -- assign the key to our own button
+					end
+				end
+			end
+		end
+
+	end
+
+end
+
+PetBar.UpdateVisibilityDriver = function(self)
+	if (InCombatLockdown()) then return end
+
+	local config = self.config
+
+	local visdriver
+	if (config.enabled) then
+
+		visdriver = "[petbattle]hide;"
+
+		-- Experimental change to avoid duplicate bars on some world quests.
+		visdriver = visdriver.."[@pet,exists,nopossessbar,nooverridebar,noshapeshift,novehicleui]show;"
+
+		visdriver = visdriver.."hide"
+	end
+
+	-- The native state does the show/hide from Blizzard's own code, so it also
+	-- survives combat. `userhidden` needs no folding here: Bar.Disable is the only
+	-- thing that sets it, and it always comes with config.enabled false, which is
+	-- already a plain "hide" driver.
+	if (not hasSecureSnippets) then
+		UnregisterStateDriver(self, "vis")
+		ns.API.RegisterVisibilityDriver(self, visdriver or "hide")
+		return
+	end
+
+	UnregisterStateDriver(self, "vis")
+	self:SetAttribute("state-vis", "0")
+	RegisterStateDriver(self, "vis", visdriver or "hide")
+end
+
+PetBarMod.CreateBar = function(self)
+	if (self.bar) then return end
+
+	local config = ns.GetConfig("PetActionButton")
+
+	local bar = setmetatable(ns.ButtonBar:Create("PetBar", self.db.profile, ns.Prefix.."PetBar"), PetBar_MT)
+	bar.buttonWidth, bar.buttonHeight = unpack(config.ButtonSize)
+	bar.defaults = self:GetDefaults().profile
+	bar.config = self.db.profile
+
+	if (ns.WoW10) then
+		bar.config.clickOnDown = GetCVarBool("ActionButtonUseKeyDown")
+	end
+
+	if (hasSecureSnippets) then
+		bar:SetAttribute("UpdateVisibility", [[
+			local visibility = self:GetAttribute("visibility");
+			local userhidden = self:GetAttribute("userhidden");
+			if (visibility == "show") then
+				if (userhidden) then
+					self:Hide();
+				else
+					self:Show();
+				end
+			elseif (visibility == "hide") then
+				self:Hide();
+			end
+		]])
+
+		bar:SetAttribute("_onstate-vis", [[
+			if (not newstate) then
+				return
+			end
+			self:SetAttribute("visibility", newstate);
+			self:RunAttribute("UpdateVisibility");
+		]])
+	end
+
+	for id= 1,NUM_PET_ACTION_SLOTS do
+		local button = style(bar:CreateButton(), self.db.profile.buttonShape)
+		if (ns.LegacyHUD) then ns.LegacyHUD:StyleButton(button) end
+	end
+
+	self.bar = bar
+end
+
+PetBarMod.CreateAnchor = function(self)
+	if (self.anchor) then return end
+	if (not self.bar) then return end
+
+	local defaults = self:GetDefaults().profile
+	local config = self.db.profile
+
+	local anchor = ns:GetModule("MovableFramesManager"):RequestAnchor(self:GetName())
+	anchor:SetAnchorPointLocked(config.savedPosition.lockAnchorPoint)
+	anchor:SetScalable(true)
+	anchor:SetDefaultScale(defaults.savedPosition.scale)
+	anchor:SetDefaultPosition(defaults.savedPosition[1], defaults.savedPosition[2], defaults.savedPosition[3])
+	anchor:SetSize(self.bar:GetSize())
+	anchor:SetPoint(config.savedPosition[1], config.savedPosition[2], config.savedPosition[3])
+	anchor:SetScale(config.savedPosition.scale)
+	anchor:SetTitle(L["Pet Bar"])
+
+	anchor.PreUpdate = function()
+		self:UpdateAnchor()
+	end
+
+	-- Color the anchor according to anchor type
+	anchor:SetColorGroup("actionbars")
+
+	self.anchor = anchor
+
+end
+
+PetBarMod.GetDefaults = function(self)
+	local defaults = self.GenerateDefaults and self:GenerateDefaults() or self.defaults
+	return ns.LegacyHUD and ns.LegacyHUD:GetDefaults(self:GetName(), defaults) or defaults
+end
+
+PetBarMod.SetDefaults = function(self, defaults)
+	self.db:RegisterDefaults(defaults)
+end
+
+PetBarMod.UpdateAnchor = function(self)
+	if (not self.anchor) then return end
+	if (not self.bar) then return end
+
+	local config = self.db.profile.savedPosition
+	if (config) then
+		self.anchor:SetSize(self.bar:GetSize())
+		self.anchor:SetScale(config.scale)
+		self.anchor:ClearAllPoints()
+		self.anchor:SetPoint(config[1], UIParent, config[1], config[2], config[3])
+	end
+end
+
+PetBarMod.UpdateBar = function(self)
+	if (not self.bar) then return end
+
+	if (InCombatLockdown()) then
+		self.needupdate = true
+		return
+	end
+
+	self.bar:Update()
+end
+
+PetBarMod.UpdateBindings = function(self)
+	if (not self.bar) then return end
+
+	if (self.bar:IsEnabled()) then
+		self.bar:UpdateBindings()
+	end
+end
+
+PetBarMod.UpdatePetButtons = function(self)
+	if (not self.bar) then return end
+
+	for id,button in next,self.bar.buttons do
+		button:Update()
+	end
+
+	self.bar:UpdateFading()
+end
+
+PetBarMod.UpdatePetBarState = function(self)
+	if (not self.bar) then return end
+
+	if (InCombatLockdown()) then
+		self.needupdate = true
+	else
+		self.bar:UpdateVisibilityDriver()
+	end
+
+	self:UpdatePetButtons()
+end
+
+-- The refresh events below can be dispatched from inside a secure key press: a macro's
+-- /petattack calls PetAttack inside UseAction, and PET_BAR_UPDATE fires within that call.
+-- The whole refresh then counted against the key press, where BugSack caught a "script
+-- ran too long" (TODO 7.1). Requests are collected and served once, on the next frame.
+PetBarMod.QueuePetBarUpdate = function(self, updateState)
+	if (updateState) then
+		self.__AzeriteUI_PendingPetBarState = true
+	end
+	if (self.__AzeriteUI_PetBarUpdateTimer) then return end
+	self.__AzeriteUI_PetBarUpdateTimer = self:ScheduleTimer("OnPetBarUpdateTimer", 0)
+end
+
+PetBarMod.OnPetBarUpdateTimer = function(self)
+	local updateState = self.__AzeriteUI_PendingPetBarState
+	self.__AzeriteUI_PetBarUpdateTimer = nil
+	self.__AzeriteUI_PendingPetBarState = nil
+	if (updateState) then
+		self:UpdatePetBarState()
+	else
+		self:UpdatePetButtons()
+	end
+end
+
+-- Called by the movable frame manager
+-- when defaults somehow are changed,
+-- like when the user interface scale is modified.
+PetBarMod.UpdateDefaults = function(self)
+	if (not self.anchor) then return end
+
+	local defaults = self:GetDefaults()
+	local config = defaults.profile.savedPosition
+
+	config.scale = self.anchor:GetDefaultScale()
+	config[1], config[2], config[3] = self.anchor:GetDefaultPosition()
+
+	self:SetDefaults(defaults)
+end
+
+PetBarMod.UpdatePositionAndScale = function(self)
+	if (not self.bar) then return end
+
+	if (InCombatLockdown()) then
+		self.updateneeded = true
+		return
+	end
+
+	self.updateneeded = nil
+
+	local config = self.bar.config.savedPosition
+	if (config) then
+
+		self.bar:SetScale(config.scale)
+		self.bar:ClearAllPoints()
+		self.bar:SetPoint(config[1], UIParent, config[1], config[2]/config.scale, config[3]/config.scale)
+	end
+end
+
+PetBarMod.UpdateEnabled = function(self)
+	if (not self.bar) then return end
+	if (InCombatLockdown()) then
+		self.needupdate = true
+		return
+	end
+	if (self.bar.config.enabled) then
+		self.bar:Enable()
+	else
+		self.bar:Disable()
+	end
+end
+
+PetBarMod.UpdateSettings = function(self)
+	if (InCombatLockdown()) then
+		self.needupdate = true
+		return
+	end
+
+	-- Transfer options from main actionbars module.
+	local db = ns:GetModule("ActionBars").db.profile
+
+	self.db.profile.clickOnDown = db.clickOnDown
+	self.db.profile.hideElements = db.hideElements
+
+	self.bar.config.clickOnDown = db.clickOnDown
+	self.bar.config.hideElements = db.hideElements
+
+	self:UpdateEnabled()
+	self:UpdateBar()
+	self:UpdateBindings()
+	self:UpdatePositionAndScale()
+	self:UpdateAnchor()
+end
+
+PetBarMod.RefreshConfig = function(self)
+	self.bar.config = self.db.profile
+	self:UpdateSettings()
+end
+
+PetBarMod.OnEvent = function(self, event, arg1)
+	if (event == "PLAYER_ENTERING_WORLD") then
+		self:UpdateSettings()
+
+	elseif (event == "PLAYER_REGEN_ENABLED") then
+		if (InCombatLockdown()) then return end
+		if (self.needupdate) then
+			self.needupdate = nil
+			self:UpdateSettings()
+		end
+
+	elseif (event == "PET_BAR_UPDATE" or (event == "UNIT_PET" and arg1 == "player") or event == "PET_UI_UPDATE" or event == "UPDATE_VEHICLE_ACTIONBAR") then
+		self:QueuePetBarUpdate(true)
+
+	elseif (event == "PLAYER_CONTROL_LOST" or event == "PLAYER_CONTROL_GAINED" or event == "PLAYER_FARSIGHT_FOCUS_CHANGED" or event == "PET_BAR_UPDATE_USABLE" or event == "PLAYER_TARGET_CHANGED" or event == "PLAYER_MOUNT_DISPLAY_CHANGED") then
+		self:QueuePetBarUpdate()
+
+	elseif (event == "UNIT_FLAGS" or event == "UNIT_AURA") and (arg1 == "pet") then
+		self:QueuePetBarUpdate()
+
+	elseif (event =="PET_BAR_UPDATE_COOLDOWN") then
+		for id,button in next,self.bar.buttons do
+			button:UpdateCooldown()
+		end
+
+	elseif (event == "PET_BAR_SHOWGRID") then
+		for id,button in next,self.bar.buttons do
+			button:ShowGrid()
+		end
+
+	elseif (event == "PET_BAR_HIDEGRID") then
+		for id,button in next,self.bar.buttons do
+			button:HideGrid()
+		end
+
+	elseif (event == "UPDATE_BINDINGS") or (event == "HOUSE_EDITOR_MODE_CHANGED") then
+		self:UpdateBindings()
+	elseif (event == "GAME_PAD_ACTIVE_CHANGED") then
+		-- Only the hotkey text follows the input in use; the bindings stay as they are,
+		-- which keeps this legal in combat.
+		LAB.SetGamePadActive(arg1)
+		if (self.bar) then
+			for id,button in next,self.bar.buttons do
+				button:UpdateHotkeys()
+			end
+		end
+	end
+end
+
+PetBarMod.OnAnchorEvent = function(self, event, ...)
+	if (event == "PLAYER_ENTERING_WORLD" or event == "VARIABLES_LOADED") then
+		self.incombat = nil
+
+		self:UpdatePositionAndScale()
+		self:UpdateAnchor()
+
+	elseif (event == "PLAYER_REGEN_ENABLED") then
+		if (InCombatLockdown()) then return end
+
+		self.incombat = nil
+
+		if (self.updateneeded) then
+			self:UpdatePositionAndScale()
+			self:UpdateAnchor()
+		end
+
+	elseif (event == "PLAYER_REGEN_DISABLED") then
+		self.incombat = true
+
+	elseif (event == "MFM_PositionUpdated") then
+		local anchor, point, x, y = ...
+
+		if (anchor ~= self.anchor) then return end
+
+		self.bar.config.savedPosition[1] = point
+		self.bar.config.savedPosition[2] = x
+		self.bar.config.savedPosition[3] = y
+
+		self:UpdatePositionAndScale()
+
+	elseif (event == "MFM_ScaleUpdated") then
+		local anchor, scale = ...
+		if (anchor ~= self.anchor) then return end
+
+		self.bar.config.savedPosition.scale = scale
+
+		self:UpdatePositionAndScale()
+
+	elseif (event == "MFM_Dragging") then
+		if (not self.incombat) then
+
+			local anchor = ...
+			if (anchor ~= self.anchor) then return end
+
+			self:OnAnchorEvent("MFM_PositionUpdated", ...)
+		end
+
+	elseif (event == "MFM_UIScaleChanged") then
+		self:UpdateDefaults()
+	end
+end
+
+PetBarMod.OnEnable = function(self)
+
+	self.db.profile.clickOnDown = ns:GetModule("ActionBars").db.profile.clickOnDown
+
+	self:CreateBar()
+	self:CreateAnchor()
+	self:UpdateSettings()
+
+	self.db.RegisterCallback(self, "OnProfileChanged", "RefreshConfig")
+	self.db.RegisterCallback(self, "OnProfileCopied", "RefreshConfig")
+	self.db.RegisterCallback(self, "OnProfileReset", "RefreshConfig")
+
+	self:RegisterEvent("PET_BAR_UPDATE", "OnEvent")
+	self:RegisterEvent("PET_BAR_UPDATE_COOLDOWN", "OnEvent")
+	self:RegisterEvent("PET_BAR_UPDATE_USABLE", "OnEvent")
+	self:RegisterEvent("PET_BAR_SHOWGRID", "OnEvent")
+	self:RegisterEvent("PET_BAR_HIDEGRID", "OnEvent")
+	self:RegisterEvent("PET_UI_UPDATE", "OnEvent")
+	self:RegisterEvent("PLAYER_CONTROL_LOST", "OnEvent")
+	self:RegisterEvent("PLAYER_CONTROL_GAINED", "OnEvent")
+	self:RegisterEvent("PLAYER_ENTERING_WORLD", "OnEvent")
+	self:RegisterEvent("PLAYER_FARSIGHT_FOCUS_CHANGED", "OnEvent")
+	self:RegisterEvent("PLAYER_MOUNT_DISPLAY_CHANGED", "OnEvent")
+	self:RegisterEvent("PLAYER_REGEN_ENABLED", "OnEvent")
+	self:RegisterEvent("PLAYER_TARGET_CHANGED", "OnEvent")
+	self:RegisterEvent("UPDATE_BINDINGS", "OnEvent")
+	if (ns.API.IsEventAvailable("GAME_PAD_ACTIVE_CHANGED")) then
+		self:RegisterEvent("GAME_PAD_ACTIVE_CHANGED", "OnEvent")
+	end
+	if (ns.API.IsEventAvailable("HOUSE_EDITOR_MODE_CHANGED")) then
+		self:RegisterEvent("HOUSE_EDITOR_MODE_CHANGED", "OnEvent")
+	end
+	self:RegisterEvent("UNIT_PET", "OnEvent")
+
+	-- The pet's auras and flags only, as Bartender4 does it; registered for every unit,
+	-- each raid member's aura change reached this bar just to be thrown away. On a frame
+	-- of our own, because LibMoreEvents shares one frame across the addon, and a unit
+	-- filter there would also narrow every other module's registration of the event.
+	local petEvents = self.petEventFrame or CreateFrame("Frame")
+	petEvents:RegisterUnitEvent("UNIT_AURA", "pet")
+	petEvents:RegisterUnitEvent("UNIT_FLAGS", "pet")
+	petEvents:SetScript("OnEvent", function(_, event, unit) self:OnEvent(event, unit) end)
+	self.petEventFrame = petEvents
+
+	self:RegisterEvent("PLAYER_ENTERING_WORLD", "OnAnchorEvent")
+	self:RegisterEvent("PLAYER_REGEN_DISABLED", "OnAnchorEvent")
+	self:RegisterEvent("PLAYER_REGEN_ENABLED", "OnAnchorEvent")
+
+	ns.RegisterCallback(self, "MFM_PositionUpdated", "OnAnchorEvent")
+	ns.RegisterCallback(self, "MFM_AnchorShown", "OnAnchorEvent")
+	ns.RegisterCallback(self, "MFM_ScaleUpdated", "OnAnchorEvent")
+	ns.RegisterCallback(self, "MFM_Dragging", "OnAnchorEvent")
+	ns.RegisterCallback(self, "MFM_UIScaleChanged", "OnAnchorEvent")
+
+	self:UpdateBindings()
+end
+
+PetBarMod.OnInitialize = function(self)
+	if (ns.API.IsAddOnEnabled("ConsolePort_Bar")) then return self:Disable() end
+
+	self.db = ns.LegacyHUD and ns.LegacyHUD:RegisterNamespace(self:GetName(), self:GetDefaults())
+		or ns.db:RegisterNamespace(self:GetName(), self:GetDefaults())
+end

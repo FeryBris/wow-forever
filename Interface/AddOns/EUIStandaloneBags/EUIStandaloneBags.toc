@@ -1,0 +1,136 @@
+## Interface: 120000, 120001, 120005, 120007, 120100, 120105, 16001
+## Title: |cff0cd29fEUI|r Bags (Standalone)
+## Author: Ellesmere
+## Version: 9.8
+## Notes: A beautiful visual refresh of Blizzard Bags with intuitive organization. Standalone edition.
+## SavedVariables: EUICoreStandaloneBagsDB, EUIStandaloneBagsDB, EUIStandaloneBagsInventoryDB
+## IconTexture: Interface\AddOns\EUIStandaloneBags\media\eg-logo.tga
+## X-Curse-Project-ID: 1560668
+## X-Wago-ID: L6J9xRNv
+
+# Libraries
+Libs\LibStub\LibStub.lua
+Libs\CallbackHandler-1.0\CallbackHandler-1.0.lua
+Libs\LibDataBroker-1.1\LibDataBroker-1.1.lua
+Libs\LibSharedMedia-3.0\LibSharedMedia-3.0.lua
+Libs\LibDeflate\LibDeflate.lua
+Libs\LibKeystone\LibKeystone.lua [AllowLoadGameType standard]
+Libs\LibSpecialization\LibSpecialization.lua [AllowLoadGameType standard]
+
+# Core (renamed)
+EUICoreStandaloneBags_ClientGate.lua
+EUICoreStandaloneBags_Lite.lua
+EUICoreStandaloneBags_Uninstall.lua
+EUICoreStandaloneBags_Locale.lua
+EUICoreStandaloneBags_NumberFormat.lua
+EUICoreStandaloneBags_Migration.lua
+EUICoreStandaloneBags_Startup.lua
+EUICoreStandaloneBags_GoldLedger.lua
+EUICoreStandaloneBags_PixelPerfect.lua
+EUICoreStandaloneBags.lua
+EUICoreStandaloneBags_AbsorbGlow.lua
+EUICoreStandaloneBags_Panel.lua
+EUICoreStandaloneBags_VisibilityRules.lua
+EUICoreStandaloneBags_SharedHelpers.lua
+EUICoreStandaloneBags_Popups.lua
+EUICoreStandaloneBags_TextTags.lua
+EUICoreStandaloneBags_Colors.lua
+EUICoreStandaloneBags_Fonts.lua
+EUICoreStandaloneBags_ProfileSync.lua
+EUICoreStandaloneBags_RetailAtlas.lua
+EUICoreStandaloneBags_BuffPresets.lua
+EUICoreStandaloneBags_UICore.lua
+EUICoreStandaloneBags_Ticker.lua
+EUICoreStandaloneBags_Mouse.lua
+EUICoreStandaloneBags_BlizzardParty.lua
+EUICoreStandaloneBags_KickData.lua
+EUICoreStandaloneBags_Kick.lua
+EUICoreStandaloneBags_MenuFallbacks.lua
+EUICoreStandaloneBags_SignupHelpers.lua
+EUICoreStandaloneBags_GlobalSearch.lua
+EUICoreStandaloneBags_Visibility.lua
+EUICoreStandaloneBags_Presets.lua
+EUICoreStandaloneBags_Profiles.lua
+EUICoreStandaloneBags_PartyMode.lua
+EUI_MacroFactory.lua
+EUI_UnlockMode_PointAnchors.lua
+EUI_UnlockMode.lua
+EUI_UnlockMode_Anchors.lua
+EUI_UnlockMode_Positions.lua
+EUI_UnlockMode_Tools.lua
+EUI_UnlockMode_PointVisuals.lua
+EUI_UnlockMode_PointPicker.lua
+EUI_UnlockMode_Movers.lua
+EUI_UnlockMode_Session.lua
+EUI_UnlockMode_Filter.lua
+EUICoreStandaloneBags_Glows.lua
+EUICoreStandaloneBags_RoundedCorners.lua
+EUICoreStandaloneBags_ClassicArt.lua
+EUICoreStandaloneBags_Range.lua
+EUICoreStandaloneBags_AuraKit.lua
+EUICoreStandaloneBags_WarriorCharges.lua
+EUICoreStandaloneBags_ManaRegenSpark.lua
+EUICoreStandaloneBags_SpellCostPrediction.lua
+EUICoreStandaloneBags_FriendsKit.lua
+EUICoreStandaloneBags_FriendsList.lua
+EUICoreStandaloneBags_FirstInstall.lua
+EUICoreStandaloneBags_StyleCards.lua
+EUICoreStandaloneBags_VideoGuides.lua
+EUICoreStandaloneBags_SpecOverrides.lua
+EUI_SpecOverrides_Harvest.lua
+EUI_SpecOverrides_Layers.lua
+EUI_SpecOverrides_Conditional.lua
+EUI_SpecOverrides_Borders.lua
+EUI_SpecOverrides_Session.lua
+EUI_SpecOverrides_Popups.lua
+EUI_SpecOverrides_ListPage.lua
+EUI_SpecOverrides_Hooks.lua
+EUICoreStandaloneBags_Conditions.lua
+EUICoreStandaloneBags_FramePool.lua
+EUICoreStandaloneBags_Widgets.lua
+EUICoreStandaloneBags_Widgets_Color.lua
+EUICoreStandaloneBags_Widgets_Rows.lua
+EUICoreStandaloneBags_Widgets_CogPopup.lua
+EUICoreStandaloneBags_Widgets_SegmentedControl.lua
+EUICoreStandaloneBags_Widgets_ApplyToAll.lua
+EUICoreStandaloneBags_Widgets_RowAddons.lua
+EUICoreStandaloneBags_Widgets_AuraPopups.lua
+EUICoreStandaloneBags_Widgets_CheckboxDropdowns.lua
+EUICoreStandaloneBags_Widgets_Visibility.lua
+EUICoreStandaloneBags_Widgets_PageParts.lua
+EUICoreStandaloneBags_GlowOptions.lua
+EUI_Colors_Options.lua
+EUI_Profiles_Options.lua
+EUI_WhatsNew_Options.lua
+EUI__General_Options.lua
+EUI_Fonts_Options.lua
+EUI_Textures_Options.lua
+EUI_Glows_Options.lua
+EUI_Gamepad_Options.lua
+EUI_NumberFormat_Options.lua
+EUI_Style_Options.lua
+EUI_PartyMode_Horoscope_Options.lua
+EUI_PartyMode_Options.lua
+
+# Module
+EUIStandaloneBags_DB.lua
+EUIStandaloneBags_Categories.lua
+EUIStandaloneBags.lua
+EUI_Bags_Data.lua
+EUI_Bags_Header.lua
+EUI_Bags_Footer.lua
+EUI_Bags_Shared.lua
+EUI_Bags_Slots.lua
+EUI_Bags_Select.lua
+EUI_Bags_Sidebar.lua
+EUI_Bags_Refresh.lua
+EUI_Bags_Start.lua
+EUIStandaloneBags_Grid.lua
+EUIStandaloneBags_List.lua
+EUIStandaloneBags_Compact.lua
+EUIStandaloneBags_Bank.lua
+EUIStandaloneBags_QuickActions.lua
+EUIStandaloneBags_Offline.lua
+EUIStandaloneBags_OfflineView.lua
+EUIStandaloneBags_AutoGold.lua
+EUI_Bags_Options.lua

@@ -1,0 +1,2114 @@
+--[[
+
+	The MIT License (MIT)
+
+	Copyright (c) 2026 Lars Norberg
+	Copyright (c) 2026 Jonas "JuNNeZ" Andersen (JuNNeZ Edition modifications)
+
+	Permission is hereby granted, free of charge, to any person obtaining a copy
+	of this software and associated documentation files (the "Software"), to deal
+	in the Software without restriction, including without limitation the rights
+	to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+	copies of the Software, and to permit persons to whom the Software is
+	furnished to do so, subject to the following conditions:
+
+	The above copyright notice and this permission notice shall be included in all
+	copies or substantial portions of the Software.
+
+	THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+	IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+	FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+	AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+	LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+	OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+	SOFTWARE.
+
+--]]
+local _, ns = ...
+local oUF = ns.oUF
+local API = ns.API
+local Colors = ns.Colors
+local string_format = string.format
+local math_abs = math.abs
+local POWER_TYPE_MANA = (Enum and Enum.PowerType and Enum.PowerType.Mana) or 0
+
+-- WoW API
+-- GetSpecialization is deprecated in favour of C_SpecializationInfo.GetSpecialization.
+-- Shadowed as a file local so every call site below, and the type() guards around
+-- them, keep working whichever of the two the client still exposes.
+local GetSpecialization = (C_SpecializationInfo and C_SpecializationInfo.GetSpecialization) or GetSpecialization
+
+-- Debug toggles (off by default)
+API.DEBUG_HEALTH = API.DEBUG_HEALTH or false
+API.DEBUG_HEALTH_CHAT = API.DEBUG_HEALTH_CHAT or false
+
+API.CreatePrivateAuras = function(owner, relativeTo, size, count)
+	local iconSize = size or 18
+	local iconCount = count or 3
+	local spacing = 2
+	local element = CreateFrame("Frame", nil, owner)
+	element:SetSize((iconSize * iconCount) + (spacing * (iconCount - 1)), iconSize)
+	element:SetPoint("CENTER", relativeTo or owner, "CENTER")
+	element.size = iconSize
+	element.num = iconCount
+	element.maxCols = iconCount
+	element.spacingX = spacing
+	element.initialAnchor = "LEFT"
+	element.growthX = "RIGHT"
+	element.disableCooldown = false
+	element.disableCooldownText = false
+	element.borderScale = .75
+	owner.PrivateAuras = element
+	return element
+end
+
+local SanitizeDebugValue = function(value)
+	if (issecretvalue and issecretvalue(value)) then
+		return "<secret>"
+	end
+	local valueType = type(value)
+	if (valueType == "string" or valueType == "number" or valueType == "boolean") then
+		return value
+	end
+	if (value == nil) then
+		return "nil"
+	end
+	return tostring(value)
+end
+
+API.DebugPrintf = API.DebugPrintf or function(category, verbosity, fmt, ...)
+	local count = select("#", ...)
+	local args = {}
+	for index = 1, count do
+		args[index] = SanitizeDebugValue(select(index, ...))
+	end
+	local ok, message = API.TryCall(string_format, fmt, unpack(args, 1, count))
+	if (not ok or type(message) ~= "string") then
+		return
+	end
+	if (issecretvalue and issecretvalue(message)) then
+		message = "<secret>"
+	end
+	local prefix = ""
+	if (type(category) == "string" and category ~= "") then
+		prefix = prefix .. category .. "~"
+	end
+	if (type(verbosity) == "number") then
+		prefix = prefix .. tostring(verbosity) .. "~"
+	end
+	local payload = prefix .. SanitizeDebugValue(message)
+	if (DLAPI and DLAPI.DebugLog) then
+		local writeOK = API.TryCall(DLAPI.DebugLog, "AzeriteUI", payload)
+		if (writeOK) then
+			return
+		end
+	end
+	if (API.DEBUG_HEALTH_CHAT) then
+		local chatFrame = DEFAULT_CHAT_FRAME
+		if (chatFrame and chatFrame.AddMessage) then
+			chatFrame:AddMessage(payload)
+		end
+	end
+end
+
+local ShouldDebugUnit = function(unit)
+	if (not API.DEBUG_HEALTH_CHAT) then
+		return false
+	end
+	if (type(unit) ~= "string" or unit == "") then
+		return false
+	end
+	local filter = API.DEBUG_HEALTH_FILTER
+	if (type(filter) ~= "string" or filter == "") then
+		return true
+	end
+	filter = filter:lower()
+	if (unit:lower():find(filter, 1, true) ~= nil) then
+		return true
+	end
+	-- Debug UI historically used defaults like "Target."; make it unit-token friendly.
+	local compact = filter:gsub("[^%a%d_]", "")
+	if (compact ~= "" and unit:lower():find(compact, 1, true) ~= nil) then
+		return true
+	end
+	return false
+end
+
+local ShouldEmitTick = function(element, field, interval)
+	local now = (GetTimePreciseSec and GetTimePreciseSec()) or GetTime()
+	local last = element and element[field] or 0
+	if ((now - last) < (interval or 0.25)) then
+		return false
+	end
+	if (element) then
+		element[field] = now
+	end
+	return true
+end
+
+local IsSecretValue = function(value)
+	return issecretvalue and issecretvalue(value)
+end
+
+API.SafeUnitIsUnit = API.SafeUnitIsUnit or function(unit, otherUnit)
+	if (type(unit) ~= "string" or IsSecretValue(unit) or unit == "") then
+		return false
+	end
+	if (type(otherUnit) ~= "string" or IsSecretValue(otherUnit) or otherUnit == "") then
+		return false
+	end
+
+	if (type(UnitIsUnit) == "function") then
+		local okMatch, match = API.TryCall(UnitIsUnit, unit, otherUnit)
+		if (okMatch) then
+			if (type(match) == "boolean" and (not IsSecretValue(match))) then
+				return match
+			elseif (type(match) == "number" and (not IsSecretValue(match))) then
+				return match ~= 0
+			end
+		end
+	end
+
+	if (type(UnitGUID) == "function") then
+		local okGuidA, guidA = API.TryCall(UnitGUID, unit)
+		local okGuidB, guidB = API.TryCall(UnitGUID, otherUnit)
+		-- Both GUIDs must be plain readable strings before we compare them.
+		-- Lua is single threaded and non-preemptive, so nothing can taint a
+		-- value between this check and the comparison below; the comparison of
+		-- two non-secret strings cannot throw and needs no guard.
+		if (okGuidA and okGuidB
+			and type(guidA) == "string" and (not IsSecretValue(guidA))
+			and type(guidB) == "string" and (not IsSecretValue(guidB))) then
+			return guidA == guidB
+		end
+	end
+
+	return false
+end
+
+--[[
+	3D portrait alpha.
+
+	A PlayerModel does not inherit the alpha of its parent chain -- the model is
+	drawn through its own channel, SetModelAlpha. That is what the old "Fix
+	unresponsive alpha on 3D Portrait" comment in the stylers was circling
+	without naming, and the fix it introduced was a pair of secure hooks per
+	frame, one on the frame and one on the global UIParent, both running
+	`Portrait:SetAlpha(self:GetEffectiveAlpha())`. Three faults:
+
+	  * `GetEffectiveAlpha` carries the RequiresScriptObjectAlphaAccess
+	    precondition, whose failure mode is ReturnWithError: it hands a tainted
+	    caller no values at all once the parent chain owns the secret Alpha
+	    aspect, as it does on any addon-restricted map. Feeding that nil to
+	    SetAlpha is a hard error, and it was the crash this replaced.
+	  * It wrote the frame's alpha over the portrait's own, discarding the
+	    configured PortraitAlpha of .85 the first time a frame's alpha changed.
+	  * The UIParent hook was a fresh closure per unit frame, installed on a
+	    global and never removed.
+
+	The frame hook is handed the alpha it was called with, so there is no
+	guarded getter left to fail. ElvUI reaches the same shape in
+	`UF:ModelAlphaFix`; AzeriteUI6 deleted the hooks outright and lost the fade
+	with them.
+
+	UIParent still needs a hook. Nothing in Blizzard's UI calls
+	`UIParent:SetAlpha`, but DialogueUI fades the whole interface that way while
+	it talks (`DialogueUI/Code/Camera.lua`), and a model left out of it stays
+	solid over a faded screen. There is one shared hook for every portrait, and
+	the model gets the frame's alpha times `UIParent:GetAlpha()`, which, like
+	the frame's own getter, carries no access precondition.
+
+	The two channels are kept strictly separate, so this is correct whether or
+	not a model honours its own widget alpha -- which the API gives no way to
+	settle from outside the game:
+
+	  * The widget keeps PortraitAlpha, set once at construction. It is also
+	    what the 2D fallback texture parented to the model inherits, and that
+	    texture is an ordinary region, so it already fades with the frame.
+	  * The model gets the frame's alpha, and only that. Nothing multiplies
+	    PortraitAlpha in twice.
+
+	ElvUI does multiply the two together, which is right only if the widget
+	channel is inert. If it is not, the portrait renders at PortraitAlpha
+	squared. The cost of not multiplying is milder and in one direction: should
+	the widget channel turn out to be inert, the model sits at full opacity
+	instead of .85, exactly where it sits today, and the fade still works.
+]]
+
+-- Shared by every portrait, so the hook chain on a frame's SetAlpha stays one
+-- link long however many frames spawn. hooksecurefunc on a widget method passes
+-- the widget itself as the first argument.
+-- Frames with a 3D portrait, weak so a discarded frame is not kept alive.
+local portraitOwners = setmetatable({}, { __mode = "k" })
+local isUIParentHooked = false
+
+local GetUIParentAlpha = function()
+	local alpha = UIParent and UIParent:GetAlpha()
+	if (not API.IsSafeNumber(alpha)) then
+		return 1
+	end
+	return alpha
+end
+
+local Portrait_OnOwnerSetAlpha = function(frame, alpha)
+	local portrait = frame and frame.Portrait
+	if (not portrait or not portrait.SetModelAlpha) then
+		return
+	end
+	-- SetModelAlpha is SecretArguments = "AllowedWhenUntainted"; unlike SetAlpha
+	-- it will not accept a secret from us. Draw the model solid rather than
+	-- error, and let the next readable call correct it.
+	if (not API.IsSafeNumber(alpha)) then
+		alpha = 1
+	end
+	API.TryCall(portrait.SetModelAlpha, portrait, alpha * GetUIParentAlpha())
+end
+
+local Portraits_OnUIParentSetAlpha = function()
+	for frame in next, portraitOwners do
+		Portrait_OnOwnerSetAlpha(frame, frame:GetAlpha())
+	end
+end
+
+--[[
+	Re-apply the owning frame's alpha to a portrait's model.
+
+	ClearModel and SetUnit reset the model's alpha, so every styler's portrait
+	update has to call this once it is done rebuilding the model.
+]]
+API.RefreshPortraitModelAlpha = function(portrait)
+	local frame = portrait and (portrait.alphaOwner or portrait.__owner)
+	if (not frame) then
+		return
+	end
+	Portrait_OnOwnerSetAlpha(frame, frame:GetAlpha())
+end
+
+--[[
+	Wire a 3D portrait's model alpha to its unit frame's alpha.
+
+	Call once per portrait at construction. Safe to call for a 2D portrait:
+	without SetModelAlpha there is nothing to fix and nothing is hooked.
+]]
+API.AttachPortraitAlphaFix = function(frame, portrait)
+	if (not frame or not portrait or not portrait.SetModelAlpha) then
+		return
+	end
+	portrait.alphaOwner = frame
+	portraitOwners[frame] = true
+	API.RefreshPortraitModelAlpha(portrait)
+	hooksecurefunc(frame, "SetAlpha", Portrait_OnOwnerSetAlpha)
+	if (not isUIParentHooked and UIParent) then
+		isUIParentHooked = true
+		hooksecurefunc(UIParent, "SetAlpha", Portraits_OnUIParentSetAlpha)
+	end
+end
+
+local EmitInterruptDebug = function(castbar, reason, spellID, cooldownState, finalState)
+	if (not API.DEBUG_HEALTH_CHAT) then
+		return
+	end
+	local owner = castbar and castbar.__owner
+	local unit = owner and owner.unit or "nil"
+	local classFile = UnitClassBase and UnitClassBase("player") or select(2, UnitClass("player"))
+	local specIndex = (type(GetSpecialization) == "function") and GetSpecialization() or nil
+	API.DebugPrintf("Interrupt", 2,
+		"reason=%s unit=%s class=%s spec=%s spell=%s cooldown=%s state=%s canAttack=%s notInterruptible=%s probedNotInterruptible=%s shieldShown=%s shieldAlpha=%s",
+		tostring(reason),
+		tostring(unit),
+		tostring(classFile),
+		tostring(specIndex),
+		tostring(spellID),
+		tostring(cooldownState),
+		tostring(finalState),
+		tostring(owner and owner.canAttack),
+		tostring(castbar and castbar.notInterruptible),
+		tostring(castbar and castbar.__AzeriteUI_ProbedNotInterruptible),
+		tostring(castbar and castbar.Shield and castbar.Shield.IsShown and castbar.Shield:IsShown()),
+		tostring(castbar and castbar.Shield and castbar.Shield.GetAlpha and castbar.Shield:GetAlpha()))
+end
+
+-- The player's interrupt and whether it is ready, from the one resolver the nameplates use too
+-- (Interrupts.lua). 1 ready, 0 not, nil when there is no interrupt.
+local GetPrimaryInterruptReadyState = function()
+	local spellID, ready = API.GetPrimaryInterrupt and API.GetPrimaryInterrupt()
+	if (type(spellID) ~= "number" or type(ready) ~= "boolean") then
+		return nil, spellID
+	end
+	return ready and 1 or 0, spellID
+end
+
+local GetBlizzardCastbarForUnit = function(unit)
+	if (type(unit) ~= "string" or unit == "") then
+		return nil
+	end
+
+	if (unit:match("^nameplate%d+$")) then
+		if (C_NamePlate and C_NamePlate.GetNamePlateForUnit) then
+			local okPlate, plate = API.TryCall(C_NamePlate.GetNamePlateForUnit, unit, issecurefunc and issecurefunc())
+			local unitFrame = okPlate and plate and (plate.UnitFrame or plate.unitFrame)
+			return unitFrame and (unitFrame.castBar or unitFrame.CastBar or unitFrame.castbar or unitFrame.Castbar or unitFrame.CastingBarFrame)
+		end
+		return nil
+	end
+
+	if (unit == "target") then
+		local targetFrame = _G.TargetFrame
+		return _G.TargetFrameSpellBar
+			or (targetFrame and (targetFrame.spellbar or targetFrame.SpellBar or targetFrame.castBar or targetFrame.CastBar or targetFrame.CastingBarFrame))
+	end
+
+	if (unit == "focus") then
+		local focusFrame = _G.FocusFrame
+		return _G.FocusFrameSpellBar
+			or (focusFrame and (focusFrame.spellbar or focusFrame.SpellBar or focusFrame.castBar or focusFrame.CastBar or focusFrame.CastingBarFrame))
+	end
+
+	return nil
+end
+
+local ProbeBlizzardCastbarNotInterruptible = function(unit)
+	local blizzardCastbar = GetBlizzardCastbarForUnit(unit)
+	local blizzardActive = blizzardCastbar and (blizzardCastbar.casting or blizzardCastbar.channeling or blizzardCastbar.empowering)
+	local sawFalse = false
+	if (not blizzardCastbar or not blizzardActive) then
+		return nil
+	end
+
+	local blizzardLocked = blizzardCastbar.notInterruptible
+	if (type(blizzardLocked) == "boolean" and (not IsSecretValue(blizzardLocked))) then
+		if (blizzardLocked) then
+			return true
+		end
+		sawFalse = true
+	end
+
+	local shield = blizzardCastbar.Shield or blizzardCastbar.IconShield or blizzardCastbar.BorderShield
+	if (shield and shield.IsShown) then
+		local okShown, shown = API.TryCall(shield.IsShown, shield)
+		if (okShown and type(shown) == "boolean" and (not IsSecretValue(shown))) then
+			if (shown) then
+				return true
+			end
+			sawFalse = true
+		end
+	end
+
+	if (shield and shield.GetAlpha) then
+		local okAlpha, alpha = API.TryCall(shield.GetAlpha, shield)
+		if (okAlpha and type(alpha) == "number" and (not IsSecretValue(alpha))) then
+			if (alpha > .05) then
+				return true
+			end
+			sawFalse = true
+		end
+	end
+
+	if (sawFalse) then
+		return false
+	end
+
+	return nil
+end
+
+local IsCastMarkedNotInterruptible = function(castbar)
+	local sawFalse = false
+	local notInterruptible = castbar and castbar.notInterruptible
+	if (type(notInterruptible) == "boolean" and (not IsSecretValue(notInterruptible))) then
+		if (notInterruptible) then
+			if (castbar) then
+				castbar.__AzeriteUI_ProbedNotInterruptible = true
+			end
+			return true
+		end
+		sawFalse = true
+	end
+
+	local cachedNotInterruptible = castbar and castbar.__AzeriteUI_NotInterruptible
+	if (type(cachedNotInterruptible) == "boolean" and (not IsSecretValue(cachedNotInterruptible))) then
+		if (cachedNotInterruptible) then
+			if (castbar) then
+				castbar.__AzeriteUI_ProbedNotInterruptible = true
+			end
+			return true
+		end
+		sawFalse = true
+	end
+
+	local owner = castbar and castbar.__owner
+	local unit = owner and owner.unit
+	if (type(unit) == "string" and unit ~= "") then
+		local castNotInterruptible
+		if (UnitCastingInfo) then
+			local _, castResult = API.SafeCallPacked("UnitCastingInfo", UnitCastingInfo, unit)
+			castResult = castResult or {}
+			local probedNotInterruptible = castResult[9]
+			if (castResult[1] and type(probedNotInterruptible) == "boolean" and (not IsSecretValue(probedNotInterruptible))) then
+				castNotInterruptible = probedNotInterruptible
+			end
+		end
+		if (castNotInterruptible == nil and UnitChannelInfo) then
+			local _, channelResult = API.SafeCallPacked("UnitChannelInfo", UnitChannelInfo, unit)
+			channelResult = channelResult or {}
+			local probedNotInterruptible = channelResult[8]
+			if (channelResult[1] and type(probedNotInterruptible) == "boolean" and (not IsSecretValue(probedNotInterruptible))) then
+				castNotInterruptible = probedNotInterruptible
+			end
+		end
+		if (type(castNotInterruptible) == "boolean") then
+			if (castNotInterruptible) then
+				if (castbar) then
+					castbar.__AzeriteUI_ProbedNotInterruptible = true
+					castbar.__AzeriteUI_NotInterruptible = true
+				end
+				return true
+			end
+			sawFalse = true
+			if (castbar) then
+				castbar.__AzeriteUI_NotInterruptible = false
+			end
+		end
+
+		local blizzardLocked = ProbeBlizzardCastbarNotInterruptible(unit)
+		if (blizzardLocked == true) then
+			if (castbar) then
+				castbar.__AzeriteUI_ProbedNotInterruptible = true
+			end
+			return true
+		elseif (blizzardLocked == false) then
+			sawFalse = true
+		end
+	end
+
+	if (castbar) then
+		castbar.__AzeriteUI_ProbedNotInterruptible = sawFalse and false or nil
+	end
+
+	if (sawFalse) then
+		return false
+	end
+
+	return nil
+end
+
+local InterruptVisualColors = {
+	primaryReady = { 1, .82, 0 },
+	unavailable = Colors.red,
+	locked = Colors.gray
+}
+
+local IsEnemyUnitForInterruptVisuals = function(owner, unit)
+	if (owner and owner.isObjectPlate) then
+		return false
+	end
+	if (owner and owner.isFriendlyAssistableNPC) then
+		return false
+	end
+	if (owner and owner.canAttack == true) then
+		return true
+	end
+	if (UnitCanAttack) then
+		local okAttack, canAttack = API.TryCall(UnitCanAttack, "player", unit)
+		if (okAttack and type(canAttack) == "boolean" and (not IsSecretValue(canAttack))) then
+			return canAttack
+		end
+	end
+	if (UnitReaction) then
+		local okReaction, reaction = API.TryCall(UnitReaction, "player", unit)
+		if (okReaction and type(reaction) == "number" and (not IsSecretValue(reaction))) then
+			return reaction <= 4
+		end
+	end
+	if (owner and owner.canAttack == false) then
+		return false
+	end
+	return false
+end
+
+local ShouldUseEnemyInterruptVisuals = function(castbar)
+	local owner = castbar and castbar.__owner
+	if (owner and owner.isPRD) then
+		return false
+	end
+	local unit = owner and owner.unit
+	if (type(unit) ~= "string" or unit == "") then
+		return false
+	end
+	if (API.SafeUnitIsUnit(unit, "player")) then
+		return false
+	end
+	return IsEnemyUnitForInterruptVisuals(owner, unit)
+end
+
+local ShouldForceLockedNameplateInterruptState = function(castbar)
+	local owner = castbar and castbar.__owner
+	if (not owner or owner.isPRD) then
+		return false
+	end
+
+	local unit = owner.unit
+	if (type(unit) ~= "string" or unit == "" or not unit:match("^nameplate%d+$")) then
+		return false
+	end
+
+	return IsCastMarkedNotInterruptible(castbar)
+end
+
+API.GetInterruptCastVisualState = function(castbar)
+	local isActiveCast = castbar and (castbar.casting or castbar.channeling or castbar.empowering)
+	if (not isActiveCast) then
+		EmitInterruptDebug(castbar, "inactive", nil, nil, "base")
+		return "base"
+	end
+	if (ShouldForceLockedNameplateInterruptState(castbar)) then
+		EmitInterruptDebug(castbar, "locked_nameplate", nil, nil, "locked")
+		return "locked"
+	end
+	if (not ShouldUseEnemyInterruptVisuals(castbar)) then
+		EmitInterruptDebug(castbar, "not_enemy", nil, nil, "base")
+		return "base"
+	end
+	local notInterruptible = IsCastMarkedNotInterruptible(castbar)
+	if (notInterruptible == true) then
+		EmitInterruptDebug(castbar, "locked", nil, nil, "locked")
+		return "locked"
+	end
+	if (notInterruptible ~= false) then
+		EmitInterruptDebug(castbar, "no_flag", nil, nil, "base")
+		return "base"
+	end
+	local primaryReady, primarySpellID = GetPrimaryInterruptReadyState()
+	if (IsSecretValue(primaryReady) or type(primaryReady) ~= "number") then
+		primaryReady = nil
+	end
+	if (primaryReady == 0) then
+		EmitInterruptDebug(castbar, "cooldown", primarySpellID, primaryReady, "unavailable")
+		return "unavailable"
+	end
+	if (primaryReady == 1) then
+		EmitInterruptDebug(castbar, "ready", primarySpellID, primaryReady, "primary-ready")
+		return "primary-ready"
+	end
+	EmitInterruptDebug(castbar, "unknown", primarySpellID, primaryReady, "unavailable")
+	return "unavailable"
+end
+
+API.GetInterruptCastColor = function(castbar, fallbackColor)
+	local state = API.GetInterruptCastVisualState(castbar)
+	if (state == "primary-ready") then
+		return InterruptVisualColors.primaryReady, state
+	elseif (state == "unavailable") then
+		return InterruptVisualColors.unavailable, state
+	elseif (state == "locked") then
+		return InterruptVisualColors.locked, state
+	end
+	return fallbackColor, state
+end
+
+API.ApplyInterruptCastBarColor = function(castbar, fallbackColor, alphaOverride, interval)
+	if (not castbar or not castbar.SetStatusBarColor) then
+		return nil
+	end
+	if (type(interval) == "number" and interval > 0) then
+		local now = (GetTimePreciseSec and GetTimePreciseSec()) or GetTime()
+		local lastUpdate = castbar.__AzeriteUI_LastInterruptColorUpdate or 0
+		if ((now - lastUpdate) < interval) then
+			return castbar.__AzeriteUI_InterruptCastState
+		end
+		castbar.__AzeriteUI_LastInterruptColorUpdate = now
+	end
+	local color, state = API.GetInterruptCastColor(castbar, fallbackColor)
+	local alpha = alphaOverride
+	if (type(alpha) ~= "number" or IsSecretValue(alpha)) then
+		alpha = (type(color) == "table" and type(color[4]) == "number" and (not IsSecretValue(color[4]))) and color[4]
+			or (type(fallbackColor) == "table" and type(fallbackColor[4]) == "number" and (not IsSecretValue(fallbackColor[4]))) and fallbackColor[4]
+			or 1
+	end
+	if (type(color) == "table" and type(color[1]) == "number" and type(color[2]) == "number" and type(color[3]) == "number") then
+		castbar:SetStatusBarColor(color[1], color[2], color[3], alpha)
+		castbar.__AzeriteUI_InterruptCastState = state
+		return state
+	end
+	return nil
+end
+
+local InterruptCastBarRefreshFrame = CreateFrame("Frame")
+local ActiveInterruptCastBars = setmetatable({}, { __mode = "k" })
+local ActiveInterruptCastBarCount = 0
+
+local RemoveTrackedInterruptCastBar
+local RefreshTrackedInterruptCastBars
+
+local IsInterruptCastBarActive = function(castbar)
+	if (not castbar or type(castbar.__AzeriteUI_InterruptRefreshCallback) ~= "function") then
+		return false
+	end
+	if (not castbar.IsShown or not castbar:IsShown()) then
+		return false
+	end
+	if (not castbar.casting and not castbar.channeling and not castbar.empowering) then
+		return false
+	end
+	return ShouldUseEnemyInterruptVisuals(castbar)
+end
+
+local UpdateInterruptCastBarDriver = function()
+	if (ActiveInterruptCastBarCount > 0) then
+		if (not InterruptCastBarRefreshFrame.__AzeriteUI_InterruptEventsRegistered) then
+			InterruptCastBarRefreshFrame:RegisterEvent("SPELL_UPDATE_COOLDOWN")
+			InterruptCastBarRefreshFrame:RegisterEvent("ACTIONBAR_UPDATE_COOLDOWN")
+			InterruptCastBarRefreshFrame:RegisterEvent("SPELL_UPDATE_CHARGES")
+			InterruptCastBarRefreshFrame.__AzeriteUI_InterruptEventsRegistered = true
+		end
+		if (not InterruptCastBarRefreshFrame.__AzeriteUI_InterruptTicker and C_Timer and C_Timer.NewTicker) then
+			InterruptCastBarRefreshFrame.__AzeriteUI_InterruptTicker = C_Timer.NewTicker(.1, function()
+				RefreshTrackedInterruptCastBars("ticker")
+			end)
+		end
+	else
+		if (InterruptCastBarRefreshFrame.__AzeriteUI_InterruptTicker) then
+			InterruptCastBarRefreshFrame.__AzeriteUI_InterruptTicker:Cancel()
+			InterruptCastBarRefreshFrame.__AzeriteUI_InterruptTicker = nil
+		end
+		if (InterruptCastBarRefreshFrame.__AzeriteUI_InterruptEventsRegistered) then
+			InterruptCastBarRefreshFrame:UnregisterEvent("SPELL_UPDATE_COOLDOWN")
+			InterruptCastBarRefreshFrame:UnregisterEvent("ACTIONBAR_UPDATE_COOLDOWN")
+			InterruptCastBarRefreshFrame:UnregisterEvent("SPELL_UPDATE_CHARGES")
+			InterruptCastBarRefreshFrame.__AzeriteUI_InterruptEventsRegistered = nil
+		end
+	end
+end
+
+local AddTrackedInterruptCastBar = function(castbar)
+	if (not ActiveInterruptCastBars[castbar]) then
+		ActiveInterruptCastBars[castbar] = true
+		ActiveInterruptCastBarCount = ActiveInterruptCastBarCount + 1
+	end
+end
+
+RemoveTrackedInterruptCastBar = function(castbar)
+	if (ActiveInterruptCastBars[castbar]) then
+		ActiveInterruptCastBars[castbar] = nil
+		ActiveInterruptCastBarCount = ActiveInterruptCastBarCount - 1
+		if (ActiveInterruptCastBarCount < 0) then
+			ActiveInterruptCastBarCount = 0
+		end
+	end
+end
+
+RefreshTrackedInterruptCastBars = function(reason)
+	for castbar in pairs(ActiveInterruptCastBars) do
+		if (IsInterruptCastBarActive(castbar)) then
+			local callback = castbar.__AzeriteUI_InterruptRefreshCallback
+			if (type(callback) == "function") then
+				callback(castbar, reason)
+			end
+		else
+			RemoveTrackedInterruptCastBar(castbar)
+		end
+	end
+	UpdateInterruptCastBarDriver()
+end
+
+InterruptCastBarRefreshFrame:SetScript("OnEvent", function(_, event)
+	RefreshTrackedInterruptCastBars(event)
+end)
+
+API.UpdateInterruptCastBarRefresh = function(castbar, refreshCallback, reason)
+	if (not castbar) then
+		return nil
+	end
+	if (type(refreshCallback) == "function") then
+		castbar.__AzeriteUI_InterruptRefreshCallback = refreshCallback
+	end
+	local callback = castbar.__AzeriteUI_InterruptRefreshCallback
+	if (type(callback) == "function") then
+		callback(castbar, reason)
+	end
+	if (IsInterruptCastBarActive(castbar)) then
+		AddTrackedInterruptCastBar(castbar)
+	else
+		RemoveTrackedInterruptCastBar(castbar)
+	end
+	UpdateInterruptCastBarDriver()
+	return castbar.__AzeriteUI_InterruptCastState
+end
+
+API.ClearInterruptCastBarRefresh = function(castbar)
+	if (not castbar) then
+		return
+	end
+	RemoveTrackedInterruptCastBar(castbar)
+	UpdateInterruptCastBarDriver()
+	castbar.__AzeriteUI_InterruptRefreshCallback = nil
+	castbar.__AzeriteUI_LastInterruptColorUpdate = nil
+	castbar.__AzeriteUI_InterruptCastState = nil
+end
+
+local CanAccessValue = function(value)
+	-- WoW12 safeguard: avoid canaccessvalue recursion/stack overflows.
+	-- For addon-side numeric logic, only treat non-secret values as safe.
+	return not IsSecretValue(value)
+end
+
+local IsSafeNumeric = function(value)
+	return (type(value) == "number") and CanAccessValue(value)
+end
+
+local IsSafeGreaterThan = function(left, right)
+	if (not IsSafeNumeric(left) or not IsSafeNumeric(right)) then
+		return false
+	end
+	-- Both operands are verified plain numbers; the comparison cannot throw.
+	return left > right
+end
+
+local HasSafeNumericRange = function(minValue, maxValue)
+	return IsSafeGreaterThan(maxValue, minValue)
+end
+
+-- Events that change a value on the same unit: an eased bar may glide on these.
+-- Anything else (OnShow, RefreshUnit, a roster or target change, oUF's OnUpdate
+-- polling for ToT) may mean another unit in the frame, and snaps.
+local EASE_EVENTS = {
+	ForceUpdate = true,
+	UNIT_HEALTH = true, UNIT_MAXHEALTH = true, UNIT_MAX_HEALTH_MODIFIERS_CHANGED = true,
+	UNIT_ABSORB_AMOUNT_CHANGED = true, UNIT_HEAL_ABSORB_AMOUNT_CHANGED = true, UNIT_HEAL_PREDICTION = true,
+	UNIT_POWER_FREQUENT = true, UNIT_POWER_UPDATE = true, UNIT_MAXPOWER = true
+}
+
+-- Whether this write must snap: the frame's first value, another unit (a readable
+-- GUID that changed), or an event that is not a plain value change. The cached
+-- values' own `forced` reset is separate and unchanged.
+local ShouldSnap = function(element, event, guidChanged)
+	if (guidChanged or not element.__AzeriteUI_HasValue) then return true end
+	return not EASE_EVENTS[event]
+end
+
+--- /azsmooth trace: one chat line per health write on one unit (off by default, session
+-- only): the event, whether it eased or snapped and why, and which way health went when
+-- it is readable. API.SmoothTrace is nil (off) or the unit token to follow.
+API.TraceSmooth = function(element, unit, event, snap, guidChanged, rawCur, rawCurSafe, what)
+	local trace = API.SmoothTrace
+	if (not trace or trace ~= unit) then return end
+	local reason = ""
+	if (snap) then
+		reason = guidChanged and " (another unit)" or (not element.__AzeriteUI_HasValue) and " (first value)" or " (event)"
+	else
+		-- The trace runs before the write: a plain update inside the hold after a snap
+		-- (SetStatusBarValuesCompat) snaps too, so say so instead of "eased".
+		local now = GetTime and GetTime() or nil
+		local holdUntil = element.__AzeriteUI_SnapUntil
+		if (now and type(holdUntil) == "number" and now < holdUntil) then
+			snap = true
+			reason = " (hold after a snap)"
+		end
+	end
+	local delta = ""
+	if (rawCurSafe) then
+		local last = element.__AzeriteUI_TraceLast
+		if (type(last) == "number") then
+			local d = rawCur - last
+			delta = (d > 0 and "  up +" .. d) or (d < 0 and "  down " .. d) or "  same"
+		end
+		element.__AzeriteUI_TraceLast = rawCur
+	else
+		delta = "  (secret)"
+	end
+	local eased = (not snap) and element.smoothing ~= nil and element.smoothing ~= ((Enum and Enum.StatusBarInterpolation and Enum.StatusBarInterpolation.Immediate) or 0)
+	print(string.format("|cffE5B226[azsmooth]|r %s %s %s: %s%s%s", unit, what or "health", tostring(event),
+		eased and "|cff00ff00eased|r" or "|cffff4040snap|r", reason, delta))
+end
+
+local SetStatusBarValuesCompat = function(element, minValue, maxValue, value, forced, snap)
+	if (not element) then
+		return
+	end
+	local smoothing = element.smoothing
+	-- A fresh set (the frame's first value, another unit) snaps, as Blizzard's own bars
+	-- do, so an eased bar never slides from the previous unit's value. A ForceUpdate on
+	-- the same unit is a plain change and may ease: Player power and absorb events call
+	-- it on every tick. Callers without `snap` fall back to `forced`.
+	if (snap == nil) then snap = forced end
+	-- A snap holds for a moment. On a target change the first write snaps, but the shaped
+	-- fill can only read a stale percent then (the values are secret); the ForceUpdate
+	-- that follows in the same frame has the right one and, as a plain update, glided
+	-- from the old target's health to the new one's. Everything this soon after a snap
+	-- snaps too.
+	local now = GetTime and GetTime() or nil
+	if (snap) then
+		element.__AzeriteUI_SnapUntil = now and (now + .15) or nil
+	elseif (now and element.__AzeriteUI_SnapUntil and now < element.__AzeriteUI_SnapUntil) then
+		snap = true
+	end
+	if (smoothing ~= nil and snap) then
+		smoothing = (Enum and Enum.StatusBarInterpolation and Enum.StatusBarInterpolation.Immediate) or 0
+	end
+	element.__AzeriteUI_LastInterpolation = smoothing
+	-- GetTime is fixed within a frame: shaped fills (Target) ease only on the write
+	-- of this frame, never on a later redraw that would inherit an old glide.
+	element.__AzeriteUI_LastWriteTime = GetTime and GetTime() or nil
+	element.__AzeriteUI_HasValue = true
+
+	-- Bounds and value are applied as separate guarded steps. Wrapping both in
+	-- one guard let a failure of the first leave the bar with new bounds and a
+	-- stale value, silently and repeatedly.
+	-- TryCall probes the modern signature silently because the legacy fallback
+	-- is a real handled branch, not a fault; the fallback itself reports.
+	-- SetMinMaxValues takes an interpolation too, Immediate by default. Called on every
+	-- write without it, it snapped an eased bar mid-glide, so a heal (which arrives with
+	-- bursts of absorb and heal-prediction ForceUpdates) barely glided while one hit did.
+	-- The same interpolation as the value; an unchanged range then changes nothing.
+	local rangeSet
+	if (smoothing ~= nil) then
+		rangeSet = API.TryCall(element.SetMinMaxValues, element, minValue, maxValue, smoothing)
+	end
+	if (not rangeSet and not API.TryCall(element.SetMinMaxValues, element, minValue, maxValue)) then
+		API.SafeCall("StatusBar.SetMinMaxValues", element.SetMinMaxValues, element, minValue, maxValue, forced)
+	end
+
+	-- Value second, as its own step. Reported on failure so a bar left showing
+	-- a stale value against fresh bounds cannot go unnoticed.
+	if (smoothing ~= nil) then
+		if (not API.TryCall(element.SetValue, element, value, smoothing)) then
+			API.SafeCall("StatusBar.SetValue.smoothed", element.SetValue, element, value, forced)
+		end
+	else
+		if (not API.TryCall(element.SetValue, element, value)) then
+			API.SafeCall("StatusBar.SetValue", element.SetValue, element, value, forced)
+		end
+	end
+end
+
+local SafePercentFromValues = function(cur, max)
+	if (not IsSafeNumeric(cur) or not IsSafeNumeric(max) or max <= 0) then
+		return nil
+	end
+	-- Both operands are verified plain numbers; the arithmetic cannot throw.
+	local result = (cur / max * 100) + 0.5
+	return result - (result % 1)
+end
+
+local SafeUnitPercentNumber = function(unit, isPower, powerType)
+	local percent
+	-- The curve-aware signature is probed silently: falling through to the
+	-- curveless call below is an expected branch, not a fault. The curveless
+	-- call is the one that should always work, so it reports if it throws.
+	if (isPower and UnitPowerPercent) then
+		if (CurveConstants and CurveConstants.ScaleTo100) then
+			local ok, value = API.TryCall(UnitPowerPercent, unit, powerType, true, CurveConstants.ScaleTo100)
+			if (ok) then
+				percent = value
+			end
+		end
+		if (not IsSafeNumeric(percent)) then
+			local ok, value = API.SafeCall("UnitPowerPercent", UnitPowerPercent, unit, powerType)
+			if (ok) then
+				percent = value
+			end
+		end
+	elseif (not isPower and UnitHealthPercent) then
+		if (CurveConstants and CurveConstants.ScaleTo100) then
+			local ok, value = API.TryCall(UnitHealthPercent, unit, true, CurveConstants.ScaleTo100)
+			if (ok) then
+				percent = value
+			end
+		end
+		if (not IsSafeNumeric(percent)) then
+			local ok, value = API.SafeCall("UnitHealthPercent", UnitHealthPercent, unit)
+			if (ok) then
+				percent = value
+			end
+		end
+	end
+	if (IsSafeNumeric(percent)) then
+		return percent
+	end
+	return nil
+end
+
+local NormalizePercent100 = function(percent)
+	if (type(percent) ~= "number") then
+		return nil
+	end
+	if (percent >= 0 and percent <= 1) then
+		percent = percent * 100
+	end
+	if (percent < 0) then
+		return 0
+	elseif (percent > 100) then
+		return 100
+	end
+	return percent
+end
+
+-- Kept as a named alias for readability at the geometry call sites; the
+-- semantics live in API.IsSafeNumber (see Core/API/SecretValues.lua).
+local CanReadGeometryNumber = function(value)
+	return API.IsSafeNumber(value)
+end
+
+local GetTexturePercentFromBar = function(element)
+	if (not element) then
+		return nil
+	end
+	local texture = element.GetStatusBarTexture and element:GetStatusBarTexture()
+	if (not texture) then
+		return nil
+	end
+	local orientation = (element.GetOrientation and element:GetOrientation()) or "HORIZONTAL"
+	local baseLeft = element.__AzeriteUI_BaseTexCoordLeft
+	local baseRight = element.__AzeriteUI_BaseTexCoordRight
+	local baseTop = element.__AzeriteUI_BaseTexCoordTop
+	local baseBottom = element.__AzeriteUI_BaseTexCoordBottom
+	if (type(baseLeft) == "number" and type(baseRight) == "number" and type(baseTop) == "number" and type(baseBottom) == "number"
+		and CanReadGeometryNumber(baseLeft) and CanReadGeometryNumber(baseRight) and CanReadGeometryNumber(baseTop) and CanReadGeometryNumber(baseBottom)) then
+		local okTex, left, right, top, bottom = API.TryCall(texture.GetTexCoord, texture)
+		if (okTex and type(left) == "number" and type(right) == "number" and type(top) == "number" and type(bottom) == "number"
+			and CanReadGeometryNumber(left) and CanReadGeometryNumber(right) and CanReadGeometryNumber(top) and CanReadGeometryNumber(bottom)) then
+			local spanX = baseRight - baseLeft
+			local spanY = baseBottom - baseTop
+			local curSpan = (orientation == "VERTICAL") and (bottom - top) or (right - left)
+			local baseSpan = (orientation == "VERTICAL") and spanY or spanX
+			local texCoordsChanged = (math_abs(left - baseLeft) > 0.0001)
+				or (math_abs(right - baseRight) > 0.0001)
+				or (math_abs(top - baseTop) > 0.0001)
+				or (math_abs(bottom - baseBottom) > 0.0001)
+			if (texCoordsChanged and type(baseSpan) == "number" and baseSpan ~= 0) then
+				local ratio = math_abs(curSpan / baseSpan)
+				if (type(ratio) == "number") then
+					if (ratio < 0) then
+						ratio = 0
+					elseif (ratio > 1) then
+						ratio = 1
+					end
+					return ratio * 100
+				end
+			end
+		end
+	end
+	local okBarW, barWidth = API.TryCall(element.GetWidth, element)
+	local okBarH, barHeight = API.TryCall(element.GetHeight, element)
+	if (not okBarW or not okBarH or (not CanReadGeometryNumber(barWidth)) or (not CanReadGeometryNumber(barHeight))) then
+		return nil
+	end
+	if (barWidth <= 0 or barHeight <= 0) then
+		return nil
+	end
+	local texSize
+	if (orientation == "VERTICAL") then
+		local okTexH, texHeight = API.TryCall(texture.GetHeight, texture)
+		if (not okTexH or (not CanReadGeometryNumber(texHeight))) then
+			return nil
+		end
+		-- Operands are verified readable numbers and barHeight > 0; cannot throw.
+		texSize = texHeight / barHeight
+	else
+		local okTexW, texWidth = API.TryCall(texture.GetWidth, texture)
+		if (not okTexW or (not CanReadGeometryNumber(texWidth))) then
+			return nil
+		end
+		-- Operands are verified readable numbers and barWidth > 0; cannot throw.
+		texSize = texWidth / barWidth
+	end
+	if (not CanReadGeometryNumber(texSize)) then
+		return nil
+	end
+	if (texSize < 0) then
+		texSize = 0
+	elseif (texSize > 1) then
+		texSize = 1
+	end
+	return texSize * 100
+end
+
+local GetSecretPercentFromBar = function(element)
+	if (element and (not element.__AzeriteUI_IgnoreMirrorPercent) and type(element.__AzeriteUI_MirrorPercent) == "number") then
+		return element.__AzeriteUI_MirrorPercent
+	end
+	if (element and element.GetSecretPercent) then
+		local ok, percent = API.TryCall(element.GetSecretPercent, element)
+		if (ok and type(percent) == "number") then
+			return percent
+		end
+	end
+	-- Production health path should rely on mirrored statusbar values only.
+	-- Texture-size derived fallback is reserved for debug/legacy experiments.
+	if (element and element.__AzeriteUI_UseProductionNativeFill) then
+		return nil
+	end
+	local texturePercent = GetTexturePercentFromBar(element)
+	if (type(texturePercent) == "number") then
+		if (element) then
+			element.__AzeriteUI_TexturePercent = texturePercent
+		end
+		return texturePercent
+	end
+	return nil
+end
+
+API.AttachScriptSafe = function(frame, scriptName, handler)
+	if (not frame or type(scriptName) ~= "string" or type(handler) ~= "function") then
+		return false
+	end
+	-- HookScript is probed silently; the SetScript path below is a real
+	-- fallback for frames that do not support hooking.
+	if (frame.HookScript) then
+		if (API.TryCall(frame.HookScript, frame, scriptName, handler)) then
+			return true
+		end
+	end
+	if (not frame.GetScript or not frame.SetScript) then
+		return false
+	end
+	local previous
+	local okGet, existing = API.TryCall(frame.GetScript, frame, scriptName)
+	if (okGet) then
+		previous = existing
+	end
+	-- Last resort: if this fails the hook is simply not installed, which would
+	-- otherwise be invisible. Report it.
+	return API.SafeCall("HookFrameScript.SetScript", frame.SetScript, frame, scriptName, function(self, ...)
+		if (type(previous) == "function") then
+			previous(self, ...)
+		end
+		handler(self, ...)
+	end)
+end
+
+API.BindStatusBarValueMirror = function(bar)
+	if (not bar or bar.__AzeriteUI_ValueMirrorBound) then
+		return
+	end
+	if (not bar.GetObjectType or bar:GetObjectType() ~= "StatusBar") then
+		return
+	end
+	bar.__AzeriteUI_ValueMirrorBound = true
+	local AttachScript = function(scriptName, handler)
+		return API.AttachScriptSafe(bar, scriptName, handler)
+	end
+
+	AttachScript("OnMinMaxChanged", function(self, minValue, maxValue)
+		if (HasSafeNumericRange(minValue, maxValue)) then
+			self.__AzeriteUI_MinValue = minValue
+			self.__AzeriteUI_MaxValue = maxValue
+			self.__AzeriteUI_MirrorMin = minValue
+			self.__AzeriteUI_MirrorMax = maxValue
+		else
+			-- Avoid reusing stale numeric ranges when incoming bounds are secret/unsafe.
+			self.__AzeriteUI_MinValue = nil
+			self.__AzeriteUI_MaxValue = nil
+			self.__AzeriteUI_MirrorMin = nil
+			self.__AzeriteUI_MirrorMax = nil
+		end
+	end)
+
+	AttachScript("OnValueChanged", function(self, value)
+		local texture = self.GetStatusBarTexture and self:GetStatusBarTexture()
+		if (not texture) then
+			return
+		end
+
+		self.__AzeriteUI_LastValue = value
+		self.__AzeriteUI_MirrorValue = value
+		local valueIsSafe = IsSafeNumeric(value)
+		local mirrorMin = self.__AzeriteUI_MirrorMin
+		local mirrorMax = self.__AzeriteUI_MirrorMax
+		local didUpdateMirrorPercent = false
+		if (valueIsSafe and HasSafeNumericRange(mirrorMin, mirrorMax)) then
+			-- valueIsSafe and HasSafeNumericRange already verified all three
+			-- operands are plain readable numbers with max > min; cannot throw.
+			local computedMirrorPercent = ((value - mirrorMin) / (mirrorMax - mirrorMin)) * 100
+			if (computedMirrorPercent < 0) then
+				computedMirrorPercent = 0
+			elseif (computedMirrorPercent > 100) then
+				computedMirrorPercent = 100
+			end
+			self.__AzeriteUI_MirrorPercent = computedMirrorPercent
+			didUpdateMirrorPercent = true
+		end
+		if (not self.__AzeriteUI_DisableTexturePercentMirror) then
+			local texturePercent = GetTexturePercentFromBar(self)
+			if (type(texturePercent) == "number") then
+				local hysteresis = self.__AzeriteUI_TexturePercentHysteresis
+				local previousTexturePercent = self.__AzeriteUI_TexturePercent
+				if (type(hysteresis) == "number" and hysteresis > 0 and type(previousTexturePercent) == "number"
+					and math_abs(texturePercent - previousTexturePercent) < hysteresis) then
+					texturePercent = previousTexturePercent
+				end
+				self.__AzeriteUI_MirrorPercent = texturePercent
+				self.__AzeriteUI_TexturePercent = texturePercent
+				didUpdateMirrorPercent = true
+			end
+		end
+		if (not didUpdateMirrorPercent) then
+			if (self.__AzeriteUI_KeepMirrorPercentOnNoSample) then
+				-- Keep prior mirror percent for deterministic fake-fill continuity.
+			else
+				-- Prevent stale percent reuse when neither math nor texture sampling can update this tick.
+				self.__AzeriteUI_MirrorPercent = nil
+			end
+		end
+		if (not self.__AzeriteUI_UseValueMirrorTexCoord) then
+			return
+		end
+
+		local minValue = self.__AzeriteUI_MinValue
+		local maxValue = self.__AzeriteUI_MaxValue
+		if (not valueIsSafe or not HasSafeNumericRange(minValue, maxValue)) then
+			return
+		end
+
+		local percent = (value - minValue) / (maxValue - minValue)
+		if (percent < 0) then
+			percent = 0
+		elseif (percent > 1) then
+			percent = 1
+		end
+
+		local left, right, top, bottom
+		if (self.__AzeriteUI_BaseTexCoordLeft) then
+			left = self.__AzeriteUI_BaseTexCoordLeft
+			right = self.__AzeriteUI_BaseTexCoordRight
+			top = self.__AzeriteUI_BaseTexCoordTop
+			bottom = self.__AzeriteUI_BaseTexCoordBottom
+		else
+			left, right, top, bottom = texture:GetTexCoord()
+			self.__AzeriteUI_BaseTexCoordLeft = left
+			self.__AzeriteUI_BaseTexCoordRight = right
+			self.__AzeriteUI_BaseTexCoordTop = top
+			self.__AzeriteUI_BaseTexCoordBottom = bottom
+		end
+		local spanX = right - left
+		local spanY = bottom - top
+		local reverseFill = self.GetReverseFill and self:GetReverseFill()
+		local orientation = self.GetOrientation and self:GetOrientation() or "HORIZONTAL"
+
+		if (orientation == "VERTICAL") then
+			if (reverseFill) then
+				texture:SetTexCoord(left, right, bottom - spanY * percent, bottom)
+			else
+				texture:SetTexCoord(left, right, top, top + spanY * percent)
+			end
+		else
+			if (reverseFill) then
+				texture:SetTexCoord(right - spanX * percent, right, top, bottom)
+			else
+				texture:SetTexCoord(left, left + spanX * percent, top, bottom)
+			end
+		end
+	end)
+end
+
+API.HidePrediction = function(element)
+	if (element) then
+		element:Hide()
+		-- Keep absorb bars independent from prediction visibility.
+		-- Several unit styles hide prediction overlays continuously.
+		if (element.absorbBar and element.__AzeriteUI_HideAbsorbWithPrediction) then
+			element.absorbBar:Hide()
+		end
+	end
+end
+
+API.GetReversedHorizontalFillTexCoords = function(percent)
+	if (type(percent) ~= "number") then
+		return 1, 0, 0, 1
+	end
+	if (percent < 0) then
+		percent = 0
+	elseif (percent > 1) then
+		percent = 1
+	end
+	return percent, 0, 0, 1
+end
+
+API.ApplySimpleHealthFakeFillByPercent = function(health, percent)
+	if (not health) then
+		return false
+	end
+	local fakeFill = health.FakeFill
+	if (not fakeFill) then
+		return false
+	end
+	local nativeTexture = health.GetStatusBarTexture and health:GetStatusBarTexture()
+	fakeFill:ClearAllPoints()
+	if (nativeTexture) then
+		fakeFill:SetAllPoints(nativeTexture)
+	else
+		fakeFill:SetAllPoints(health)
+	end
+	fakeFill:SetTexCoord(API.GetReversedHorizontalFillTexCoords(percent))
+	if (fakeFill.SetVertexColor) then
+		local r, g, b = health:GetStatusBarColor()
+		if (type(r) == "number" and type(g) == "number" and type(b) == "number") then
+			fakeFill:SetVertexColor(r, g, b, 1)
+		else
+			fakeFill:SetVertexColor(1, 1, 1, 1)
+		end
+	end
+	if (fakeFill.SetAlpha) then
+		fakeFill:SetAlpha(1)
+	end
+	fakeFill:Show()
+	return true
+end
+
+API.HideNativeHealthVisuals = function(health)
+	if (not health) then
+		return
+	end
+	local nativeTexture = health.GetStatusBarTexture and health:GetStatusBarTexture()
+	if (nativeTexture) then
+		if (nativeTexture.SetAlpha) then
+			nativeTexture:SetAlpha(0)
+		end
+	end
+	local preview = health.Preview
+	if (preview) then
+		if (preview.SetAlpha) then
+			preview:SetAlpha(0)
+		end
+		if (preview.Hide) then
+			preview:Hide()
+		end
+		local previewTexture = preview.GetStatusBarTexture and preview:GetStatusBarTexture()
+		if (previewTexture) then
+			if (previewTexture.SetAlpha) then
+				previewTexture:SetAlpha(0)
+			end
+			if (previewTexture.Hide) then
+				previewTexture:Hide()
+			end
+		end
+	end
+	local display = health.Display
+	if (display) then
+		if (display.SetAlpha) then
+			display:SetAlpha(0)
+		end
+		if (display.Hide) then
+			display:Hide()
+		end
+		local displayTexture = display.GetStatusBarTexture and display:GetStatusBarTexture()
+		if (displayTexture) then
+			if (displayTexture.SetAlpha) then
+				displayTexture:SetAlpha(0)
+			end
+			if (displayTexture.Hide) then
+				displayTexture:Hide()
+			end
+		end
+	end
+end
+
+API.UpdateHealthFakeFillFromUnitPercent = function(health, fallbackUnit)
+	if (not health) then
+		return false, nil, nil, nil
+	end
+	local fakeFill = health.FakeFill
+	if (not fakeFill) then
+		return false, nil, nil, nil
+	end
+	local owner = health.__owner
+	local unit = health.unit or (owner and owner.unit) or fallbackUnit or "target"
+	local percent, source
+	if (type(UnitHealthPercent) == "function") then
+		local ok, value = API.TryCall(UnitHealthPercent, unit, true, CurveConstants and CurveConstants.ZeroToOne or nil)
+		if (ok) then
+			percent = value
+			source = "api"
+		end
+	end
+	local applied = false
+	if (source == "api") then
+		applied = API.SafeCall("ApplySimpleHealthFakeFillByPercent", API.ApplySimpleHealthFakeFillByPercent, health, percent)
+	elseif (percent == nil) then
+		applied = API.ApplySimpleHealthFakeFillByPercent(health, nil)
+	end
+	return applied, percent, source, unit
+end
+
+local HidePowerTexts = function(element)
+	if (not element) then
+		return
+	end
+	if ((not element.__AzeriteUI_KeepValueVisible) and element.Value and element.Value.Hide) then
+		element.Value:Hide()
+	end
+	if (element.Percent and element.Percent.Hide) then
+		element.Percent:Hide()
+	end
+	if (element.ManaText and element.ManaText.Hide) then
+		element.ManaText:Hide()
+	end
+end
+
+API.ShouldSkipPrediction = function(element, ...)
+	for i = 1, select("#", ...) do
+		local value = select(i, ...)
+		if IsSecretValue(value) then
+			API.HidePrediction(element)
+			return true
+		end
+	end
+	return false
+end
+
+local GetSafeHealthFromCalculator = function(element, unit)
+	if (not unit or not CreateUnitHealPredictionCalculator or not UnitGetDetailedHealPrediction) then
+		return nil, nil, nil
+	end
+	if (not element.__AzeriteUI_HealthCalculator) then
+		element.__AzeriteUI_HealthCalculator = CreateUnitHealPredictionCalculator()
+	end
+	local calculator = element.__AzeriteUI_HealthCalculator
+	if (not calculator) then
+		return nil, nil, nil
+	end
+
+	local okUpdate = API.TryCall(UnitGetDetailedHealPrediction, unit, nil, calculator)
+	if (not okUpdate) then
+		okUpdate = API.TryCall(UnitGetDetailedHealPrediction, unit, "player", calculator)
+	end
+	if (not okUpdate) then
+		return nil, nil, nil
+	end
+
+	local defaultMaxMode = Enum and Enum.UnitMaximumHealthMode and Enum.UnitMaximumHealthMode.Default
+	if (defaultMaxMode ~= nil and calculator.SetMaximumHealthMode) then
+		API.SafeCall("HealPrediction.SetMaximumHealthMode", calculator.SetMaximumHealthMode, calculator, defaultMaxMode)
+	end
+
+	local calcCur
+	local calcMax
+	local calcPercent
+	if (calculator.GetCurrentHealth) then
+		local okCur, value = API.TryCall(calculator.GetCurrentHealth, calculator)
+		if (okCur and type(value) == "number" and not IsSecretValue(value)) then
+			calcCur = value
+		end
+	end
+	if (calculator.GetMaximumHealth) then
+		local okMax, value = API.TryCall(calculator.GetMaximumHealth, calculator)
+		if (okMax and type(value) == "number" and not IsSecretValue(value) and value > 0) then
+			calcMax = value
+		end
+	end
+	if (calculator.GetCurrentHealthPercent) then
+		local okPercent, value = API.TryCall(calculator.GetCurrentHealthPercent, calculator)
+		if (okPercent and type(value) == "number" and not IsSecretValue(value)) then
+			calcPercent = NormalizePercent100(value * 100)
+		end
+	end
+	if (type(calcPercent) ~= "number" and calculator.EvaluateCurrentHealthPercent) then
+		local okPercent, value = API.TryCall(calculator.EvaluateCurrentHealthPercent, calculator, CurveConstants and CurveConstants.ScaleTo100 or nil)
+		if (okPercent and type(value) == "number" and not IsSecretValue(value)) then
+			calcPercent = NormalizePercent100(value)
+		end
+	end
+	if (type(calcPercent) ~= "number" and type(calcCur) == "number" and type(calcMax) == "number" and calcMax > 0) then
+		calcPercent = SafePercentFromValues(calcCur, calcMax)
+	end
+
+	return calcCur, calcMax, calcPercent
+end
+
+API.GetSafeHealthForPrediction = function(element, curHealth, maxHealth)
+	local safeCur
+	local safeMax
+	if (type(curHealth) == "number" and not IsSecretValue(curHealth)) then
+		safeCur = curHealth
+	end
+	if (type(maxHealth) == "number" and not IsSecretValue(maxHealth)) then
+		safeMax = maxHealth
+	end
+	if (element and element.health) then
+		local health = element.health
+		if (not safeCur and type(health.safeCur) == "number" and not IsSecretValue(health.safeCur)) then
+			safeCur = health.safeCur
+		end
+		if (not safeMax and type(health.safeMax) == "number" and not IsSecretValue(health.safeMax)) then
+			safeMax = health.safeMax
+		end
+		-- Read each bar value as its own guarded step. A single guard around both
+		-- meant a throw on GetValue silently skipped the GetMinMaxValues read too.
+		if (not safeCur) then
+			local ok, value = API.SafeCall("HealPrediction.health.GetValue", health.GetValue, health)
+			if (ok and type(value) == "number" and not IsSecretValue(value)) then
+				safeCur = value
+			end
+		end
+		if (not safeMax) then
+			local ok, _, m = API.SafeCall("HealPrediction.health.GetMinMaxValues", health.GetMinMaxValues, health)
+			if (ok and type(m) == "number" and not IsSecretValue(m)) then
+				safeMax = m
+			end
+		end
+	end
+	if (type(safeMax) ~= "number" or IsSecretValue(safeMax) or safeMax <= 0) then
+		return nil, nil
+	end
+	if (type(safeCur) ~= "number" or IsSecretValue(safeCur)) then
+		safeCur = safeMax
+	end
+	return safeCur, safeMax
+end
+
+API.UpdateHealth = function(self, event, unit)
+	if (not unit or self.unit ~= unit) then 
+		return 
+	end
+	local element = self.Health
+
+	if (element.PreUpdate) then
+		element:PreUpdate(unit)
+	end
+
+	local connected = UnitIsConnected(unit)
+	local forced = (event == "ForceUpdate") or (event == "RefreshUnit") or (event == "GROUP_ROSTER_UPDATE")
+	local guidChanged = false
+	do
+		local guid = UnitGUID(unit)
+		local previousGuid = element.__AzeriteUI_SnapGuid
+		if (type(guid) == "string" and not IsSecretValue(guid)) then
+			guidChanged = (previousGuid ~= nil and guid ~= previousGuid)
+			element.__AzeriteUI_SnapGuid = guid
+		end
+	end
+	if (not forced) then
+		local guid = UnitGUID(unit)
+		local previousGuid = element.guid
+		local guidIsSecret = (type(guid) == "string") and IsSecretValue(guid)
+		local previousGuidIsSecret = (type(previousGuid) == "string") and IsSecretValue(previousGuid)
+		if (guidIsSecret or previousGuidIsSecret) then
+			forced = true
+			element.guid = nil
+			element.safeCur = nil
+			element.safeMax = nil
+			element.safePercent = nil
+		elseif (guid ~= previousGuid) then
+			forced = true
+			element.guid = guid
+			element.safeCur = nil
+			element.safeMax = nil
+			element.safePercent = nil
+		end
+	end
+	local snap = ShouldSnap(element, event, guidChanged)
+
+	local rawCur = UnitHealth(unit)
+	local rawMax = UnitHealthMax(unit)
+	local rawCurNum = (type(rawCur) == "number")
+	local rawMaxNum = (type(rawMax) == "number")
+	local rawCurSecret = rawCurNum and IsSecretValue(rawCur)
+	local rawMaxSecret = rawMaxNum and IsSecretValue(rawMax)
+	local rawCurSafe = rawCurNum and IsSafeNumeric(rawCur)
+	local rawMaxSafe = rawMaxNum and IsSafeNumeric(rawMax) and rawMax > 0
+	element.__AzeriteUI_RawCurSafe = rawCurSafe and true or false
+	element.__AzeriteUI_RawMaxSafe = rawMaxSafe and true or false
+	element.__AzeriteUI_RawCurSecret = rawCurSecret and true or false
+	element.__AzeriteUI_RawMaxSecret = rawMaxSecret and true or false
+	local barCur, barMin, barMax
+	local okCur, curValue = API.SafeCall("Health.element.GetValue", element.GetValue, element)
+	if (okCur) then
+		barCur = curValue
+	end
+	local okBounds, minValue, maxValue = API.SafeCall("Health.element.GetMinMaxValues", element.GetMinMaxValues, element)
+	if (okBounds) then
+		barMin, barMax = minValue, maxValue
+	end
+	local barMaxSafe = (IsSafeNumeric(barMax) and barMax > 0) and barMax or nil
+	local calcCur, calcMax, calcPercent
+	if ((not rawCurSafe) or (not rawMaxSafe)) then
+		calcCur, calcMax, calcPercent = GetSafeHealthFromCalculator(element, unit)
+	end
+
+	local previousSafePercent = NormalizePercent100(element.safePercent)
+	local safePercent = nil
+	if (rawCurSafe and rawMaxSafe) then
+		safePercent = SafePercentFromValues(rawCur, rawMax)
+	elseif (type(calcPercent) == "number") then
+		safePercent = calcPercent
+	end
+	-- API fallback (non-secret edge cases only — ScaleTo100 returns secret for most units).
+	if (safePercent == nil) then
+		safePercent = NormalizePercent100(SafeUnitPercentNumber(unit, false))
+	end
+
+	local safeMax = rawMaxSafe and rawMax
+		or ((type(calcMax) == "number" and calcMax > 0) and calcMax or nil)
+		or barMaxSafe
+		or ((type(element.safeMax) == "number" and element.safeMax > 0) and element.safeMax or 100)
+	local safeCur = rawCurSafe and rawCur
+		or ((type(calcCur) == "number") and calcCur or nil)
+		or (type(element.safeCur) == "number" and element.safeCur or safeMax)
+	local staleRawCur = false
+	if (type(safePercent) == "number" and rawCurSafe) then
+		if (rawCur > safeMax or (rawCur >= safeMax and safePercent < 99.5) or (rawCur <= 0 and safePercent > 0.5)) then
+			staleRawCur = true
+		end
+	end
+	if (type(safePercent) == "number" and ((not rawCurSafe) or staleRawCur)) then
+		safeCur = safeMax * (safePercent / 100)
+	end
+	if (safeCur < 0) then
+		safeCur = 0
+	elseif (safeCur > safeMax) then
+		safeCur = safeMax
+	end
+
+	local writeMin = 0
+	local writeMax = rawMaxNum and rawMax or safeMax
+	local writeCur = (rawCurNum and (not staleRawCur)) and rawCur or safeCur
+	if (not connected) then
+		writeCur = writeMax
+	end
+
+	if (API.SmoothTrace) then API.TraceSmooth(element, unit, event, snap, guidChanged, rawCur, rawCurSafe, "health") end
+	SetStatusBarValuesCompat(element, 0, writeMax, writeCur, forced, snap)
+	local display = element.Display
+	local managedDisplay = (element.__AzeriteUI_ManageDisplayInOverride == true)
+	if (display and (not managedDisplay)) then
+		SetStatusBarValuesCompat(display, 0, writeMax, writeCur, forced, snap)
+		if (display.GetParent and display:GetParent() ~= element) then
+			display:SetParent(element)
+		end
+		if (display.SetAllPoints) then
+			display:SetAllPoints(element)
+		end
+		if (display.GetFrameLevel and element.GetFrameLevel and display:GetFrameLevel() <= element:GetFrameLevel()) then
+			display:SetFrameLevel(element:GetFrameLevel() + 1)
+		end
+		display:SetAlpha(1)
+		display:Show()
+		local displayTexture = display.GetStatusBarTexture and display:GetStatusBarTexture()
+		if (displayTexture and displayTexture.SetAlpha) then
+			displayTexture:SetAlpha(1)
+		end
+	elseif (display and managedDisplay) then
+		-- Some unit styles (target flip-lab) manage display geometry/visibility locally.
+		-- Keep values synced here, but do not force parent/points/show state each update.
+		SetStatusBarValuesCompat(display, 0, writeMax, writeCur, forced, snap)
+	end
+
+	-- WoW12 secret-value path:
+	-- When all health data is secret, safePercent will be nil at this point.
+	-- The actual percent text will be set via direct widget formatting below.
+	if ((not rawCurSafe) and connected) then
+		local postPercentSource = "secret"
+		if (type(safePercent) == "number") then
+			postPercentSource = "pre-write"
+		elseif (type(calcPercent) == "number") then
+			safePercent = calcPercent
+			if (type(calcCur) == "number") then safeCur = calcCur end
+			if (type(calcMax) == "number" and calcMax > 0) then safeMax = calcMax end
+			postPercentSource = "calculator"
+		end
+		if (unit == "target") then
+			element.__AzeriteUI_TargetPercentSource = postPercentSource
+		end
+	else
+		if (unit == "target") then
+			element.__AzeriteUI_TargetPercentSource = (rawCurSafe and rawMaxSafe) and "minmax" or nil
+		end
+	end
+
+	element.cur = safeCur
+	element.max = safeMax
+	element.safeCur = safeCur
+	element.safeMax = safeMax
+	local safeAbsorb = element.safeAbsorb
+	local rawTotalAbsorb = nil
+	if (UnitGetTotalAbsorbs) then
+		rawTotalAbsorb = UnitGetTotalAbsorbs(unit)
+		if (type(rawTotalAbsorb) == "number" and not IsSecretValue(rawTotalAbsorb)) then
+			if (rawTotalAbsorb > 0) then
+				safeAbsorb = rawTotalAbsorb
+			else
+				-- Known zero: clear cached absorb immediately.
+				safeAbsorb = nil
+			end
+		end
+	end
+	element.safeAbsorb = safeAbsorb
+	element.approxValue = safeCur
+	element.approxMax = safeMax
+	element.approxInitialized = true
+
+	-- Cache a safe percent for tag text.
+	if (unit == "target") then
+		if (type(safePercent) == "number") then
+			element.safePercent = NormalizePercent100(safePercent)
+		elseif (rawCurSafe and rawMaxSafe) then
+			element.safePercent = SafePercentFromValues(safeCur, safeMax)
+		else
+			-- All health data is secret; set nil so the tag resolver does not
+			-- display a stale/wrong 100%.  Direct widget text override below
+			-- will handle the actual display.
+			element.safePercent = nil
+		end
+	else
+		if (rawCurSafe) then
+			element.safePercent = SafePercentFromValues(safeCur, safeMax) or NormalizePercent100(safePercent)
+		else
+			element.safePercent = nil
+		end
+	end
+	if (element.Percent and element.Percent.UpdateTag) then
+		API.SafeCall("Tag.Percent.UpdateTag", element.Percent.UpdateTag, element.Percent)
+	end
+
+	if (element.Value and element.Value.UpdateTag) then
+		API.SafeCall("Tag.Value.UpdateTag", element.Value.UpdateTag, element.Value)
+	end
+
+	local preview = element.Preview
+	if (preview) then
+		SetStatusBarValuesCompat(preview, writeMin, writeMax, connected and writeCur or writeMax, forced, snap)
+	end
+
+	--[[ Callback: Health:PostUpdate(unit, cur, max)
+	Called after the element has been updated.
+
+	* self - the Health element
+	* unit - the unit for which the update has been triggered (string)
+	* cur  - the unit's current health value (number)
+	* max  - the unit's maximum possible health value (number)
+	--]]
+	if (element.PostUpdate) then
+		element:PostUpdate(unit, safeCur, safeMax)
+	end
+
+	if (ShouldDebugUnit(unit) and ShouldEmitTick(element, "__AzeriteUI_LastHealthDebug", 0.25)) then
+		API.DebugPrintf("Health", 4,
+			"Update unit=%s conn=%s rawCur=%s rawMax=%s safeCur=%s safeMax=%s writeCur=%s writeMax=%s safePct=%s mirrorPct=%s texPct=%s barSafeMax=%s rawCurSecret=%s rawMaxSecret=%s rawAbsorb=%s safeAbsorb=%s rawAbsorbSecret=%s",
+			tostring(unit),
+			tostring(connected and true or false),
+			tostring(rawCur),
+			tostring(rawMax),
+			tostring(safeCur),
+			tostring(safeMax),
+			tostring(writeCur),
+			tostring(writeMax),
+			tostring(element.safePercent),
+			tostring(element.__AzeriteUI_MirrorPercent),
+			tostring(element.__AzeriteUI_TexturePercent),
+			tostring(barMaxSafe),
+			tostring(rawCurSecret and true or false),
+			tostring(rawMaxSecret and true or false),
+			tostring(rawTotalAbsorb),
+			tostring(safeAbsorb),
+			tostring(rawTotalAbsorb ~= nil and IsSecretValue(rawTotalAbsorb) and true or false))
+	end
+
+	if (unit == "target" and ShouldDebugUnit(unit) and ShouldEmitTick(element, "__AzeriteUI_LastTargetBarDebug", 0.35)) then
+		local barVal, barMin, barMax = nil, nil, nil
+		local orient, reverse = nil, nil
+		-- Diagnostic snapshot only; a failed read just prints as nil.
+		local okVal, v = API.TryCall(element.GetValue, element)
+		barVal = okVal and v or nil
+		local okBounds, lo, hi = API.TryCall(element.GetMinMaxValues, element)
+		if (okBounds) then
+			barMin, barMax = lo, hi
+		end
+		if (element.GetOrientation) then
+			local okOrient, o = API.TryCall(element.GetOrientation, element)
+			orient = okOrient and o or nil
+		end
+		if (element.GetReverseFill) then
+			local okReverse, r = API.TryCall(element.GetReverseFill, element)
+			reverse = okReverse and r or nil
+		end
+		API.DebugPrintf("TargetBar", 4,
+			"HealthBar orient=%s reverse=%s barValue=%s barMin=%s barMax=%s safeCur=%s safeMax=%s safePct=%s pctSource=%s fakeSource=%s",
+			tostring(orient),
+			tostring(reverse),
+			tostring(barVal),
+			tostring(barMin),
+			tostring(barMax),
+			tostring(safeCur),
+			tostring(safeMax),
+			tostring(element.safePercent),
+			tostring(element.__AzeriteUI_TargetPercentSource),
+			tostring(element.__AzeriteUI_TargetFakeSource))
+	end
+end
+
+API.UpdatePower = function(self, event, unit)
+	if(self.unit ~= unit) then return end
+	local element = self.Power
+
+	--[[ Callback: Power:PreUpdate(unit)
+	Called before the element has been updated.
+
+	* self - the Power element
+	* unit - the unit for which the update has been triggered (string)
+	--]]
+	if (element.PreUpdate) then
+		element:PreUpdate(unit)
+	end
+
+	local guid = UnitGUID(unit)
+	local forced = (event == "ForceUpdate") or (event == "RefreshUnit") or (event == "GROUP_ROSTER_UPDATE")
+	local guidChanged = false
+	if (type(guid) == "string" and not IsSecretValue(guid)) then
+		guidChanged = (element.__AzeriteUI_SnapGuid ~= nil and guid ~= element.__AzeriteUI_SnapGuid)
+		element.__AzeriteUI_SnapGuid = guid
+	end
+	local snap = ShouldSnap(element, event, guidChanged)
+	if (not forced) then
+		local previousGuid = element.guid
+		local guidIsSecret = (type(guid) == "string") and IsSecretValue(guid)
+		local previousGuidIsSecret = (type(previousGuid) == "string") and IsSecretValue(previousGuid)
+		if (guidIsSecret or previousGuidIsSecret) then
+			forced = true
+			guid = nil
+		elseif (guid ~= previousGuid) then
+			forced = true
+		end
+	end
+	element.guid = guid
+	if (forced) then
+		element.safeCur = nil
+		element.safeMin = nil
+		element.safeMax = nil
+		element.safePercent = nil
+	end
+
+	local displayType, min
+	if (element.displayAltPower and oUF.isRetail and element.GetDisplayPower) then
+		displayType, min = element:GetDisplayPower()
+	end
+
+	local rawCur, rawMax = UnitPower(unit, displayType), UnitPowerMax(unit, displayType)
+	local rawCurNum = (type(rawCur) == "number")
+	local rawMaxNum = (type(rawMax) == "number")
+	local rawCurSecret = rawCurNum and IsSecretValue(rawCur)
+	local rawMaxSecret = rawMaxNum and IsSecretValue(rawMax)
+	local rawCurSafe = rawCurNum and (not rawCurSecret)
+	local rawMaxSafe = rawMaxNum and (not rawMaxSecret) and rawMax > 0
+
+	local safePercent = NormalizePercent100(SafeUnitPercentNumber(unit, true, displayType))
+	if (safePercent == nil and (not rawCurSafe)) then
+		safePercent = NormalizePercent100(GetSecretPercentFromBar(element))
+	end
+
+	local safeMin = (type(min) == "number" and (not issecretvalue or not issecretvalue(min))) and min or 0
+	local safeMax = rawMaxSafe and rawMax or ((type(element.safeMax) == "number" and element.safeMax > 0) and element.safeMax or 100)
+	local safeCur = rawCurSafe and rawCur or (type(element.safeCur) == "number" and element.safeCur or safeMax)
+	if ((not rawCurSafe) and type(safePercent) == "number") then
+		safeCur = safeMin + ((safeMax - safeMin) * (safePercent / 100))
+	end
+	if (safeCur < safeMin) then
+		safeCur = safeMin
+	elseif (safeCur > safeMax) then
+		safeCur = safeMax
+	end
+
+	local writeMin = safeMin
+	-- A secret max goes to the bar as it is, the way health does. The cached max
+	-- falls back to 100 after a forced update, and a secret mana value drawn against
+	-- 0..100 filled the bar (party healer's mana looked full in restricted content).
+	local writeMax = (rawMaxSafe or rawMaxSecret) and rawMax or safeMax
+	local writeCur = rawCurNum and rawCur or safeCur
+	if (not UnitIsConnected(unit)) then
+		writeCur = writeMax
+	end
+
+	if (API.SmoothTrace) then API.TraceSmooth(element, unit, event, snap, guidChanged, rawCur, rawCurSafe, "power") end
+	SetStatusBarValuesCompat(element, writeMin, writeMax, writeCur, forced, snap)
+
+	if ((not rawCurSafe) and UnitIsConnected(unit)) then
+		local postMirrorPercent = NormalizePercent100(GetSecretPercentFromBar(element))
+		if (type(postMirrorPercent) == "number") then
+			safePercent = postMirrorPercent
+			local safeRange = safeMax - safeMin
+			if (safeRange > 0) then
+				safeCur = safeMin + ((safeRange) * (postMirrorPercent / 100))
+			else
+				safeCur = safeMin
+			end
+			if (safeCur < safeMin) then
+				safeCur = safeMin
+			elseif (safeCur > safeMax) then
+				safeCur = safeMax
+			end
+		end
+	end
+
+	element.cur = safeCur
+	element.min = safeMin
+	element.max = safeMax
+	element.safeCur = safeCur
+	element.safeMin = safeMin
+	element.safeMax = safeMax
+	element.displayType = displayType
+
+	element.safePercent = safePercent or SafePercentFromValues(safeCur - safeMin, safeMax - safeMin)
+	if (element.Percent and element.Percent.UpdateTag) then
+		API.SafeCall("Tag.Percent.UpdateTag", element.Percent.UpdateTag, element.Percent)
+	end
+	if (element.Value and element.Value.UpdateTag) then
+		API.SafeCall("Tag.Value.UpdateTag", element.Value.UpdateTag, element.Value)
+	end
+	--[[ Callback: Power:PostUpdate(unit, cur, min, max)
+	Called after the element has been updated.
+
+	* self - the Power element
+	* unit - the unit for which the update has been triggered (string)
+	* cur  - the unit's current power value (number)
+	* min  - the unit's minimum possible power value (number)
+	* max  - the unit's maximum possible power value (number)
+	--]]
+	if (element.PostUpdate) then
+		element:PostUpdate(unit, safeCur, safeMin, safeMax)
+	end
+	HidePowerTexts(element)
+
+	if (ShouldDebugUnit(unit) and ShouldEmitTick(element, "__AzeriteUI_LastPowerDebug", 0.25)) then
+		API.DebugPrintf("Power", 4,
+			"Update unit=%s displayType=%s rawCur=%s rawMax=%s safeCur=%s safeMin=%s safeMax=%s writeCur=%s writeMin=%s writeMax=%s safePct=%s rawCurSecret=%s rawMaxSecret=%s",
+			tostring(unit),
+			tostring(displayType),
+			tostring(rawCur),
+			tostring(rawMax),
+			tostring(safeCur),
+			tostring(safeMin),
+			tostring(safeMax),
+			tostring(writeCur),
+			tostring(writeMin),
+			tostring(writeMax),
+			tostring(element.safePercent),
+			tostring(rawCurSecret and true or false),
+			tostring(rawMaxSecret and true or false))
+	end
+end
+
+-- The power type the orb shows. Mana, unless the orb's owner says otherwise
+-- (Player.lua: a hunter on "Mana Orb Only" sees Focus). A non-number answer,
+-- or a secret one, keeps whatever the orb showed last.
+local GetManaOrbDisplayType = function(element, unit)
+	if (type(element.GetDisplayPowerType) ~= "function") then
+		return POWER_TYPE_MANA
+	end
+	local displayType = element:GetDisplayPowerType(unit)
+	if (type(displayType) ~= "number" or IsSecretValue(displayType)) then
+		return element.displayType or POWER_TYPE_MANA
+	end
+	return displayType
+end
+
+API.UpdateManaOrb = function(self, event, unit)
+	local element = self.ManaOrb
+	if (not element) then
+		return
+	end
+	unit = unit or self.unit or "player"
+	if (unit ~= "player" and unit ~= "vehicle" and unit ~= self.unit) then
+		return
+	end
+
+	--[[ Callback: Power:PreUpdate(unit)
+	Called before the element has been updated.
+
+	* self - the Power element
+	* unit - the unit for which the update has been triggered (string)
+	--]]
+	if (element.PreUpdate) then
+		element:PreUpdate(unit)
+	end
+
+	local guid = UnitGUID(unit)
+	local guidChanged = false
+	-- Compare only when both sides are plain readable strings. A secret operand
+	-- is what could throw here, so exclude it rather than guarding the compare.
+	if (API.IsSafeString(guid)) then
+		guidChanged = (element.guid == nil) or (API.IsSafeString(element.guid) and guid ~= element.guid)
+	end
+	local forced = guidChanged or (guid and not element.guid) or (UnitIsDeadOrGhost(unit))
+	if (event == "ForceUpdate" or event == "RefreshUnit" or event == "GROUP_ROSTER_UPDATE") then
+		forced = true
+	end
+	element.guid = guid
+
+	local displayType, min = GetManaOrbDisplayType(element, unit), 0
+	if (displayType ~= element.displayType) then
+		-- Cached values belong to the previous power type.
+		element.safeCur, element.safeMax, element.safePercent = nil, nil, nil
+		element.__AzeriteUI_DisplayCur, element.__AzeriteUI_DisplayPercent = nil, nil
+	end
+	local cur, max = UnitPower(unit, displayType), UnitPowerMax(unit, displayType)
+	local rawCurSafe = (type(cur) == "number") and (not issecretvalue or not issecretvalue(cur))
+	local rawMaxSafe = (type(max) == "number") and (not issecretvalue or not issecretvalue(max)) and max > min
+	local safeMin = min
+	local safeMax = rawMaxSafe and max or ((type(element.safeMax) == "number" and element.safeMax > safeMin) and element.safeMax or 100)
+	local safeCur = (type(element.__AzeriteUI_DisplayCur) == "number" and (not issecretvalue or not issecretvalue(element.__AzeriteUI_DisplayCur))) and element.__AzeriteUI_DisplayCur
+		or ((type(element.safeCur) == "number" and (not issecretvalue or not issecretvalue(element.safeCur))) and element.safeCur)
+		or (rawCurSafe and cur)
+		or safeMax
+	local safePercent = (type(element.__AzeriteUI_DisplayPercent) == "number" and (not issecretvalue or not issecretvalue(element.__AzeriteUI_DisplayPercent))) and element.__AzeriteUI_DisplayPercent
+		or ((type(element.safePercent) == "number" and (not issecretvalue or not issecretvalue(element.safePercent))) and element.safePercent)
+		or NormalizePercent100(SafeUnitPercentNumber(unit, true, displayType))
+
+	if (type(safePercent) == "number" and (type(safeCur) ~= "number" or (safeCur == safeMax and not rawCurSafe))) then
+		safeCur = safeMin + ((safeMax - safeMin) * (safePercent / 100))
+	end
+	if (type(safeCur) ~= "number" or (issecretvalue and issecretvalue(safeCur))) then
+		safeCur = safeMax
+	end
+	if (safeCur < safeMin) then
+		safeCur = safeMin
+	elseif (safeCur > safeMax) then
+		safeCur = safeMax
+	end
+
+	-- LibOrb hands a number to its native bar as the interpolation, true snaps. The orb eases
+	-- while /az -> Unit Frames -> Smooth health and power is on (Neil); forced updates, a new
+	-- power type (form, vehicle) and events that are not a plain value change snap.
+	local ease = not forced and displayType == element.displayType and EASE_EVENTS[event]
+	local interpolation = (ease and type(element.smoothing) == "number") and element.smoothing or true
+	element:SetMinMaxValues(min, max, true)
+	if (UnitIsConnected(unit)) then
+		element:SetValue(cur, interpolation)
+	else
+		element:SetValue(max, interpolation)
+	end
+
+
+	element.cur = cur
+	element.min = safeMin
+	element.max = safeMax
+	element.displayType = displayType
+	if (type(safePercent) == "number") then
+		element.safePercent = safePercent
+	end
+	element.safeMin = safeMin
+	element.safeMax = safeMax
+	element.safeCur = safeCur
+	if (element.Percent and element.Percent.UpdateTag) then
+		API.SafeCall("Tag.Percent.UpdateTag", element.Percent.UpdateTag, element.Percent)
+	end
+	if (element.Value and element.Value.UpdateTag) then
+		API.SafeCall("Tag.Value.UpdateTag", element.Value.UpdateTag, element.Value)
+	end
+
+	--[[ Callback: Power:PostUpdate(unit, cur, min, max)
+	Called after the element has been updated.
+
+	* self - the Power element
+	* unit - the unit for which the update has been triggered (string)
+	* cur  - the unit's current power value (number)
+	* min  - the unit's minimum possible power value (number)
+	* max  - the unit's maximum possible power value (number)
+	--]]
+	if (element.PostUpdate) then
+		element:PostUpdate(unit, safeCur, safeMin, safeMax)
+	end
+	HidePowerTexts(element)
+end
+
+API.UpdateAdditionalPower = API.UpdateManaOrb
+
+-- Debuffs the player can remove
+--------------------------------------------
+-- The game decides: "HARMFUL|RAID" is the harmful auras the player can dispel
+-- (AuraUtil.AuraFilters.Raid), right for every class, spec, talent and client, so no
+-- table of ours goes stale. Aura fields may be secret in combat: they are only checked
+-- with issecretvalue, and colours that cannot be read come from the game's dispel
+-- colour curve, to be handed straight to a widget (Retail and Forever both have it).
+local DISPEL_FILTER = "HARMFUL|RAID"
+local DISPEL_PRIORITY = { Magic = 4, Curse = 3, Disease = 2, Poison = 1 }
+-- Spell dispel type IDs, the curve's x: 1 Magic, 2 Curse, 3 Disease, 4 Poison.
+local DISPEL_CURVE_POINTS = { [0] = "none", "Magic", "Curse", "Disease", "Poison", "none" }
+local dispelColorCurve
+
+local GetDispelColorCurve = function()
+	if (dispelColorCurve ~= nil) then
+		return dispelColorCurve or nil
+	end
+	dispelColorCurve = false
+	local step = Enum and Enum.LuaCurveType and Enum.LuaCurveType.Step
+	if (C_CurveUtil and C_CurveUtil.CreateColorCurve and step and Colors.debuff) then
+		local curve = C_CurveUtil.CreateColorCurve()
+		curve:SetType(step)
+		for x = 0, #DISPEL_CURVE_POINTS do
+			local color = Colors.debuff[DISPEL_CURVE_POINTS[x]] or Colors.debuff.none
+			curve:AddPoint(x, { r = color[1], g = color[2], b = color[3], a = 1 })
+		end
+		dispelColorCurve = curve
+	end
+	return dispelColorCurve or nil
+end
+
+-- Returns the auraInstanceID and AuraData of the debuff on `unit` the player can
+-- dispel, Magic first when the types can be read, else the first one; nil if none.
+API.GetPlayerDispellableDebuff = function(unit)
+	local auras = C_UnitAuras
+	if (type(unit) ~= "string" or not auras or not auras.GetUnitAuraInstanceIDs or not auras.GetAuraDataByAuraInstanceID) then
+		return nil
+	end
+	local ok, ids = API.TryCall(auras.GetUnitAuraInstanceIDs, unit, DISPEL_FILTER)
+	if (not ok or type(ids) ~= "table") then
+		return nil
+	end
+	local bestID, bestData, bestPriority
+	for _, auraInstanceID in ipairs(ids) do
+		if (type(auraInstanceID) == "number" and not IsSecretValue(auraInstanceID)) then
+			local okData, auraData = API.TryCall(auras.GetAuraDataByAuraInstanceID, unit, auraInstanceID)
+			if (okData and type(auraData) == "table") then
+				local dispelName = auraData.dispelName
+				local priority = 0
+				if (not IsSecretValue(dispelName) and DISPEL_PRIORITY[dispelName]) then
+					priority = DISPEL_PRIORITY[dispelName]
+				end
+				if (not bestPriority or priority > bestPriority) then
+					bestID, bestData, bestPriority = auraInstanceID, auraData, priority
+				end
+			end
+		end
+	end
+	return bestID, bestData
+end
+
+-- The debuff type colour of an aura as r, g, b. Readable types use Colors.debuff;
+-- a secret type goes through the game's colour curve, and those numbers may be
+-- secret: pass them only to widget setters (SetVertexColor, SetBackdropBorderColor).
+API.GetDebuffTypeColor = function(unit, auraInstanceID, auraData)
+	local dispelName = auraData and auraData.dispelName
+	if (not IsSecretValue(dispelName)) then
+		local color = (dispelName and Colors.debuff[dispelName]) or Colors.debuff.none
+		return color[1], color[2], color[3]
+	end
+	local curve = GetDispelColorCurve()
+	if (curve and auraInstanceID and C_UnitAuras and C_UnitAuras.GetAuraDispelTypeColor) then
+		local ok, color = API.TryCall(C_UnitAuras.GetAuraDispelTypeColor, unit, auraInstanceID, curve)
+		if (ok and color and color.GetRGB) then
+			return color:GetRGB()
+		end
+	end
+	local color = Colors.debuff.none
+	return color[1], color[2], color[3]
+end
+
+-- Shows `texture` in the debuff type colour while `unit` has a debuff the player can
+-- dispel, and hides it otherwise; returns whether it is shown. Only the readable
+-- auraInstanceID decides: the colour may be secret and is never tested, since a
+-- boolean test on a secret raises. Used by the party and raid frame glows.
+API.UpdateDispelHighlight = function(texture, unit, alpha)
+	if (not texture) then
+		return false
+	end
+	local auraInstanceID, auraData = API.GetPlayerDispellableDebuff(unit)
+	if (not auraInstanceID) then
+		texture:Hide()
+		return false
+	end
+	local r, g, b = API.GetDebuffTypeColor(unit, auraInstanceID, auraData)
+	texture:SetVertexColor(r, g, b, alpha or .95)
+	texture:Show()
+	return true
+end
+
+
+

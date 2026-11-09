@@ -1,0 +1,4121 @@
+--[[
+
+	The MIT License (MIT)
+
+	Copyright (c) 2026 Lars Norberg
+	Copyright (c) 2026 Jonas "JuNNeZ" Andersen (JuNNeZ Edition modifications)
+
+	Permission is hereby granted, free of charge, to any person obtaining a copy
+	of this software and associated documentation files (the "Software"), to deal
+	in the Software without restriction, including without limitation the rights
+	to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+	copies of the Software, and to permit persons to whom the Software is
+	furnished to do so, subject to the following conditions:
+
+	The above copyright notice and this permission notice shall be included in all
+	copies or substantial portions of the Software.
+
+	THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+	IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+	FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+	AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+	LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+	OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+	SOFTWARE.
+
+--]]
+local _, ns = ...
+local PlayerPowerBarAlt = _G and _G.PlayerPowerBarAlt or PlayerPowerBarAlt
+local ALT_POWER_BAR_PAIR_DISPLAY_INFO = _G and _G.ALT_POWER_BAR_PAIR_DISPLAY_INFO
+local oUF = ns.oUF
+
+local PlayerFrameMod = ns:NewModule("PlayerFrame", ns.UnitFrameModule, "LibMoreEvents-1.0")
+
+local API = ns.API
+
+-- Lua API
+local AbbreviateNumbers = AbbreviateNumbers
+local BreakUpLargeNumbers = BreakUpLargeNumbers
+local math_floor = math.floor
+local math_max = math.max
+local next = next
+local string_gsub = string.gsub
+local string_format = string.format
+local tonumber = tonumber
+local tostring = tostring
+local type = type
+local unpack = unpack
+local C_Timer_After = C_Timer and C_Timer.After
+
+-- WoW API
+-- GetSpecialization is deprecated in favour of C_SpecializationInfo.GetSpecialization.
+-- Shadowed as a file local so every call site below, and the type() guards around
+-- them, keep working whichever of the two the client still exposes.
+local GetSpecialization = (C_SpecializationInfo and C_SpecializationInfo.GetSpecialization) or GetSpecialization
+
+-- GLOBALS: Enum, PlayerPowerBarAlt, C_SpecializationInfo
+-- GLOBALS: CreateFrame, GetSpecialization, IsXPUserDisabled, IsLevelAtEffectiveMaxLevel
+-- GLOBALS: UnitFactionGroup, UnitGUID, UnitLevel, UnitPowerType, UnitHasVehicleUI, UnitIsMercenary, UnitIsPVP, UnitIsPVPFreeForAll
+
+-- Addon API
+local Colors = ns.Colors
+
+-- Constants
+local playerClass = ns.PlayerClass
+local playerLevel = UnitLevel("player")
+local playerXPDisabled = IsXPUserDisabled()
+local SPEC_PALADIN_RETRIBUTION = SPEC_PALADIN_RETRIBUTION or 3
+local SPEC_SHAMAN_ELEMENTAL = _G.SPEC_SHAMAN_ELEMENTAL or 1
+local POWER_TYPE_MANA = (ns.IsRetail and Enum and Enum.PowerType and Enum.PowerType.Mana) or 0
+local playerIsRetribution = playerClass == "PALADIN" and (ns.IsRetailContent and GetSpecialization and GetSpecialization() == SPEC_PALADIN_RETRIBUTION)
+local ORB_DYNAMIC_CLASS_ALLOW = {
+	DRUID = true,
+	EVOKER = true,
+	MAGE = true,
+	MONK = true,
+	PALADIN = true,
+	PRIEST = true,
+	SHAMAN = true,
+	WARLOCK = true
+}
+local HidePlayerNativePowerVisuals
+local ShowPlayerNativePowerVisuals
+local UpdatePlayerFakePowerFill
+local UpdatePlayerPowerSpark
+local ShouldShowPlayerPowerValue
+
+local POWER_CRYSTAL_BASELINE_OFFSET_X = -37
+local POWER_CRYSTAL_BASELINE_OFFSET_Y = -28
+local SECONDARY_MANA_DEFAULT_OFFSET_X = -71
+local SECONDARY_MANA_DEFAULT_OFFSET_Y = -44
+local PLAYER_DEBUFF_HOLDER_PADDING_LEFT = 5
+local PLAYER_DEBUFF_HOLDER_PADDING_RIGHT = 3
+local PLAYER_DEBUFF_HOLDER_PADDING_TOP = 3
+local PLAYER_DEBUFF_HOLDER_PADDING_BOTTOM = 5
+
+local defaults = { profile = ns:Merge({
+	useClassColor = false,
+	showAuras = true,
+	showHealthPercent = false,
+	playerAuraUseStockBehavior = true,
+	playerAuraDebuffsOnly = false,
+	playerAuraShowWeaponEnchants = true,
+	playerAuraAlwaysBright = false,
+	playerAuraShowDebuffs = true,
+	playerAuraShowImportantAuras = true,
+	playerAuraShowImportantStealable = true,
+	playerAuraShowRaidAuras = true,
+	playerAuraShowShortCombatPlayerBuffs = true,
+	playerAuraShowNameplateAuras = true,
+	playerAuraShowShortBuffsInCombat = true,
+	playerAuraShowLongUtilityBuffs = false,
+	playerAuraMaxDuration = 300,
+	playerAuraMaxShown = 16,
+	playerAuraSeparateDebuffs = false,
+	playerAuraSeparateDebuffsMax = 8,
+	showCastbar = true,
+	showPowerValue = true,
+	powerValueCombatDriven = false,
+	PowerValueFormat = "short",
+	powerValueTextScale = 100,
+	powerOrbMode = "orbV2",
+	crystalOrbColorMode = "default",
+	aurasBelowFrame = false,
+	useWrathCrystal = false,
+	-- Mana orb art. The orb ships four interchangeable fill textures and three
+	-- decorative layers; only orb2 and the case were ever wired up.
+	manaOrbTexture = "clouds",
+	flowingMana = false,
+	manaOrbGlass = true,
+	manaOrbRim = false,
+	manaOrbPedestal = false,
+	powerBarScale = 1,
+	powerBarScaleX = 1,
+	powerBarScaleY = 1,
+	powerBackdropScaleX = 1,
+	powerBackdropScaleY = 1,
+	powerCaseScaleX = 1,
+	powerCaseScaleY = 1,
+	powerThreatBarScaleX = 1,
+	powerThreatBarScaleY = 1,
+	powerThreatCaseScaleX = 1,
+	powerThreatCaseScaleY = 1,
+	powerBarArtLayer = 0,
+	powerBarOffsetX = 0,
+	powerBarOffsetY = 0,
+	powerCaseOffsetX = 0,
+	powerCaseOffsetY = 0,
+	powerThreatBarOffsetX = 0,
+	powerThreatBarOffsetY = 0,
+	powerThreatCaseOffsetX = 0,
+	powerThreatCaseOffsetY = 0,
+	powerBarAnchorFrame = "FRAME",
+	powerCaseAnchorFrame = "POWER",
+	powerThreatBarAnchorFrame = "POWER",
+	powerThreatCaseAnchorFrame = "POWER",
+	powerBarBaseScaleX = 1,
+	powerBarBaseScaleY = 1,
+	powerBarBaseOffsetX = POWER_CRYSTAL_BASELINE_OFFSET_X,
+	powerBarBaseOffsetY = POWER_CRYSTAL_BASELINE_OFFSET_Y,
+	powerCaseBaseOffsetX = 0,
+	powerCaseBaseOffsetY = 0,
+	pvpIndicatorOffsetX = 0,
+	pvpIndicatorOffsetY = 0,
+	powerOffsetZeroMigrated = true,
+	powerCrystalBaselineApplied = true,
+	-- Legacy HUD only: centre the frame while there is no target (Core/LegacyHUD.lua).
+	legacyCenterWithoutTarget = false
+}, ns.MovableModulePrototype.defaults) }
+
+-- Generate module defaults on the fly
+-- to recalculate default values relying on
+-- changing factors like user interface scale.
+PlayerFrameMod.GenerateDefaults = function(self)
+	defaults.profile.savedPosition = {
+		scale = ns.API.GetEffectiveScale(),
+		[1] = "BOTTOMLEFT",
+		[2] = 46 * ns.API.GetEffectiveScale(),
+		[3] = 100 * ns.API.GetEffectiveScale()
+	}
+	do
+		local scale = defaults.profile.savedPosition.scale or ns.API.GetEffectiveScale()
+		defaults.profile.debuffsSavedPosition = {
+			scale = scale,
+			lockAnchorPoint = true,
+			[1] = "BOTTOMLEFT",
+			[2] = defaults.profile.savedPosition[2] + (260 * scale),
+			[3] = defaults.profile.savedPosition[3] + (48 * scale)
+		}
+		defaults.profile.secondaryManaSavedPosition = {
+			scale = scale,
+			lockAnchorPoint = true,
+			[1] = "BOTTOMLEFT",
+			[2] = defaults.profile.savedPosition[2] + (SECONDARY_MANA_DEFAULT_OFFSET_X * scale),
+			[3] = defaults.profile.savedPosition[3] + (SECONDARY_MANA_DEFAULT_OFFSET_Y * scale)
+		}
+	end
+	return defaults
+end
+
+-- Utility Functions
+--------------------------------------------
+-- Simplify the tagging process a little.
+local prefix = function(msg)
+	return string_gsub(msg, "*", ns.Prefix)
+end
+
+local GetPlayerAuraCount = function(profile, key, fallback, minimum, maximum)
+	local value = (profile and type(profile[key]) == "number") and profile[key] or fallback
+	value = math_floor((value or 1) + .5)
+	if (type(minimum) == "number" and value < minimum) then
+		value = minimum
+	elseif (type(maximum) == "number" and value > maximum) then
+		value = maximum
+	end
+	return value
+end
+
+local GetPlayerAuraAnchorSize = function(element)
+	if (not element) then
+		return 96, 24
+	end
+	local width = element:GetWidth() or 0
+	local height = element:GetHeight() or 0
+	if (width < 96) then
+		width = 96
+	end
+	if (height < 24) then
+		height = 24
+	end
+	return width, height
+end
+
+local GetPlayerDebuffHolderSize = function(element)
+	local width, height = GetPlayerAuraAnchorSize(element)
+	return width + PLAYER_DEBUFF_HOLDER_PADDING_LEFT + PLAYER_DEBUFF_HOLDER_PADDING_RIGHT, height + PLAYER_DEBUFF_HOLDER_PADDING_TOP + PLAYER_DEBUFF_HOLDER_PADDING_BOTTOM
+end
+
+local ApplyPlayerAuraAnchorPosition = function(element, savedPosition, scale)
+	if (not element or not savedPosition or not savedPosition[1]) then
+		return
+	end
+	scale = (type(scale) == "number" and scale > 0) and scale or 1
+	element:SetScale(scale)
+	element:ClearAllPoints()
+	element:SetPoint(savedPosition[1], UIParent, savedPosition[1], (savedPosition[2] or 0) / scale, (savedPosition[3] or 0) / scale)
+end
+
+local ApplyPlayerAuraAttachedPosition = function(element, anchorFrame, pointData)
+	if (not element or not anchorFrame or not pointData or not pointData[1]) then
+		return
+	end
+	element:SetScale(1)
+	element:ClearAllPoints()
+	if (type(pointData[2]) == "number" or pointData[2] == nil) then
+		element:SetPoint(pointData[1], anchorFrame, pointData[1], pointData[2] or 0, pointData[3] or 0)
+	else
+		element:SetPoint(unpack(pointData))
+	end
+end
+
+-- Calculate whether the separate debuff layer SHOULD be shown based on profile.
+-- This is the "visibility intent" — what the user configured.
+local GetPlayerDebuffShowIntent = function(frame, profile)
+	if (not frame or not frame.PlayerDebuffs or not profile) then
+		return false
+	end
+	if (not profile.enabled or not profile.showAuras or not profile.playerAuraSeparateDebuffs) then
+		return false
+	end
+	return true
+end
+
+-- Atomically update debuff holder visibility to match the intent.
+-- This follows Blizzard's AuraFrameEditModeMixin.UpdateShownState() pattern:
+-- 1. Determine what SHOULD be shown (from profile)
+-- 2. Compare to current state
+-- 3. Update atomically if different
+-- 4. Don't force content updates on combat transitions
+local UpdatePlayerDebuffShownState = function(frame, refreshOnShow)
+	if (not frame or not frame.DebuffHolder) then
+		return
+	end
+
+	local profile = PlayerFrameMod and PlayerFrameMod.db and PlayerFrameMod.db.profile or {}
+	local debuffHolder = frame.DebuffHolder
+	
+	-- Store the visibility intent on the frame for persistence across transient state changes.
+	local shouldShow = GetPlayerDebuffShowIntent(frame, profile)
+	debuffHolder.intendedVisibility = shouldShow
+	
+	-- Only update shown state if it differs from current state (atomic comparison).
+	local wasShown = debuffHolder:IsShown()
+	if shouldShow ~= wasShown then
+		debuffHolder:SetShown(shouldShow)
+		-- On reload/layout transitions, force a debuff refresh after becoming visible
+		-- so pre-existing debuffs are rebuilt immediately.
+		if (refreshOnShow and shouldShow and frame.PlayerDebuffs and frame.PlayerDebuffs.ForceUpdate) then
+			frame.PlayerDebuffs:ForceUpdate()
+		end
+	end
+end
+
+local ApplyPlayerAuraLayout = function(frame)
+	if (not frame or not frame.PlayerAuras) then
+		return
+	end
+	if (InCombatLockdown()) then
+		frame.__AzeriteUI_PlayerAuraLayoutPending = true
+		return
+	end
+	frame.__AzeriteUI_PlayerAuraLayoutPending = nil
+
+	local profile = PlayerFrameMod and PlayerFrameMod.db and PlayerFrameMod.db.profile or {}
+	local config = ns.GetConfig("PlayerFrame") or {}
+	local auras = frame.PlayerAuras
+	local debuffs = frame.PlayerDebuffs
+	local debuffHolder = frame.DebuffHolder
+	local separateDebuffs = profile.playerAuraSeparateDebuffs and true or false
+	local auraTotal = GetPlayerAuraCount(profile, "playerAuraMaxShown", config.AurasNumTotal or 16, 1, 32)
+	local auraPoint = config.AurasPosition or { "BOTTOMLEFT", 0, 0 }
+	local scale = (profile.savedPosition and profile.savedPosition.scale) or frame:GetScale() or 1
+
+	if (config.AurasSize and config.AurasSize[1] and config.AurasSize[2]) then
+		local auraWidth = config.AurasSize[1]
+		local auraSize = config.AuraSize or 36
+		local spacingX = config.AurasSpacingX or config.AuraSpacing or 0
+		local spacingY = config.AurasSpacingY or config.AuraSpacing or 0
+		local columns = math.max(1, math.floor((auraWidth + spacingX) / (auraSize + spacingX)))
+		local rows = math.ceil(auraTotal / columns)
+		local auraHeight = rows * auraSize + math.max(0, rows - 1) * spacingY
+		auras:SetSize(auraWidth, auraHeight)
+	end
+	ApplyPlayerAuraAttachedPosition(auras, frame, auraPoint)
+	local showBuffs = not profile.playerAuraDebuffsOnly
+	local showAttachedDebuffs = (not separateDebuffs)
+		and (profile.playerAuraDebuffsOnly or profile.playerAuraShowDebuffs ~= false)
+	local attachedBuffCount = showBuffs and auraTotal or 0
+	local attachedDebuffCount = showAttachedDebuffs and auraTotal or 0
+	auras:Configure({
+		size = config.AuraSize or 36,
+		spacingX = config.AurasSpacingX or config.AuraSpacing or 0,
+		spacingY = config.AurasSpacingY or config.AuraSpacing or 0,
+		initialAnchor = config.AurasInitialAnchor or "BOTTOMLEFT",
+		growthX = config.AurasGrowthX or "RIGHT",
+		growthY = config.AurasGrowthY or "UP",
+		maxBuffs = attachedBuffCount,
+		maxDebuffs = attachedDebuffCount,
+		useStockBehavior = profile.playerAuraUseStockBehavior ~= false,
+		alwaysBright = profile.playerAuraAlwaysBright and true or false,
+		showPriority = profile.playerAuraShowImportantAuras ~= false,
+		showBoss = profile.playerAuraShowRaidAuras ~= false,
+		showStealable = profile.playerAuraShowImportantStealable ~= false,
+		showPersonal = profile.playerAuraShowShortCombatPlayerBuffs ~= false,
+		showNameplate = profile.playerAuraShowNameplateAuras ~= false,
+		showTemporary = profile.playerAuraShowShortBuffsInCombat ~= false,
+		showLong = profile.playerAuraShowLongUtilityBuffs and true or false,
+		maxDuration = GetPlayerAuraCount(profile, "playerAuraMaxDuration", 300, 30, 3600),
+		showItemEnchantments = profile.playerAuraShowWeaponEnchants ~= false
+	})
+
+	if (not debuffs) then
+		return
+	end
+
+	local separateDebuffCount = separateDebuffs and GetPlayerAuraCount(profile, "playerAuraSeparateDebuffsMax", auraTotal, 1, 20) or 0
+	if (config.AurasSize and config.AurasSize[1] and config.AurasSize[2]) then
+		local debuffWidth = config.AurasSize[1]
+		local debuffHeight = config.AurasSize[2]
+		if (separateDebuffCount > 0) then
+			local auraSize = config.AuraSize or 36
+			local spacingX = config.AurasSpacingX or config.AuraSpacing or 0
+			local spacingY = config.AurasSpacingY or config.AuraSpacing or 0
+			local columns = math.max(1, math.floor((debuffWidth + spacingX) / (auraSize + spacingX)))
+			local rows = math.ceil(separateDebuffCount / columns)
+			debuffHeight = rows * auraSize + math.max(0, rows - 1) * spacingY
+		end
+		debuffs:SetSize(debuffWidth, debuffHeight)
+	end
+	debuffs:SetFrameStrata(frame:GetFrameStrata())
+	debuffs:SetFrameLevel((auras:GetFrameLevel() or frame:GetFrameLevel()) + 1)
+	debuffs:Configure({
+		size = config.AuraSize or 36,
+		spacingX = config.AurasSpacingX or config.AuraSpacing or 0,
+		spacingY = config.AurasSpacingY or config.AuraSpacing or 0,
+		initialAnchor = "TOPLEFT",
+		growthX = "RIGHT",
+		growthY = "DOWN",
+		maxBuffs = 0,
+		maxDebuffs = separateDebuffCount
+	})
+	debuffs:SetDisplayEnabled(profile.enabled and profile.showAuras and separateDebuffs)
+	debuffs:SetScale(1)
+	debuffs:ClearAllPoints()
+	if (debuffHolder) then
+		debuffHolder:SetFrameStrata(frame:GetFrameStrata())
+		debuffHolder:SetFrameLevel((auras:GetFrameLevel() or frame:GetFrameLevel()) + 1)
+		local holderWidth, holderHeight = GetPlayerDebuffHolderSize(debuffs)
+		debuffHolder:SetSize(holderWidth, holderHeight)
+		ApplyPlayerAuraAnchorPosition(debuffHolder, profile.debuffsSavedPosition, scale)
+		debuffs:SetPoint("TOPLEFT", debuffHolder, "TOPLEFT", PLAYER_DEBUFF_HOLDER_PADDING_LEFT, -PLAYER_DEBUFF_HOLDER_PADDING_TOP)
+	else
+		ApplyPlayerAuraAnchorPosition(debuffs, profile.debuffsSavedPosition, scale)
+	end
+	
+	-- Update debuff holder visibility state atomically (Blizzard pattern).
+	-- Keep this layout pass visibility-only; element refresh is handled after Auras enable.
+	UpdatePlayerDebuffShownState(frame)
+end
+
+PlayerFrameMod.CreateAuraAnchors = function(self)
+	if (self.debuffAnchor) then
+		return
+	end
+	if (not self.frame or not self.frame.PlayerDebuffs) then
+		return
+	end
+
+	local manager = ns:GetModule("MovableFramesManager", true)
+	if (not manager) then
+		return
+	end
+
+	local defaultsProfile = self:GetDefaults().profile
+	local profile = self.db and self.db.profile
+	if (not profile) then
+		return
+	end
+
+	local anchor = manager:RequestAnchor(self:GetName() .. ".debuffs")
+	local savedPosition = profile.debuffsSavedPosition
+	local defaultPosition = defaultsProfile and defaultsProfile.debuffsSavedPosition
+	anchor:SetScalable(false)
+	anchor:SetAnchorPointLocked(true)
+	anchor:SetDefaultScale((defaultPosition and defaultPosition.scale) or ns.API.GetEffectiveScale())
+	if (defaultPosition and defaultPosition[1]) then
+		anchor:SetDefaultPosition(defaultPosition[1], defaultPosition[2], defaultPosition[3])
+	end
+	do
+		local width, height = GetPlayerDebuffHolderSize(self.frame.PlayerDebuffs)
+		anchor:SetSize(width, height)
+	end
+	if (savedPosition and savedPosition[1]) then
+		anchor:SetPoint(savedPosition[1], savedPosition[2], savedPosition[3])
+	end
+	anchor:SetScale((profile.savedPosition and profile.savedPosition.scale) or ns.API.GetEffectiveScale())
+	anchor:SetTitle((HUD_EDIT_MODE_PLAYER_FRAME_LABEL or PLAYER) .. " Debuffs")
+	anchor:SetColorGroup("unitframes")
+	anchor.PreUpdate = function()
+		self:UpdateAuraAnchors()
+	end
+	self.debuffAnchor = anchor
+	self.debuffAnchor:HookScript("OnShow", function()
+		ApplyPlayerAuraLayout(self.frame)
+	end)
+	self.debuffAnchor:HookScript("OnHide", function()
+		ApplyPlayerAuraLayout(self.frame)
+	end)
+end
+
+-- Returns false when the move had to be skipped because of combat lockdown, so the
+-- caller can replay it on PLAYER_REGEN_ENABLED.
+local ApplySecondaryManaCrystalPosition = function(frame, savedPosition, scale)
+	local crystal = frame and frame.SecondaryManaCrystal
+	if (not crystal or not savedPosition or not savedPosition[1]) then
+		return true
+	end
+	-- The crystal is a child of the secure player frame, so these are protected calls.
+	if (InCombatLockdown()) then
+		return false
+	end
+	scale = (type(scale) == "number" and scale > 0) and scale or 1
+	crystal:SetScale(1)
+	crystal:ClearAllPoints()
+	crystal:SetPoint(savedPosition[1], UIParent, savedPosition[1], (savedPosition[2] or 0) / scale, (savedPosition[3] or 0) / scale)
+	return true
+end
+
+PlayerFrameMod.CreateSecondaryManaAnchor = function(self)
+	if (self.secondaryManaAnchor or not self.frame or not self.frame.SecondaryManaCrystal) then
+		return
+	end
+
+	local manager = ns:GetModule("MovableFramesManager", true)
+	local profile = self.db and self.db.profile
+	local defaultsProfile = self:GetDefaults().profile
+	if (not manager or not profile) then
+		return
+	end
+
+	local anchor = manager:RequestAnchor(self:GetName() .. ".secondaryMana")
+	local savedPosition = profile.secondaryManaSavedPosition
+	local defaultPosition = defaultsProfile and defaultsProfile.secondaryManaSavedPosition
+	local width, height = self.frame.SecondaryManaCrystal:GetSize()
+	anchor:SetScalable(false)
+	anchor:SetAnchorPointLocked(true)
+	anchor:SetDefaultScale((defaultPosition and defaultPosition.scale) or ns.API.GetEffectiveScale())
+	if (defaultPosition and defaultPosition[1]) then
+		anchor:SetDefaultPosition(defaultPosition[1], defaultPosition[2], defaultPosition[3])
+	end
+	anchor:SetSize(width, height)
+	if (savedPosition and savedPosition[1]) then
+		anchor:SetPoint(savedPosition[1], savedPosition[2], savedPosition[3])
+	end
+	anchor:SetScale((profile.savedPosition and profile.savedPosition.scale) or ns.API.GetEffectiveScale())
+	anchor:SetTitle((HUD_EDIT_MODE_PLAYER_FRAME_LABEL or PLAYER) .. " Secondary Mana Crystal")
+	anchor:SetColorGroup("unitframes")
+	anchor.PreUpdate = function()
+		self:UpdateSecondaryManaAnchor()
+	end
+	self.secondaryManaAnchor = anchor
+end
+
+PlayerFrameMod.UpdateSecondaryManaAnchor = function(self)
+	local profile = self.db and self.db.profile
+	local frame = self.frame
+	local crystal = frame and frame.SecondaryManaCrystal
+	if (not profile or not frame or not crystal) then
+		return
+	end
+
+	local savedPosition = profile.secondaryManaSavedPosition
+	local scale = (profile.savedPosition and profile.savedPosition.scale) or frame:GetScale() or 1
+	if (ApplySecondaryManaCrystalPosition(frame, savedPosition, scale)) then
+		self.secondaryManaAnchorPending = nil
+	else
+		self.secondaryManaAnchorPending = true
+	end
+
+	local anchor = self.secondaryManaAnchor
+	if (not anchor) then
+		return
+	end
+	if (not profile.enabled) then
+		anchor:Disable()
+		return
+	end
+
+	local width, height = crystal:GetSize()
+	anchor:Enable()
+	anchor:SetScale(scale)
+	anchor:SetSize(width, height)
+	anchor:ClearAllPoints()
+	if (savedPosition and savedPosition[1]) then
+		anchor:SetPointBase(savedPosition[1], UIParent, savedPosition[1], savedPosition[2], savedPosition[3])
+	end
+	anchor:SetAnchorPointLocked(true)
+end
+
+PlayerFrameMod.UpdateSecondaryManaDefaults = function(self)
+	local defaults = self:GetDefaults()
+	if (not defaults or not defaults.profile or not self.secondaryManaAnchor or not defaults.profile.secondaryManaSavedPosition) then
+		return
+	end
+	defaults.profile.secondaryManaSavedPosition.scale = self.secondaryManaAnchor:GetDefaultScale()
+	defaults.profile.secondaryManaSavedPosition[1], defaults.profile.secondaryManaSavedPosition[2], defaults.profile.secondaryManaSavedPosition[3] = self.secondaryManaAnchor:GetDefaultPosition()
+	self:SetDefaults(defaults)
+end
+
+PlayerFrameMod.UpdateAuraAnchors = function(self)
+	local profile = self.db and self.db.profile
+	local frame = self.frame
+	local debuffAnchorTarget = frame and (frame.DebuffHolder or frame.PlayerDebuffs)
+	if (not profile or not frame) then
+		return
+	end
+
+	if (not self.debuffAnchor) then
+		return
+	end
+	if (not profile.enabled or not profile.showAuras or not debuffAnchorTarget) then
+		self.debuffAnchor:Disable()
+		return
+	end
+
+	local savedPosition = profile.debuffsSavedPosition
+	local scale = (profile.savedPosition and profile.savedPosition.scale) or frame:GetScale() or 1
+	self.debuffAnchor:Enable()
+	self.debuffAnchor:SetBaseScale(scale)
+	do
+		local width, height = GetPlayerAuraAnchorSize(debuffAnchorTarget)
+		self.debuffAnchor:SetSize(width, height)
+	end
+	self.debuffAnchor:ClearAllPoints()
+	if (savedPosition and savedPosition[1]) then
+		self.debuffAnchor:SetPointBase(savedPosition[1], UIParent, savedPosition[1], savedPosition[2], savedPosition[3])
+	end
+	self.debuffAnchor:SetAnchorPointLocked(true)
+	if (savedPosition and savedPosition[1]) then
+		-- The debuff holder parents a native Blizzard aura container, which makes it
+		-- protected for positioning purposes: SetScale, ClearAllPoints and SetPoint are
+		-- all blocked in combat and raise ADDON_ACTION_BLOCKED. Defer to the combat drop
+		-- rather than firing a blocked call; the anchor above is addon-owned and safe.
+		if (InCombatLockdown()) then
+			self.auraAnchorsPending = true
+		else
+			self.auraAnchorsPending = nil
+			debuffAnchorTarget:SetScale(scale)
+			debuffAnchorTarget:ClearAllPoints()
+			debuffAnchorTarget:SetPoint(savedPosition[1], UIParent, savedPosition[1], (savedPosition[2] or 0) / scale, (savedPosition[3] or 0) / scale)
+		end
+	end
+end
+
+PlayerFrameMod.UpdateAuraDefaults = function(self)
+	local defaults = self:GetDefaults()
+	if (not defaults or not defaults.profile or not self.debuffAnchor or not defaults.profile.debuffsSavedPosition) then
+		return
+	end
+	defaults.profile.debuffsSavedPosition.scale = self.debuffAnchor:GetDefaultScale()
+	defaults.profile.debuffsSavedPosition[1], defaults.profile.debuffsSavedPosition[2], defaults.profile.debuffsSavedPosition[3] = self.debuffAnchor:GetDefaultPosition()
+	self:SetDefaults(defaults)
+end
+
+local UpdatePlayerAuraSavedPosition = function(self, anchor, point, x, y)
+	if (anchor ~= self.debuffAnchor or not self.db or not self.db.profile or not self.db.profile.debuffsSavedPosition) then
+		return false
+	end
+	local savedPosition = self.db.profile.debuffsSavedPosition
+	savedPosition.lockAnchorPoint = true
+	savedPosition[1] = point
+	savedPosition[2] = x
+	savedPosition[3] = y
+	ApplyPlayerAuraLayout(self.frame)
+	self:UpdateAuraAnchors()
+	return true
+end
+
+local UpdateSecondaryManaSavedPosition = function(self, anchor, point, x, y)
+	if (anchor ~= self.secondaryManaAnchor or not self.db or not self.db.profile or not self.db.profile.secondaryManaSavedPosition) then
+		return false
+	end
+	local savedPosition = self.db.profile.secondaryManaSavedPosition
+	savedPosition.lockAnchorPoint = true
+	savedPosition[1] = point
+	savedPosition[2] = x
+	savedPosition[3] = y
+	self:UpdateSecondaryManaAnchor()
+	return true
+end
+
+PlayerFrameMod.PreAnchorEvent = function(self, event, ...)
+	if (not self.frame) then
+		return
+	end
+
+	if (event == "MFM_PositionUpdated") then
+		local anchor, point, x, y = ...
+		if (anchor == self.secondaryManaAnchor) then
+			UpdateSecondaryManaSavedPosition(self, anchor, point, x, y)
+		elseif (anchor == self.debuffAnchor) then
+			UpdatePlayerAuraSavedPosition(self, anchor, point, x, y)
+		end
+	elseif (event == "MFM_Dragging") then
+		-- No combat guard here: `self.incombat` was never assigned on this module, so
+		-- this branch has always run in combat. The protected calls it can reach are
+		-- guarded at their source in ApplySecondaryManaCrystalPosition and
+		-- UpdateAuraAnchors, which defer to PLAYER_REGEN_ENABLED. Dropping the position
+		-- save here instead would lose the drag the player just performed.
+		local anchor, point, x, y = ...
+		if (anchor == self.secondaryManaAnchor) then
+			UpdateSecondaryManaSavedPosition(self, anchor, point, x, y)
+		elseif (anchor == self.debuffAnchor) then
+			UpdatePlayerAuraSavedPosition(self, anchor, point, x, y)
+		end
+	elseif (event == "MFM_AnchorShown") then
+		local anchor = ...
+		if (anchor == self.secondaryManaAnchor) then
+			self:UpdateSecondaryManaAnchor()
+		elseif (anchor == self.debuffAnchor) then
+			ApplyPlayerAuraLayout(self.frame)
+			self:UpdateAuraAnchors()
+		end
+	end
+end
+
+PlayerFrameMod.PostAnchorEvent = function(self, event, ...)
+	if (not self.frame) then
+		return
+	end
+
+	if (event == "PLAYER_ENTERING_WORLD" or event == "VARIABLES_LOADED") then
+		ApplyPlayerAuraLayout(self.frame)
+		self:UpdateAuraAnchors()
+		self:UpdateSecondaryManaAnchor()
+		return
+	end
+	
+	-- On combat exit, update debuff visibility state (but don't force full layout refresh).
+	-- This preserves incremental aura updates via UNIT_AURA events during combat transitions.
+	if (event == "PLAYER_REGEN_ENABLED") then
+		UpdatePlayerDebuffShownState(self.frame)
+		-- Replay anchor work that had to be skipped because the frames involved are
+		-- protected while in combat.
+		if (self.auraAnchorsPending) then
+			self:UpdateAuraAnchors()
+		end
+		if (self.secondaryManaAnchorPending) then
+			self:UpdateSecondaryManaAnchor()
+		end
+		return
+	end
+
+	if (event == "MFM_ScaleUpdated") then
+		local anchor = ...
+		if (anchor == self.anchor) then
+			ApplyPlayerAuraLayout(self.frame)
+			self:UpdateAuraAnchors()
+			self:UpdateSecondaryManaAnchor()
+			return
+		end
+	end
+
+	if (event == "MFM_PositionUpdated") then
+		local anchor, point, x, y = ...
+		if (anchor == self.anchor) then
+			ApplyPlayerAuraLayout(self.frame)
+			self:UpdateAuraAnchors()
+			return
+		end
+		if (UpdatePlayerAuraSavedPosition(self, anchor, point, x, y)) then
+			return
+		end
+		if (UpdateSecondaryManaSavedPosition(self, anchor, point, x, y)) then
+			return
+		end
+	end
+
+	if (event == "MFM_Dragging") then
+		-- See the matching note in PreAnchorEvent: no combat guard, protected calls are
+		-- guarded at their source.
+		local anchor, point, x, y = ...
+		if (UpdatePlayerAuraSavedPosition(self, anchor, point, x, y)) then
+			return
+		end
+		if (UpdateSecondaryManaSavedPosition(self, anchor, point, x, y)) then
+			return
+		end
+	end
+
+	if (event == "MFM_UIScaleChanged") then
+		self:UpdateAuraDefaults()
+		self:UpdateSecondaryManaDefaults()
+		ApplyPlayerAuraLayout(self.frame)
+		self:UpdateAuraAnchors()
+		self:UpdateSecondaryManaAnchor()
+	end
+end
+
+local STOCK_POWER_CRYSTAL_LAYOUT = {
+	frameLevelOffset = -2,
+	barPointKey = "PowerBarPosition",
+	barSizeKey = "PowerBarSize",
+	barTexCoordKey = "PowerBarTexCoord",
+	barOrientationKey = "PowerBarOrientation",
+	backdropSizeKey = "PowerBackdropSize"
+}
+
+local CURRENT_POWER_CRYSTAL_LAYOUT = {
+	frameLevelOffset = -2,
+	barPointKey = "PowerBarPosition",
+	barSizeKey = "PowerBackdropSize",
+	barTexCoordKey = "PowerBarTexCoord",
+	barOrientationKey = "PowerBarOrientation",
+	backdropPoint = { "CENTER", 0, 0 },
+	backdropSizeKey = "PowerBackdropSize"
+}
+
+local ShouldDebugAbsorbUnit = function(unit)
+	if (not ns.API or not ns.API.DEBUG_HEALTH_CHAT) then
+		return false
+	end
+	if (type(unit) ~= "string" or unit == "") then
+		return false
+	end
+	if (unit ~= "player" and unit ~= "target") then
+		return false
+	end
+	local filter = ns.API.DEBUG_HEALTH_FILTER
+	if (type(filter) ~= "string" or filter == "") then
+		return true
+	end
+	filter = filter:lower()
+	if (unit:lower():find(filter, 1, true) ~= nil) then
+		return true
+	end
+	local compact = filter:gsub("[^%a%d_]", "")
+	if (compact ~= "" and unit:lower():find(compact, 1, true) ~= nil) then
+		return true
+	end
+	return false
+end
+
+local EmitAbsorbStateDebug = function(owner, unit, fmt, ...)
+	if (not owner or not ShouldDebugAbsorbUnit(unit)) then
+		return
+	end
+	local now = (GetTimePreciseSec and GetTimePreciseSec()) or GetTime()
+	local key = "__AzeriteUI_LastAbsorbStateDebug"
+	local last = owner[key] or 0
+	if ((now - last) < 0.2) then
+		return
+	end
+	owner[key] = now
+	ns.API.DebugPrintf("Absorb", 4, fmt, ...)
+end
+
+-- Element Callbacks
+--------------------------------------------
+local ClampSparkPercent = function(value)
+	if (type(value) ~= "number") or (issecretvalue and issecretvalue(value)) then
+		return nil
+	end
+	if (value > 1 and value <= 100) then
+		value = value / 100
+	end
+	if (value < 0) then
+		value = 0
+	elseif (value > 1) then
+		value = 1
+	end
+	return value
+end
+
+local GetBarSparkPercent = function(element)
+	if (not element) then
+		return nil
+	end
+	local percent = ClampSparkPercent(element.safePercent)
+	if (percent ~= nil) then
+		return percent
+	end
+	if (element.GetSecretPercent) then
+		local ok, value = API.TryCall(element.GetSecretPercent, element)
+		if (ok) then
+			percent = ClampSparkPercent(value)
+			if (percent ~= nil) then
+				return percent
+			end
+		end
+	end
+	return ClampSparkPercent(element.__AzeriteUI_MirrorPercent) or ClampSparkPercent(element.__AzeriteUI_TexturePercent)
+end
+
+local UpdateBarSparkSize = function(element)
+	local spark = element and element.Spark
+	if (not spark) then
+		return
+	end
+	local growth = (element.GetGrowth and element:GetGrowth()) or element.__AzeriteUI_Growth or "RIGHT"
+	local width = element.GetWidth and element:GetWidth() or 0
+	local height = element.GetHeight and element:GetHeight() or 0
+	if (type(width) ~= "number" or type(height) ~= "number"
+		or width <= 0 or height <= 0
+		or (issecretvalue and (issecretvalue(width) or issecretvalue(height)))) then
+		spark:Hide()
+		return
+	end
+	if (growth == "UP" or growth == "DOWN") then
+		spark:SetSize(math_max(8, width - 4), 12)
+	else
+		spark:SetSize(12, math_max(8, height - 2))
+	end
+end
+
+local UpdateBarSpark = function(element, percentOverride)
+	local spark = element and element.Spark
+	if (not spark) then
+		return
+	end
+	local percent = ClampSparkPercent(percentOverride)
+	if (percent == nil) then
+		percent = GetBarSparkPercent(element)
+	end
+	if (type(percent) ~= "number" or percent <= 0 or percent >= 1 or not element:IsShown()) then
+		spark:Hide()
+		return
+	end
+	local growth = (element.GetGrowth and element:GetGrowth()) or element.__AzeriteUI_Growth or "RIGHT"
+	local reverseFill = element.GetReverseFill and element:GetReverseFill()
+	if (reverseFill) then
+		if (growth == "RIGHT") then
+			growth = "LEFT"
+		elseif (growth == "LEFT") then
+			growth = "RIGHT"
+		elseif (growth == "UP") then
+			growth = "DOWN"
+		elseif (growth == "DOWN") then
+			growth = "UP"
+		end
+	end
+	local width = element:GetWidth()
+	local height = element:GetHeight()
+	if (type(width) ~= "number" or type(height) ~= "number"
+		or width <= 0 or height <= 0
+		or (issecretvalue and (issecretvalue(width) or issecretvalue(height)))) then
+		spark:Hide()
+		return
+	end
+	spark:ClearAllPoints()
+	if (growth == "UP" or growth == "DOWN") then
+		local y = height * ((growth == "DOWN") and (1 - percent) or percent)
+		spark:SetPoint("CENTER", element, "BOTTOM", 0, y)
+	else
+		local x = width * ((growth == "LEFT") and (1 - percent) or percent)
+		spark:SetPoint("CENTER", element, "LEFT", x, 0)
+	end
+	spark:Show()
+end
+
+-- Forceupdate health prediction on health updates,
+-- to assure our smoothed elements are properly aligned.
+local Health_PostUpdate = function(element, unit, cur, max)
+	local predict = element.__owner.HealthPrediction
+	if (predict) then
+		predict:ForceUpdate()
+	end
+	UpdateBarSpark(element)
+end
+
+-- Update the health preview color on health color updates.
+local Health_PostUpdateColor = function(element, unit, colorOrR, g, b)
+	local preview = element.Preview
+	if (not preview) then
+		return
+	end
+
+	local r = colorOrR
+	if (type(colorOrR) == "table" and colorOrR.GetRGB) then
+		r, g, b = colorOrR:GetRGB()
+	end
+
+	if (type(r) == "number" and type(g) == "number" and type(b) == "number") then
+		preview:SetStatusBarColor(r * .9, g * .9, b * .9)
+	end
+	UpdateBarSpark(element)
+end
+
+-- Align our custom health prediction texture
+-- based on the plugin's provided values.
+local GetSafeDamageAbsorbFromCalculator = function(element, unit)
+	if (not CreateUnitHealPredictionCalculator or not UnitGetDetailedHealPrediction) then
+		return nil
+	end
+	local maxClampMode = Enum and Enum.UnitDamageAbsorbClampMode and Enum.UnitDamageAbsorbClampMode.MaximumHealth
+	if (not element.__AzeriteUI_AbsorbCalculator) then
+		element.__AzeriteUI_AbsorbCalculator = CreateUnitHealPredictionCalculator()
+	end
+	local calculator = element.__AzeriteUI_AbsorbCalculator
+	if (not calculator) then
+		return nil
+	end
+	if (maxClampMode ~= nil and calculator.SetDamageAbsorbClampMode and not element.__AzeriteUI_AbsorbCalculatorClampModeApplied) then
+		API.SafeCall("Player.calc.SetDamageAbsorbClampMode", calculator.SetDamageAbsorbClampMode, calculator, maxClampMode)
+		element.__AzeriteUI_AbsorbCalculatorClampModeApplied = true
+	end
+	local okUpdate = API.TryCall(UnitGetDetailedHealPrediction, unit, nil, calculator)
+	if (not okUpdate) then
+		okUpdate = API.TryCall(UnitGetDetailedHealPrediction, unit, "player", calculator)
+	end
+	if (not okUpdate) then
+		return nil
+	end
+	if (calculator.GetPredictedValues) then
+		local okPredicted, predictedValues = API.TryCall(calculator.GetPredictedValues, calculator)
+		if (okPredicted and type(predictedValues) == "table") then
+			local totalDamageAbsorbs = predictedValues.totalDamageAbsorbs
+			if (type(totalDamageAbsorbs) == "number" and (not issecretvalue or not issecretvalue(totalDamageAbsorbs))) then
+				return totalDamageAbsorbs
+			end
+		end
+	end
+	if (not calculator.GetDamageAbsorbs) then
+		return nil
+	end
+	local okAbsorb, absorb = API.TryCall(calculator.GetDamageAbsorbs, calculator)
+	if (not okAbsorb or type(absorb) ~= "number" or (issecretvalue and issecretvalue(absorb))) then
+		return nil
+	end
+	return absorb
+end
+
+local GetAbsorbFromPredictionValues = function(element)
+	if (not element or not element.values) then
+		return nil
+	end
+	local maxClampMode = Enum and Enum.UnitDamageAbsorbClampMode and Enum.UnitDamageAbsorbClampMode.MaximumHealth
+	if (maxClampMode ~= nil and element.values.SetDamageAbsorbClampMode and not element.__AzeriteUI_PredictionValuesClampModeApplied) then
+		API.SafeCall("Player.values.SetDamageAbsorbClampMode", element.values.SetDamageAbsorbClampMode, element.values, maxClampMode)
+		element.__AzeriteUI_PredictionValuesClampModeApplied = true
+	end
+	if (element.values.GetPredictedValues) then
+		local okPredicted, predictedValues = API.TryCall(element.values.GetPredictedValues, element.values)
+		if (okPredicted and type(predictedValues) == "table") then
+			local totalDamageAbsorbs = predictedValues.totalDamageAbsorbs
+			if (type(totalDamageAbsorbs) == "number" and (not issecretvalue or not issecretvalue(totalDamageAbsorbs))) then
+				return totalDamageAbsorbs
+			end
+		end
+	end
+	if (not element.values.GetDamageAbsorbs) then
+		return nil
+	end
+	local okAbsorb, absorb = API.TryCall(element.values.GetDamageAbsorbs, element.values)
+	if (not okAbsorb or type(absorb) ~= "number" or (issecretvalue and issecretvalue(absorb))) then
+		return nil
+	end
+	return absorb
+end
+
+local HidePlayerAbsorbBarVisual = function(absorbBar)
+	if (not absorbBar) then
+		return
+	end
+	if (absorbBar.SetStatusBarColor) then
+		absorbBar:SetStatusBarColor(0, 0, 0, 0)
+	end
+	if (absorbBar.SetAlpha) then
+		absorbBar:SetAlpha(0)
+	end
+	if (absorbBar.Hide) then
+		absorbBar:Hide()
+	end
+end
+
+local GetSafeStatusBarValue = function(bar)
+	if (not bar) then
+		return nil, false
+	end
+	local value
+	if (bar.GetValue) then
+		local ok, current = API.TryCall(bar.GetValue, bar)
+		if (ok) then
+			value = current
+		end
+	end
+	if (type(value) ~= "number" or (issecretvalue and issecretvalue(value))) then
+		value = bar.safeCur or bar.cur or bar.safeBarValue
+	end
+	if (type(value) ~= "number" or (issecretvalue and issecretvalue(value))) then
+		return nil, false
+	end
+	return value, true
+end
+
+local UpdatePlayerAbsorbState = function(element, unit, absorb, maxHealth)
+	if (not element) then
+		return
+	end
+	if (element.absorbBar) then
+		HidePlayerAbsorbBarVisual(element.absorbBar)
+	end
+	local SetOwnerSafeAbsorb = function(value)
+		local ownerHealth = element.__owner and element.__owner.Health
+		if (ownerHealth) then
+			ownerHealth.safeAbsorb = value
+			ownerHealth.safeAbsorbKnownZero = false
+		end
+	end
+	local SetOwnerSafeAbsorbKnownZero = function()
+		local ownerHealth = element.__owner and element.__owner.Health
+		if (ownerHealth) then
+			ownerHealth.safeAbsorb = nil
+			ownerHealth.safeAbsorbKnownZero = true
+		end
+	end
+	local resolvedAbsorb = nil
+	local hasKnownZero = false
+	local barAbsorb = nil
+	local hasBarAbsorb = false
+	local apiTotalAbsorb = nil
+	local calcAbsorb = nil
+	if (element.absorbBar) then
+		barAbsorb, hasBarAbsorb = GetSafeStatusBarValue(element.absorbBar)
+		if (hasBarAbsorb) then
+			if (barAbsorb > 0) then
+				resolvedAbsorb = barAbsorb
+			else
+				-- Hidden absorb visuals are forced to zero; don't let that block
+				-- calculator/API fallbacks used for tag display.
+				hasBarAbsorb = false
+				hasKnownZero = true
+			end
+		end
+	end
+	if (not hasBarAbsorb) then
+		calcAbsorb = GetAbsorbFromPredictionValues(element)
+		if (calcAbsorb == nil) then
+			calcAbsorb = GetSafeDamageAbsorbFromCalculator(element, unit)
+		end
+		if (type(calcAbsorb) == "number" and (not issecretvalue or not issecretvalue(calcAbsorb))) then
+			if (calcAbsorb > 0) then
+				resolvedAbsorb = calcAbsorb
+			else
+				hasKnownZero = true
+			end
+		elseif (absorb ~= nil) then
+			if (type(absorb) == "number" and (not issecretvalue or not issecretvalue(absorb))) then
+				if (absorb > 0) then
+					resolvedAbsorb = absorb
+				else
+					hasKnownZero = true
+				end
+			end
+		end
+		if (resolvedAbsorb == nil and UnitGetTotalAbsorbs) then
+			apiTotalAbsorb = UnitGetTotalAbsorbs(unit)
+			if (type(apiTotalAbsorb) == "number" and (not issecretvalue or not issecretvalue(apiTotalAbsorb))) then
+				if (apiTotalAbsorb > 0) then
+					resolvedAbsorb = apiTotalAbsorb
+				else
+					hasKnownZero = true
+				end
+			end
+		end
+	end
+	if (type(resolvedAbsorb) == "number" and (not issecretvalue or not issecretvalue(resolvedAbsorb))) then
+		if (resolvedAbsorb > 0) then
+			SetOwnerSafeAbsorb(resolvedAbsorb)
+		else
+			SetOwnerSafeAbsorb(nil)
+		end
+	elseif (hasKnownZero) then
+		SetOwnerSafeAbsorbKnownZero()
+	else
+		-- No reliable source for this update, clear to avoid stale values.
+		SetOwnerSafeAbsorb(nil)
+	end
+	local owner = element.__owner
+	local ownerHealth = owner and owner.Health
+	EmitAbsorbStateDebug(owner, unit,
+		"State(Player) unit=%s bar=%s barSample=%s calc=%s callback=%s apiTotal=%s resolved=%s knownZero=%s finalSafe=%s",
+		unit,
+		barAbsorb,
+		hasBarAbsorb and true or false,
+		calcAbsorb,
+		absorb,
+		apiTotalAbsorb,
+		resolvedAbsorb,
+		hasKnownZero and true or false,
+		ownerHealth and ownerHealth.safeAbsorb or nil)
+end
+
+local HealPredict_PostUpdate = function(element, unit, myIncomingHeal, otherIncomingHeal, absorb, healAbsorb, hasOverAbsorb, hasOverHealAbsorb, curHealth, maxHealth)
+	UpdatePlayerAbsorbState(element, unit, absorb, maxHealth)
+	if (_G and _G.__AzeriteUI_DISABLE_HEALTH_PREDICTION) then
+		ns.API.HidePrediction(element)
+		return
+	end
+	if (myIncomingHeal == nil and element and element.values and element.values.GetIncomingHeals) then
+		local _, playerHeal, otherHeal = element.values:GetIncomingHeals()
+		local healAbsorbAmount = 0
+		if (element.values.GetHealAbsorbs) then
+			healAbsorbAmount = select(1, element.values:GetHealAbsorbs()) or 0
+		end
+		myIncomingHeal = playerHeal
+		otherIncomingHeal = otherHeal
+		healAbsorb = healAbsorbAmount
+		curHealth = UnitHealth(unit)
+		maxHealth = UnitHealthMax(unit)
+	end
+	myIncomingHeal = tonumber(myIncomingHeal) or 0
+	otherIncomingHeal = tonumber(otherIncomingHeal) or 0
+	healAbsorb = tonumber(healAbsorb) or 0
+	curHealth = tonumber(curHealth) or 0
+	maxHealth = tonumber(maxHealth) or 1
+	if (ns.API.ShouldSkipPrediction(element, myIncomingHeal, otherIncomingHeal, absorb, healAbsorb, hasOverAbsorb, hasOverHealAbsorb, curHealth, maxHealth)) then
+		return
+	end
+
+	local safeCur, safeMax = ns.API.GetSafeHealthForPrediction(element, curHealth, maxHealth)
+	if (not safeCur or not safeMax) then
+		ns.API.HidePrediction(element)
+		return
+	end
+	curHealth, maxHealth = safeCur, safeMax
+
+	local allIncomingHeal = myIncomingHeal + otherIncomingHeal
+	local showPrediction, change
+
+	if (allIncomingHeal > 0) and (maxHealth > 0) then
+		local startPoint = curHealth/maxHealth
+
+		-- Keep prediction strictly positive to avoid reverse/negative overlay jitter.
+		change = allIncomingHeal/maxHealth
+		if ((curHealth < maxHealth) and (change > (element.health.predictThreshold or .05))) then
+			local endPoint = startPoint + change
+
+			-- Crop heal prediction overflows
+			if (endPoint > 1) then
+				endPoint = 1
+				change = endPoint - startPoint
+			end
+
+			-- Crop heal absorb overflows
+			if (endPoint < 0) then
+				endPoint = 0
+				change = -startPoint
+			end
+
+			-- This shouldn't happen, but let's do it anyway.
+			if (startPoint ~= endPoint) then
+				showPrediction = true
+			end
+		end
+	end
+
+	if (showPrediction) then
+
+		local preview = element.preview
+		local growth = preview:GetGrowth()
+		local _,max = preview:GetMinMaxValues()
+		local value = preview:GetValue() / max
+		local previewTexture = preview:GetStatusBarTexture()
+		local previewWidth, previewHeight = preview:GetSize()
+
+		if (growth == "RIGHT") then
+
+			if (change > 0) then
+				element:ClearAllPoints()
+				element:SetPoint("BOTTOMLEFT", previewTexture, "BOTTOMRIGHT", 0, 0)
+				element:SetSize(change*previewWidth, previewHeight)
+				element:SetTexCoord(curHealth/maxHealth, curHealth/maxHealth + change, 0, 1)
+				element:SetVertexColor(0, .7, 0, .25)
+				element:Show()
+
+			elseif (change < 0) then
+				element:Hide()
+
+			else
+				element:Hide()
+			end
+
+		elseif (growth == "LEFT") then
+
+			if (change > 0) then
+				element:ClearAllPoints()
+				element:SetPoint("TOPRIGHT", previewTexture, "TOPLEFT", 0, 0)
+				element:SetSize(change*previewWidth, previewHeight)
+				element:SetTexCoord(1 - (1 - (curHealth/maxHealth + change)), 1 - (1 - curHealth/maxHealth), 0, 1)
+				element:SetVertexColor(0, .7, 0, .25)
+				element:Show()
+
+			elseif (change < 0) then
+				element:Hide()
+
+			else
+				element:Hide()
+			end
+		end
+	else
+		element:Hide()
+	end
+
+	if (ns.API.DEBUG_HEALTH_CHAT) then
+		local owner = element and element.__owner
+		local now = (GetTimePreciseSec and GetTimePreciseSec()) or GetTime()
+		local last = owner and owner.__AzeriteUI_LastPredictionDebug or 0
+		if ((now - last) > 0.2) then
+			if (owner) then
+				owner.__AzeriteUI_LastPredictionDebug = now
+			end
+			ns.API.DebugPrintf("Health", 3, "Predict(Player) unit=%s show=%s change=%s cur=%s max=%s incoming=%s absorb=%s",
+				tostring(unit),
+				tostring(showPrediction and true or false),
+				tostring(change),
+				tostring(curHealth),
+				tostring(maxHealth),
+				tostring(allIncomingHeal),
+				tostring(healAbsorb))
+		end
+	end
+
+end
+
+-- Show mana orb when mana is the primary resource, or when always show mana orb is enabled.
+local GetPlayerPowerOrbMode = function()
+	if (ns.MageCrystalPreview and ns.MageCrystalPreview:IsActive()) then return "legacyCrystal" end
+	local profile = PlayerFrameMod and PlayerFrameMod.db and PlayerFrameMod.db.profile
+	if (not profile) then
+		return "orbV2"
+	end
+	local mode = profile.powerOrbMode
+	if (mode == "legacyCrystal" or mode == "orbV2" or mode == "orbV2Always") then
+		return mode
+	end
+	if (profile.alwaysUseCrystal) then
+		return "legacyCrystal"
+	end
+	if (profile.alwaysShowManaOrb) then
+		return "orbV2Always"
+	end
+	return "orbV2"
+end
+
+local GetSafePlayerPrimaryPowerType = function(unit)
+	if (type(unit) ~= "string" or unit == "") then
+		unit = "player"
+	end
+	local powerType = UnitPowerType(unit)
+	if (type(powerType) ~= "number" or (issecretvalue and issecretvalue(powerType))) then
+		return nil
+	end
+	return powerType
+end
+
+local PlayerHasAdditionalManaPower = function(unit)
+	local classDisplayInfo = ALT_POWER_BAR_PAIR_DISPLAY_INFO and ALT_POWER_BAR_PAIR_DISPLAY_INFO[playerClass]
+	if (type(classDisplayInfo) ~= "table") then
+		return false
+	end
+	local primaryPowerType = GetSafePlayerPrimaryPowerType(unit)
+	local additionalPowerInfo = primaryPowerType and classDisplayInfo[primaryPowerType]
+	if (type(additionalPowerInfo) == "table") then
+		local powerType = additionalPowerInfo.powerType
+		if (type(powerType) == "number" and (not issecretvalue or not issecretvalue(powerType))) then
+			return powerType == POWER_TYPE_MANA
+		end
+		local powerName = additionalPowerInfo.powerName
+		return type(powerName) == "string"
+			and (not issecretvalue or not issecretvalue(powerName))
+			and powerName == "MANA"
+	end
+	if (type(additionalPowerInfo) == "number" and (not issecretvalue or not issecretvalue(additionalPowerInfo))) then
+		return additionalPowerInfo == POWER_TYPE_MANA
+	end
+	return additionalPowerInfo == true
+end
+
+-- What the orb shows: mana for anyone who uses it, as their primary power or
+-- beside it (a druid in cat form, a shadow priest); otherwise the primary power,
+-- so a hunter on "Mana Orb Only" sees Focus. Decided by power type, not by
+-- UnitPowerMax(mana), which a hunter can answer non-zero and which can be secret.
+local GetManaOrbPowerType = function(element, unit)
+	local primary = GetSafePlayerPrimaryPowerType(unit)
+	if (not primary) then
+		return element.displayType or POWER_TYPE_MANA
+	end
+	-- Blizzard pairs mana only with Astral Power, Insanity and Maelstrom; a druid
+	-- in cat or bear form keeps the mana it shapeshifts back to, as before.
+	if (primary == POWER_TYPE_MANA) or PlayerHasAdditionalManaPower(unit) or (playerClass == "DRUID") then
+		return POWER_TYPE_MANA
+	end
+	return primary
+end
+
+local ResolvePlayerPowerWidgetVisibility = function(frame, unit)
+	if (ns.LegacyHUD and ns.LegacyHUD:IsActive()) then return true, false end
+	local profile = PlayerFrameMod and PlayerFrameMod.db and PlayerFrameMod.db.profile
+	if (not profile) then
+		return true, false
+	end
+	local hasPlayerUnit = UnitExists("player") and not UnitHasVehicleUI("player")
+	local mode = GetPlayerPowerOrbMode()
+	local wantsOrb = false
+	local wantsCrystal = hasPlayerUnit and true or false
+
+	if (hasPlayerUnit) then
+		if (mode == "legacyCrystal") then
+			wantsOrb = false
+			wantsCrystal = true
+		elseif (mode == "orbV2Always") then
+			wantsOrb = true
+			wantsCrystal = false
+		else
+			-- Match stock AzeriteUI: mana uses the orb, non-mana primary
+			-- resources use the crystal. Retribution keeps its stock exception.
+			local powerType = GetSafePlayerPrimaryPowerType(unit)
+			if (playerIsRetribution) then
+				wantsOrb = false
+			elseif (type(powerType) == "number") then
+				wantsOrb = powerType == POWER_TYPE_MANA
+			else
+				wantsOrb = ORB_DYNAMIC_CLASS_ALLOW[playerClass] and true or false
+			end
+			wantsCrystal = not wantsOrb
+		end
+	end
+
+	return wantsCrystal, wantsOrb
+end
+
+local GetElementalMaelstromDisplayMode = function()
+	if (not ns.IsRetailContent or playerClass ~= "SHAMAN") then
+		return "crystal_spec"
+	end
+	local classPowerMod = ns:GetModule("PlayerClassPowerFrame", true)
+	local profile = classPowerMod and classPowerMod.db and classPowerMod.db.profile
+	if (not profile) then
+		return "crystal_spec"
+	end
+	local mode = profile.elementalMaelstromDisplayMode
+	if (mode == "crystal_mana" or mode == "classpower") then
+		return "crystal_mana"
+	end
+	return "crystal_spec"
+end
+
+local IsPlayerPowerUnit = function(unit)
+	return (unit == "player" or unit == "vehicle")
+end
+
+local GetPlayerPowerUnit = function(frame)
+	local unit = frame and frame.unit
+	if (IsPlayerPowerUnit(unit)) then
+		return unit
+	end
+	if (UnitHasVehicleUI("player") and UnitExists("vehicle")) then
+		return "vehicle"
+	end
+	return "player"
+end
+
+local GetPlayerPowerValueFormat = function(profile)
+	local formatMode = profile and profile.PowerValueFormat
+	if (formatMode == "percent" or formatMode == "full" or formatMode == "shortpercent" or formatMode == "short") then
+		return formatMode
+	end
+	if (profile and profile.powerValueUsePercent) then
+		return "percent"
+	end
+	if (profile and profile.powerValueUseFull) then
+		return "full"
+	end
+	return "short"
+end
+
+local FormatPlayerPowerShortText = function(value)
+	if (type(value) ~= "number") then
+		return nil
+	end
+	if (type(AbbreviateNumbers) == "function") then
+		local ok, formatted = API.TryCall(AbbreviateNumbers, value)
+		if (ok and formatted ~= nil) then
+			return tostring(formatted)
+		end
+	end
+	return tostring(math_floor(value + .5))
+end
+
+local FormatPlayerPowerFullText = function(value)
+	if (type(value) ~= "number") then
+		return nil
+	end
+	return tostring(math_floor(value + .5))
+end
+
+local ParseDisplayNumber = function(text)
+	-- A secret string can throw on gsub and comparison, so exclude it here;
+	-- what remains is a plain string the parser below can work on directly.
+	if (not API.IsSafeString(text)) then
+		return nil
+	end
+	local ok, parsed = API.TryCall(function()
+		text = text:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""):gsub("%s+", "")
+		if (text == "") then
+			return nil
+		end
+
+		local multiplier = 1
+		local suffix = text:sub(-1):lower()
+		if (suffix == "k") then
+			multiplier = 1000
+			text = text:sub(1, -2)
+		elseif (suffix == "m") then
+			multiplier = 1000000
+			text = text:sub(1, -2)
+		elseif (suffix == "b") then
+			multiplier = 1000000000
+			text = text:sub(1, -2)
+		elseif (suffix == "t") then
+			multiplier = 1000000000000
+			text = text:sub(1, -2)
+		end
+
+		text = text:gsub(",", "")
+		local numeric = tonumber(text)
+		if (type(numeric) ~= "number") then
+			return nil
+		end
+		return numeric * multiplier
+	end)
+	if (ok and type(parsed) == "number") then
+		return parsed
+	end
+	return nil
+end
+
+local GetPlayerRawPowerPercent = function(unit, displayType)
+	local percent = nil
+	if (UnitPowerPercent) then
+		local ok, value
+		if (CurveConstants and CurveConstants.ScaleTo100) then
+			ok, value = API.TryCall(UnitPowerPercent, unit, displayType, true, CurveConstants.ScaleTo100)
+		else
+			ok, value = API.TryCall(UnitPowerPercent, unit, displayType)
+		end
+		if (ok) then
+			percent = value
+		end
+	end
+	return percent
+end
+
+local GetFormattedPlayerPowerValue = function(element, useFull)
+	if (not element) then
+		return nil, nil
+	end
+	local owner = element.__owner
+	local unit = GetPlayerPowerUnit(owner)
+	local displayType = element.displayType
+	if (type(displayType) ~= "number") then
+		displayType = UnitPowerType(unit)
+	end
+
+	local rawCur = UnitPower(unit, displayType)
+	local formatter = useFull and BreakUpLargeNumbers or AbbreviateNumbers
+	if (type(formatter) == "function") then
+		local ok, formatted = API.TryCall(formatter, rawCur)
+		if (ok and formatted ~= nil) then
+			local text = tostring(formatted)
+			local parsed = ParseDisplayNumber(text)
+			if (type(parsed) == "number") then
+				return text, parsed
+			end
+			if (type(rawCur) == "number" and (not issecretvalue or not issecretvalue(rawCur))) then
+				return text, rawCur
+			end
+			return text, nil
+		end
+	end
+
+	return nil, nil
+end
+
+local TrySetPlayerElementValueTextFromRaw = function(element, formatMode)
+	if (not element or not element.Value or not element.Value.SetFormattedText) then
+		return false
+	end
+
+	local owner = element.__owner
+	local unit = GetPlayerPowerUnit(owner)
+	local displayType = element.displayType
+	if (type(displayType) ~= "number") then
+		displayType = UnitPowerType(unit)
+	end
+
+	local shortText = select(1, GetFormattedPlayerPowerValue(element, false))
+	local fullText, fullValue = GetFormattedPlayerPowerValue(element, true)
+	local rawPercent = GetPlayerRawPowerPercent(unit, displayType)
+	local safePercent = (type(rawPercent) == "number" and (not issecretvalue or not issecretvalue(rawPercent))) and rawPercent or nil
+	local safeValue = (type(fullValue) == "number" and (not issecretvalue or not issecretvalue(fullValue))) and fullValue or nil
+	local safeMax = (type(element.safeMax) == "number" and element.safeMax > 0) and element.safeMax or nil
+	if (type(safePercent) ~= "number" and type(safeValue) == "number" and type(safeMax) == "number") then
+		safePercent = (safeValue / safeMax) * 100
+	end
+	element.__AzeriteUI_DisplayPercent = safePercent
+	element.__AzeriteUI_DisplayCur = safeValue
+
+	if (formatMode == "percent") then
+		if (rawPercent ~= nil) then
+			return API.SafeCall("Player.PowerValue.SetFormattedText", element.Value.SetFormattedText, element.Value, "%d%%", rawPercent)
+		end
+	elseif (formatMode == "full") then
+		if (fullText ~= nil) then
+			return API.SafeCall("Player.PowerValue.SetFormattedText", element.Value.SetFormattedText, element.Value, "%s", fullText)
+		end
+	elseif (formatMode == "shortpercent") then
+		if (shortText ~= nil and rawPercent ~= nil) then
+			return API.SafeCall("Player.PowerValue.SetFormattedText", element.Value.SetFormattedText, element.Value, "%s |cff888888(|r%d%%|cff888888)|r", shortText, rawPercent)
+		elseif (shortText ~= nil) then
+			return API.SafeCall("Player.PowerValue.SetFormattedText", element.Value.SetFormattedText, element.Value, "%s", shortText)
+		elseif (rawPercent ~= nil) then
+			return API.SafeCall("Player.PowerValue.SetFormattedText", element.Value.SetFormattedText, element.Value, "%d%%", rawPercent)
+		end
+	else
+		if (shortText ~= nil) then
+			return API.SafeCall("Player.PowerValue.SetFormattedText", element.Value.SetFormattedText, element.Value, "%s", shortText)
+		end
+	end
+
+	return false
+end
+
+local GetPlayerPowerPercentFromRawText = function(element)
+	if (not element) then
+		return nil
+	end
+	local _, parsedCur = GetFormattedPlayerPowerValue(element, true)
+	if (type(parsedCur) ~= "number") then
+		local _, approxCur = GetFormattedPlayerPowerValue(element, false)
+		parsedCur = approxCur
+	end
+	local maxValue = element.safeMax or element.max
+	if (type(parsedCur) == "number" and type(maxValue) == "number" and maxValue > 0) then
+		local percent = (parsedCur / maxValue) * 100
+		if (percent < 0) then
+			percent = 0
+		elseif (percent > 100) then
+			percent = 100
+		end
+		return percent
+	end
+	return nil
+end
+
+local GetPlayerElementVisualPercent = function(element)
+	if (not element or not element.GetStatusBarTexture) then
+		return nil
+	end
+	local texture = element:GetStatusBarTexture()
+	if (not texture) then
+		return nil
+	end
+
+	local orientation = (element.GetOrientation and element:GetOrientation()) or "HORIZONTAL"
+	local barSize
+	local texSize
+
+	if (orientation == "VERTICAL") then
+		local okBar, value = API.TryCall(element.GetHeight, element)
+		local okTex, texValue = API.TryCall(texture.GetHeight, texture)
+		if (not okBar or not okTex) then
+			return nil
+		end
+		barSize = value
+		texSize = texValue
+	else
+		local okBar, value = API.TryCall(element.GetWidth, element)
+		local okTex, texValue = API.TryCall(texture.GetWidth, texture)
+		if (not okBar or not okTex) then
+			return nil
+		end
+		barSize = value
+		texSize = texValue
+	end
+
+	if (type(barSize) ~= "number" or type(texSize) ~= "number") then
+		return nil
+	end
+	if ((issecretvalue and (issecretvalue(barSize) or issecretvalue(texSize))) or barSize <= 0) then
+		return nil
+	end
+
+	local percent = (texSize / barSize) * 100
+	if (percent < 0) then
+		percent = 0
+	elseif (percent > 100) then
+		percent = 100
+	end
+	return percent
+end
+
+local GetPlayerElementDisplayValue = function(element)
+	if (not element) then
+		return nil
+	end
+	local minValue = element.safeMin or element.min or 0
+	local maxValue = element.safeMax or element.max
+	local percent = GetPlayerElementVisualPercent(element)
+	if (type(percent) == "number" and type(minValue) == "number" and type(maxValue) == "number" and maxValue >= minValue) then
+		return minValue + ((maxValue - minValue) * (percent / 100))
+	end
+	return element.safeCur or element.cur
+end
+
+local FormatPlayerPowerPercentText = function(element)
+	if (not element) then
+		return nil
+	end
+	local percent = GetPlayerPowerPercentFromRawText(element)
+	if (type(percent) ~= "number") then
+		percent = GetPlayerElementVisualPercent(element)
+	end
+	if (type(percent) ~= "number") then
+		percent = element.safePercent
+	end
+	if (type(percent) ~= "number") then
+		local cur = element.safeCur or element.cur
+		local minValue = element.safeMin or element.min or 0
+		local maxValue = element.safeMax or element.max
+		if (type(cur) == "number" and type(minValue) == "number" and type(maxValue) == "number" and maxValue > minValue) then
+			percent = ((cur - minValue) / (maxValue - minValue)) * 100
+		end
+	end
+	if (type(percent) ~= "number") then
+		return nil
+	end
+	if (percent < 0) then
+		percent = 0
+	elseif (percent > 100) then
+		percent = 100
+	end
+	return string.format("%d%%", math_floor(percent + .5))
+end
+
+local UpdatePlayerElementValueText = function(element)
+	if (not element or not element.Value or not element.Value.SetText) then
+		return
+	end
+
+	local profile = PlayerFrameMod and PlayerFrameMod.db and PlayerFrameMod.db.profile
+	local formatMode = GetPlayerPowerValueFormat(profile)
+	if (TrySetPlayerElementValueTextFromRaw(element, formatMode)) then
+		return
+	end
+	local cur = GetPlayerElementDisplayValue(element)
+	local shortRawText = select(1, GetFormattedPlayerPowerValue(element, false))
+	local fullRawText = select(1, GetFormattedPlayerPowerValue(element, true))
+	local valueText
+
+	if (formatMode == "percent") then
+		valueText = FormatPlayerPowerPercentText(element)
+	elseif (formatMode == "full") then
+		valueText = fullRawText or FormatPlayerPowerFullText(cur)
+	elseif (formatMode == "shortpercent") then
+		local shortText = shortRawText or FormatPlayerPowerShortText(cur)
+		local percentText = FormatPlayerPowerPercentText(element)
+		if (shortText and percentText) then
+			valueText = shortText .. " |cff888888(|r" .. percentText .. "|cff888888)|r"
+		else
+			valueText = shortText or percentText
+		end
+	else
+		valueText = shortRawText or FormatPlayerPowerShortText(cur)
+	end
+
+	if (element.Value.SetFormattedText) then
+		element.Value:SetFormattedText("%s", valueText or "")
+	else
+		element.Value:SetText(valueText or "")
+	end
+	if (element.Value.SetAlpha) then
+		local hasValue = (valueText ~= nil and valueText ~= "")
+		element.Value:SetAlpha(hasValue and 1 or 0)
+	end
+end
+
+local UpdateManaOrbVisibility = function(frame, unit)
+	local element = frame and frame.ManaOrb
+	if (not element) then
+		return false
+	end
+	local _, shouldShowOrb = ResolvePlayerPowerWidgetVisibility(frame, unit or GetPlayerPowerUnit(frame))
+	if (shouldShowOrb) then
+		element:Show()
+		ShowPlayerNativePowerVisuals(element)
+	else
+		element:Hide()
+	end
+	local showPowerValue = shouldShowOrb and ShouldShowPlayerPowerValue()
+	element.__AzeriteUI_KeepValueVisible = showPowerValue
+	if (element.Value) then
+		if (showPowerValue) then
+			element.Value:Show()
+		else
+			element.Value:Hide()
+		end
+	end
+	if (element.Percent) then
+		element.Percent:Hide()
+	end
+	if (frame and frame.Power and frame.ManaOrb) then
+		local baseLevel = frame:GetFrameLevel() - 2
+		frame.Power:SetFrameLevel(baseLevel + 1)
+		frame.ManaOrb:SetFrameLevel(baseLevel)
+	end
+	UpdatePlayerElementValueText(element)
+	return shouldShowOrb
+end
+
+-- Hide power crystal when mana is the primary resource or when always show mana orb is enabled.
+ShouldShowPlayerPowerValue = function()
+	local profile = PlayerFrameMod and PlayerFrameMod.db and PlayerFrameMod.db.profile
+	if (not profile) then
+		return true
+	end
+	if (profile.showPowerValue == false) then
+		return false
+	end
+	if (profile.powerValueCombatDriven) then
+		local inCombat = (InCombatLockdown and InCombatLockdown()) and true or false
+		return inCombat
+	end
+	return true
+end
+
+local ClampPowerValueTextScale = function(scale)
+	scale = tonumber(scale)
+	if (not scale) then
+		return 100
+	end
+	if (scale < 50) then
+		return 50
+	end
+	if (scale > 200) then
+		return 200
+	end
+	return math_floor(scale + .5)
+end
+
+local ApplyScaledValueFont = function(fontString, scale, resetBase)
+	if (not fontString or not fontString.GetFont or not fontString.SetFont) then
+		return
+	end
+
+	local fontPath, fontSize, fontFlags = fontString:GetFont()
+	if (not fontPath or type(fontSize) ~= "number" or fontSize <= 0) then
+		return
+	end
+
+	if (resetBase or not fontString.__AzeriteUI_BaseFontPath or not fontString.__AzeriteUI_BaseFontSize) then
+		fontString.__AzeriteUI_BaseFontPath = fontPath
+		fontString.__AzeriteUI_BaseFontSize = fontSize
+		fontString.__AzeriteUI_BaseFontFlags = fontFlags
+	end
+
+	local basePath = fontString.__AzeriteUI_BaseFontPath or fontPath
+	local baseSize = fontString.__AzeriteUI_BaseFontSize or fontSize
+	local baseFlags = fontString.__AzeriteUI_BaseFontFlags
+	local scaledSize = math_floor((baseSize * scale / 100) + .5)
+	if (scaledSize < 6) then
+		scaledSize = 6
+	end
+
+	fontString:SetFont(basePath, scaledSize, baseFlags)
+end
+
+local ApplyPlayerPowerValueTextScale = function(frame)
+	if (not frame) then
+		return
+	end
+
+	local profile = PlayerFrameMod and PlayerFrameMod.db and PlayerFrameMod.db.profile
+	local scale = ClampPowerValueTextScale(profile and profile.powerValueTextScale)
+
+	if (frame.Power and frame.Power.Value) then
+		ApplyScaledValueFont(frame.Power.Value, scale)
+	end
+
+	if (frame.ManaOrb and frame.ManaOrb.Value) then
+		ApplyScaledValueFont(frame.ManaOrb.Value, scale)
+	end
+end
+
+local ApplyPlayerPowerValueAlpha = function(frame)
+	if (ns.UnitFrame and ns.UnitFrame.ApplyPowerValueAlpha) then
+		ns.UnitFrame.ApplyPowerValueAlpha(frame, "player")
+	end
+end
+
+local ApplyPlayerPvPIndicatorLayout = function(frame)
+	local indicator = frame and frame.PvPIndicator
+	if (not indicator) then
+		return
+	end
+
+	local config = ns.GetConfig("PlayerFrame")
+	local point = config and config.PvPIndicatorPosition
+	if (not point or not point[1]) then
+		return
+	end
+
+	local profile = PlayerFrameMod and PlayerFrameMod.db and PlayerFrameMod.db.profile or nil
+	local offsetX = (profile and tonumber(profile.pvpIndicatorOffsetX)) or 0
+	local offsetY = (profile and tonumber(profile.pvpIndicatorOffsetY)) or 0
+
+	indicator:ClearAllPoints()
+	indicator:SetPoint(point[1], (point[2] or 0) + offsetX, (point[3] or 0) + offsetY)
+
+	if (config.PvPIndicatorSize) then
+		indicator:SetSize(unpack(config.PvPIndicatorSize))
+	end
+
+	indicator.Alliance = config.PvPIndicatorAllianceTexture
+	indicator.Horde = config.PvPIndicatorHordeTexture
+end
+
+local UpdatePlayerPowerValueTag = function(frame)
+	if (not frame or not frame.Power or not frame.Power.Value) then
+		return
+	end
+	local powerValue = frame.Power.Value
+	if (powerValue.__AzeriteUI_PowerValueTag and frame.Untag) then
+		frame:Untag(powerValue)
+		powerValue.__AzeriteUI_PowerValueTag = nil
+	end
+	UpdatePlayerElementValueText(frame.Power)
+end
+
+local UpdatePlayerManaValueTag = function(frame)
+	if (not frame or not frame.ManaOrb or not frame.ManaOrb.Value) then
+		return
+	end
+	local manaValue = frame.ManaOrb.Value
+	if (manaValue.__AzeriteUI_PowerValueTag and frame.Untag) then
+		frame:Untag(manaValue)
+		manaValue.__AzeriteUI_PowerValueTag = nil
+	end
+	UpdatePlayerElementValueText(frame.ManaOrb)
+end
+
+local UpdateSecondaryManaCrystal = function(frame, unit)
+	if (ns.LegacyHUD and ns.LegacyHUD:IsActive()) then
+		if (frame and frame.SecondaryManaCrystal) then frame.SecondaryManaCrystal:Hide() end
+		return
+	end
+	local element = frame and frame.SecondaryManaCrystal
+	if (not element) then
+		return
+	end
+
+	unit = IsPlayerPowerUnit(unit) and unit or GetPlayerPowerUnit(frame)
+	local shouldShowCrystal = ResolvePlayerPowerWidgetVisibility(frame, unit)
+	local displayedPowerType = frame.Power and frame.Power.displayType
+	if (type(displayedPowerType) ~= "number" or (issecretvalue and issecretvalue(displayedPowerType))) then
+		displayedPowerType = GetSafePlayerPrimaryPowerType(unit)
+	end
+	local show = shouldShowCrystal
+		and displayedPowerType ~= POWER_TYPE_MANA
+		and PlayerHasAdditionalManaPower(unit)
+
+	if (not show) then
+		element:Hide()
+		return
+	end
+
+	local mana = UnitPower("player", POWER_TYPE_MANA)
+	local manaMax = UnitPowerMax("player", POWER_TYPE_MANA)
+	-- Bounds and value as separate reported steps; one shared guard here meant a
+	-- throw on the bounds silently skipped the value and hid the bar instead.
+	local barUpdated = API.SafeCall("PlayerMana.SetMinMaxValues", element.SetMinMaxValues, element, 0, manaMax)
+		and API.SafeCall("PlayerMana.SetValue", element.SetValue, element, mana)
+	if (not barUpdated) then
+		element:Hide()
+		return
+	end
+
+	element:Show()
+	local alphaUpdated = false
+	if (UnitPowerPercent and element.__AzeriteUI_VisibilityCurve) then
+		-- Curve-driven alpha; the explicit alpha fallback below is a real branch.
+		local okPercent, curvePercent = API.TryCall(UnitPowerPercent, "player", POWER_TYPE_MANA, true, element.__AzeriteUI_VisibilityCurve)
+		if (okPercent) then
+			alphaUpdated = API.TryCall(element.SetAlpha, element, curvePercent)
+		end
+	end
+
+	local valuesAreSafe = type(mana) == "number"
+		and type(manaMax) == "number"
+		and (not issecretvalue or (not issecretvalue(mana) and not issecretvalue(manaMax)))
+	if (not alphaUpdated) then
+		local alpha = 0
+		if (valuesAreSafe and manaMax > 0 and mana < manaMax) then
+			alpha = element.__AzeriteUI_VisibleAlpha or 1
+		end
+		element:SetAlpha(alpha)
+	end
+
+	if (valuesAreSafe and manaMax > 0) then
+		local percent = math_floor((mana / manaMax) * 100)
+		element.safeCur = mana
+		element.safeMax = manaMax
+		element.safePercent = percent
+	else
+		element.safeCur = nil
+		element.safeMax = nil
+		element.safePercent = nil
+	end
+
+	if (element.Value and UnitPowerPercent) then
+		local curve = CurveConstants and CurveConstants.ScaleTo100 or nil
+		local okPercent, percentValue = API.TryCall(UnitPowerPercent, "player", POWER_TYPE_MANA, true, curve)
+		local textUpdated = okPercent
+			and API.SafeCall("PlayerMana.Value.SetFormattedText", element.Value.SetFormattedText, element.Value, "%d", percentValue)
+		if (not textUpdated) then
+			element.Value:SetText("")
+		end
+	end
+end
+
+local Power_UpdateVisibility = function(element, unit, cur, min, max)
+	local owner = element and element.__owner
+	local shouldShowCrystal = ResolvePlayerPowerWidgetVisibility(owner, unit)
+	if (shouldShowCrystal) then
+		element:Show()
+	else
+		element:Hide()
+	end
+	if (element:IsShown()) then
+		ShowPlayerNativePowerVisuals(element)
+		if (element.Display) then
+			element.Display:Hide()
+		end
+		if (element.FakeFill) then
+			element.FakeFill:Hide()
+		end
+	else
+		if (element.Display) then
+			element.Display:Hide()
+		end
+		if (element.FakeFill) then
+			element.FakeFill:Hide()
+		end
+	end
+	local showPowerValue = element:IsShown() and ShouldShowPlayerPowerValue()
+	element.__AzeriteUI_KeepValueVisible = showPowerValue
+	if (element.Value) then
+		if (showPowerValue) then
+			element.Value:Show()
+		else
+			element.Value:Hide()
+		end
+	end
+	if (element.ManaText) then
+		element.ManaText:Hide()
+	end
+	UpdatePlayerElementValueText(element)
+	UpdateSecondaryManaCrystal(owner, unit)
+	UpdateManaOrbVisibility(owner, unit)
+end
+
+-- Keep colors power-token driven so class widgets (like Paladin Holy Power pips)
+-- remain visually distinct from the main power crystal.
+local POWER_CRYSTAL_TOKEN_ALIASES = {
+	HOLY_POWER = "MANA",
+	ARCANE_CHARGES = "MANA",
+	ESSENCE = "MANA",
+	COMBO_POINTS = "ENERGY",
+	CHI = "ENERGY",
+	PAIN = "FURY",
+	SOUL_SHARDS = "FURY",
+	RUNES = "RUNIC_POWER"
+}
+local POWER_TYPE_TOKENS = {
+	[0] = "MANA",
+	[1] = "RAGE",
+	[2] = "FOCUS",
+	[3] = "ENERGY",
+	[4] = "COMBO_POINTS",
+	[5] = "RUNES",
+	[6] = "RUNIC_POWER",
+	[7] = "SOUL_SHARDS",
+	[8] = "LUNAR_POWER",
+	[9] = "HOLY_POWER",
+	[10] = "ALTERNATE",
+	[11] = "MAELSTROM",
+	[12] = "CHI",
+	[13] = "INSANITY",
+	[16] = "ARCANE_CHARGES",
+	[17] = "FURY",
+	[18] = "PAIN",
+	[19] = "ESSENCE"
+}
+local POWER_CRYSTAL_ENHANCED_COLORS = {
+	ENERGY = {  36/255, 214/255, 176/255 },
+	FOCUS = { 118/255, 172/255, 255/255 },
+	LUNAR_POWER = { 118/255, 172/255, 255/255 },
+	MAELSTROM = { 102/255, 191/255, 255/255 },
+	RUNIC_POWER = { 112/255, 172/255, 255/255 },
+	FURY = { 172/255, 118/255, 255/255 },
+	INSANITY = { 172/255, 118/255, 255/255 },
+	PAIN = { 172/255, 118/255, 255/255 },
+	RAGE = { 214/255, 120/255, 84/255 },
+	MANA = {  96/255, 140/255, 255/255 }
+}
+
+local POWER_CRYSTAL_DEFAULT_COLOR = {116/255, 156/255, 255/255}
+
+local ResolvePlayerPowerToken = function(element, unit)
+	if (type(unit) ~= "string" or unit == "") then
+		local owner = element and element.__owner
+		local ownerUnit = owner and owner.unit
+		if (IsPlayerPowerUnit(ownerUnit)) then
+			unit = ownerUnit
+		else
+			unit = "player"
+		end
+	end
+	local displayType = element and element.displayType
+	if (type(displayType) ~= "number" or (issecretvalue and issecretvalue(displayType))) then
+		displayType = nil
+	end
+	local token = displayType and POWER_TYPE_TOKENS[displayType]
+	if (not token) then
+		local powerType, powerToken = UnitPowerType(unit)
+		if (type(powerType) == "number" and (not issecretvalue or not issecretvalue(powerType))) then
+			token = POWER_TYPE_TOKENS[powerType]
+		end
+		if (not token and type(powerToken) == "string" and (not issecretvalue or not issecretvalue(powerToken))) then
+			token = powerToken
+		end
+	end
+	if (type(token) ~= "string" or token == "") then
+		token = "MANA"
+	end
+	return POWER_CRYSTAL_TOKEN_ALIASES[token] or token
+end
+
+local ResolvePlayerPowerColorFromTable = function(colorTable, token, fallbackColor)
+	if (type(colorTable) ~= "table") then
+		return fallbackColor or POWER_CRYSTAL_DEFAULT_COLOR
+	end
+	local color = colorTable[token] or colorTable.MANA or colorTable.FOCUS
+	if (type(color) ~= "table"
+		or type(color[1]) ~= "number"
+		or type(color[2]) ~= "number"
+		or type(color[3]) ~= "number") then
+		return fallbackColor or POWER_CRYSTAL_DEFAULT_COLOR
+	end
+	return color
+end
+
+local UsePlayerIceCrystal = function()
+	if (ns.LegacyHUD and ns.LegacyHUD:IsActive()) then return false end
+	if (ns.MageCrystalPreview and ns.MageCrystalPreview:IsActive()) then return false end
+	local requested = PlayerFrameMod.db.profile.useWrathCrystal or ns.API.IsWinterVeil()
+	if (ns.ThemeEngine) then return ns.ThemeEngine:UseIceCrystal(requested) end
+	return requested
+end
+
+local ResolvePlayerPowerDefaultColor = function(config, token)
+	return ResolvePlayerPowerColorFromTable(config and config.PowerBarColors, token, POWER_CRYSTAL_DEFAULT_COLOR)
+end
+
+-- A theme's colour (Hunter Focus orange) stands in for Default only; Enhanced
+-- and Class Color are the player's explicit choice and win over it.
+local ResolvePlayerPowerBaseColor = function(config, profile, token)
+	local defaultColor = ResolvePlayerPowerDefaultColor(config, token)
+	local themeColor = ns.ThemeEngine and ns.ThemeEngine:GetPowerColor(token)
+	if (themeColor) then defaultColor = themeColor end
+	local colorMode = profile and profile.crystalOrbColorMode or "default"
+	if (colorMode == "light" and ns.PaladinTheme) then
+		local light = ns.PaladinTheme:GetLightPowerColor(token)
+		if (light) then return light end
+	end
+	if (colorMode == "classColor" or colorMode == "class") then
+		return ResolvePlayerPowerColorFromTable(Colors and Colors.class, playerClass, defaultColor)
+	end
+	if (colorMode == "enhanced" or colorMode == "new") then
+		return ResolvePlayerPowerColorFromTable(POWER_CRYSTAL_ENHANCED_COLORS, token, defaultColor)
+	end
+	return defaultColor
+end
+
+UpdatePlayerPowerSpark = function(power)
+	local spark = power and power.Spark
+	if (not spark) then
+		return
+	end
+	local percent = ClampSparkPercent(power.__AzeriteUI_PowerFakePercent)
+	if (percent == nil) then
+		percent = ClampSparkPercent(power.safePercent)
+	end
+	if (type(percent) ~= "number" or percent <= 0 or percent >= 1 or not power:IsShown()) then
+		spark:Hide()
+		return
+	end
+	local width = power.GetWidth and power:GetWidth() or 0
+	local height = power.GetHeight and power:GetHeight() or 0
+	if (type(width) ~= "number" or type(height) ~= "number"
+		or width <= 0 or height <= 0
+		or (issecretvalue and (issecretvalue(width) or issecretvalue(height)))) then
+		spark:Hide()
+		return
+	end
+	local orientation = power.__AzeriteUI_PowerFakeOrientation or "UP"
+	local reverseFill = power.__AzeriteUI_PowerFakeReverse and true or false
+	spark:ClearAllPoints()
+	if (orientation == "LEFT" or orientation == "RIGHT") then
+		local fillFromRight = ((orientation == "LEFT") and (not reverseFill)) or ((orientation ~= "LEFT") and reverseFill)
+		local x = width * (fillFromRight and (1 - percent) or percent)
+		spark:SetPoint("CENTER", power, "LEFT", x, 0)
+	else
+		local fillFromTop = ((orientation == "DOWN") and (not reverseFill)) or ((orientation ~= "DOWN") and reverseFill)
+		local y = height * (fillFromTop and (1 - percent) or percent)
+		spark:SetPoint("CENTER", power, "BOTTOM", 0, y)
+	end
+	spark:Show()
+end
+
+local Power_PostUpdateColor = function(element, unit, r, g, b)
+	local config = ns.GetConfig("PlayerFrame")
+	local profile = PlayerFrameMod and PlayerFrameMod.db and PlayerFrameMod.db.profile
+	local token = ResolvePlayerPowerToken(element, unit)
+	local color = ResolvePlayerPowerBaseColor(config, profile, token)
+	if (color) then
+		element:SetStatusBarColor(color[1], color[2], color[3])
+	end
+	local fakeFill = element and element.FakeFill
+	if (fakeFill and fakeFill.SetVertexColor and element.GetStatusBarColor) then
+		local fr, fg, fb, fa = element:GetStatusBarColor()
+		if (type(fr) == "number" and type(fg) == "number" and type(fb) == "number") then
+			fakeFill:SetVertexColor(fr, fg, fb, (type(fa) == "number" and fa or 1))
+		end
+	end
+end
+
+HidePlayerNativePowerVisuals = function(power)
+	if (not power) then
+		return
+	end
+	if (not power.GetStatusBarTexture) then
+		return
+	end
+	local tex1, tex2, tex3, tex4 = power:GetStatusBarTexture()
+	for _, nativeTexture in next, { tex1, tex2, tex3, tex4 } do
+		if (nativeTexture) then
+			if (nativeTexture.SetAlpha) then
+				nativeTexture:SetAlpha(0)
+			end
+			if (nativeTexture.Hide) then
+				nativeTexture:Hide()
+			end
+		end
+	end
+end
+
+ShowPlayerNativePowerVisuals = function(power)
+	if (not power) then
+		return
+	end
+	if (not power.GetStatusBarTexture) then
+		return
+	end
+	local tex1, tex2, tex3, tex4 = power:GetStatusBarTexture()
+	for _, nativeTexture in next, { tex1, tex2, tex3, tex4 } do
+		if (nativeTexture) then
+			if (nativeTexture.SetAlpha) then
+				nativeTexture:SetAlpha(1)
+			end
+			if (nativeTexture.Show) then
+				nativeTexture:Show()
+			end
+		end
+	end
+end
+
+
+UpdatePlayerFakePowerFill = function(power, value)
+	if (not power) then
+		return false
+	end
+	local fakeFill = power.FakeFill
+	if (not fakeFill) then
+		return false
+	end
+	local IsSafeNumber = function(num)
+		return type(num) == "number" and ((not issecretvalue) or (not issecretvalue(num)))
+	end
+
+	local minValue = power.__AzeriteUI_PowerFakeMin
+	local maxValue = power.__AzeriteUI_PowerFakeMax
+	local currentValue = value
+	if (type(currentValue) ~= "number") then
+		currentValue = power.__AzeriteUI_PowerFakeValue
+	end
+	if (not IsSafeNumber(minValue)) then
+		minValue = power.safeMin
+	end
+	if (not IsSafeNumber(maxValue)) then
+		maxValue = power.safeMax
+	end
+	if (not IsSafeNumber(currentValue)) then
+		currentValue = power.safeCur
+	end
+	if (not IsSafeNumber(minValue) or not IsSafeNumber(maxValue) or maxValue <= minValue or not IsSafeNumber(currentValue)) then
+		power.__AzeriteUI_PowerFakePercent = nil
+		fakeFill:Hide()
+		return false
+	end
+
+	local percent = (currentValue - minValue) / (maxValue - minValue)
+	if (percent < 0) then
+		percent = 0
+	elseif (percent > 1) then
+		percent = 1
+	end
+	if (percent <= 0) then
+		power.__AzeriteUI_PowerFakePercent = 0
+		fakeFill:Hide()
+		return false
+	end
+	power.__AzeriteUI_PowerFakePercent = percent
+
+	-- Match the native power crystal base color.
+	local config = ns.GetConfig("PlayerFrame")
+	local profile = PlayerFrameMod and PlayerFrameMod.db and PlayerFrameMod.db.profile
+	local token = ResolvePlayerPowerToken(power)
+	local baseColor = ResolvePlayerPowerBaseColor(config, profile, token)
+	fakeFill:SetVertexColor(baseColor[1], baseColor[2], baseColor[3], 1)
+
+	local nativeTexture = power.GetStatusBarTexture and power:GetStatusBarTexture()
+	if (nativeTexture and nativeTexture.GetTexture and fakeFill.SetTexture) then
+		local texturePath = nativeTexture:GetTexture()
+		if (texturePath) then
+			fakeFill:SetTexture(texturePath)
+		end
+	end
+
+	fakeFill:ClearAllPoints()
+	fakeFill:SetTexCoord(power.__AzeriteUI_PowerFakeTexLeft or 0, power.__AzeriteUI_PowerFakeTexRight or 1, power.__AzeriteUI_PowerFakeTexTop or 0, power.__AzeriteUI_PowerFakeTexBottom or 1)
+	local orientation = power.__AzeriteUI_PowerFakeOrientation or "UP"
+	local reverseFill = power.__AzeriteUI_PowerFakeReverse and true or false
+	local width = power.__AzeriteUI_PowerFakeWidth
+	local height = power.__AzeriteUI_PowerFakeHeight
+	if (not IsSafeNumber(width)) then
+		width = power.GetWidth and power:GetWidth() or 0
+	end
+	if (not IsSafeNumber(height)) then
+		height = power.GetHeight and power:GetHeight() or 0
+	end
+	if (not IsSafeNumber(width) or not IsSafeNumber(height) or width <= 0 or height <= 0) then
+		power.__AzeriteUI_PowerFakePercent = nil
+		fakeFill:Hide()
+		return false
+	end
+	if (orientation == "LEFT" or orientation == "RIGHT") then
+		local fillFromRight = ((orientation == "LEFT") and (not reverseFill)) or ((orientation ~= "LEFT") and reverseFill)
+		local inset = (1 - percent) * width
+		if (fillFromRight) then
+			fakeFill:SetPoint("TOPLEFT", power, "TOPLEFT", inset, 0)
+			fakeFill:SetPoint("BOTTOMRIGHT", power, "BOTTOMRIGHT", 0, 0)
+		else
+			fakeFill:SetPoint("TOPLEFT", power, "TOPLEFT", 0, 0)
+			fakeFill:SetPoint("BOTTOMRIGHT", power, "BOTTOMRIGHT", -inset, 0)
+		end
+	else
+		local fillFromTop = ((orientation == "DOWN") and (not reverseFill)) or ((orientation ~= "DOWN") and reverseFill)
+		local inset = (1 - percent) * height
+		if (fillFromTop) then
+			fakeFill:SetPoint("TOPLEFT", power, "TOPLEFT", 0, inset)
+			fakeFill:SetPoint("BOTTOMRIGHT", power, "BOTTOMRIGHT", 0, 0)
+		else
+			fakeFill:SetPoint("TOPLEFT", power, "TOPLEFT", 0, 0)
+			fakeFill:SetPoint("BOTTOMRIGHT", power, "BOTTOMRIGHT", 0, -inset)
+		end
+	end
+	fakeFill:Show()
+	return true
+end
+
+-- Keep orb behavior deterministic and token-aware (Diabolic parity),
+-- while retaining AzeriteUI's configured orb palette.
+local Power_OnEnter = function(element)
+	local OnEnter = element.__owner and element.__owner.GetScript and element.__owner:GetScript("OnEnter")
+	if (OnEnter) then
+		OnEnter(element)
+	end
+end
+
+local Power_OnLeave = function(element)
+	local OnLeave = element.__owner and element.__owner.GetScript and element.__owner:GetScript("OnLeave")
+	if (OnLeave) then
+		OnLeave(element)
+	end
+end
+
+local Power_OnMouseOver = function(element)
+	if (element.__owner and element.__owner.OnMouseOver) then
+		element.__owner:OnMouseOver()
+	end
+end
+
+-- The orb's fill colour for the power type it last showed. Called from the
+-- orb's PostUpdate and from UnitFrame_UpdateTextures, which runs after every
+-- frame event and used to repaint the orb mana blue over this.
+local UpdateManaOrbColor = function(element)
+	local config = ns.GetConfig("PlayerFrame")
+	local displayType = element and element.displayType
+	local token = (type(displayType) == "number" and (not issecretvalue or not issecretvalue(displayType)) and POWER_TYPE_TOKENS[displayType]) or "MANA"
+	token = POWER_CRYSTAL_TOKEN_ALIASES[token] or token
+
+	-- Coloured exactly as the crystal colours the same resource (a theme's
+	-- colour, then Crystal/Orb Color Source), so the two never disagree. Mana on
+	-- Default is the one exception: the orb keeps its own lighter purple.
+	local profile = PlayerFrameMod and PlayerFrameMod.db and PlayerFrameMod.db.profile
+	local colorMode = profile and profile.crystalOrbColorMode or "default"
+	local color
+	-- A stored Light choice is dormant on another theme. Keep the orb's own
+	-- Default mana palette there, just as before Light was selected.
+	if (colorMode == "light" and not (ns.PaladinTheme and ns.PaladinTheme:GetLightPowerColor(token))) then colorMode = "default" end
+	if (token == "MANA" and colorMode == "default" and not (ns.ThemeEngine and ns.ThemeEngine:GetPowerColor(token))) then
+		color = config and config.PowerOrbColors and config.PowerOrbColors.MANA
+	else
+		color = ResolvePlayerPowerBaseColor(config, profile, token)
+	end
+	if (type(color) ~= "table") then
+		color = config and config.PowerOrbColors and config.PowerOrbColors.MANA
+	end
+	if (type(color) == "table" and type(color[1]) == "number" and type(color[2]) == "number" and type(color[3]) == "number") then
+		element.colorPower = false
+		element:SetStatusBarColor(color[1], color[2], color[3], color[4] or 1)
+	end
+end
+
+local SetManaOrbFillTexture
+local Mana_PostUpdate = function(element, unit, cur, min, max)
+	-- displayType is set by UpdateManaOrb before this callback. Restyle only
+	-- when the mana gate changes, including shapeshift/vehicle changes in combat.
+	local effects = ns.ThemeEffects
+	if (effects and SetManaOrbFillTexture) then
+		local profile = PlayerFrameMod.db and PlayerFrameMod.db.profile
+		local flowing = effects:ShouldFlowMana(element, profile and profile.flowingMana)
+		local layout = element.__AzeriteUI_OrbFillLayout
+		if (layout and (element.__AzeriteUI_FlowingMana == true) ~= flowing) then
+			SetManaOrbFillTexture(element, layout)
+		end
+	end
+	UpdateManaOrbColor(element)
+	UpdatePlayerElementValueText(element)
+	local displayPercent = element.__AzeriteUI_DisplayPercent
+	local displayCur = element.__AzeriteUI_DisplayCur
+	local safeMin = (type(element.safeMin) == "number") and element.safeMin or 0
+	local safeMax = (type(element.safeMax) == "number" and element.safeMax > safeMin) and element.safeMax or ((type(max) == "number" and max > safeMin) and max or nil)
+	local visualPercent = GetPlayerElementVisualPercent(element)
+	if (type(displayPercent) ~= "number") then
+		displayPercent = visualPercent
+	end
+	if (type(displayCur) ~= "number") then
+		displayCur = GetPlayerElementDisplayValue(element)
+	end
+	if (type(displayCur) ~= "number" or (issecretvalue and issecretvalue(displayCur))) then
+		displayCur = nil
+	end
+	if (type(displayPercent) ~= "number" or (issecretvalue and issecretvalue(displayPercent))) then
+		displayPercent = nil
+	end
+	if (type(displayPercent) == "number" and type(safeMax) == "number") then
+		element.safePercent = displayPercent
+		if (type(displayCur) ~= "number") then
+			displayCur = safeMin + ((safeMax - safeMin) * (displayPercent / 100))
+		end
+	end
+	if (type(displayCur) == "number" and type(safeMax) == "number") then
+		element.safeCur = displayCur
+		element.safeMin = safeMin
+		element.safeMax = safeMax
+	end
+end
+
+-- One decorative orb layer: texture, anchor, size, tint, and whether it is wanted.
+-- Every argument is optional; a missing texture or an unset toggle hides the layer,
+-- which is what all three of these did unconditionally before they had layout keys.
+local ApplyManaOrbDecoration = function(texture, path, position, size, color, enabled)
+	if (not texture) then
+		return
+	end
+	if (not enabled or type(path) ~= "string" or path == "") then
+		return texture:Hide()
+	end
+	texture:ClearAllPoints()
+	texture:SetPoint(unpack(position or { "CENTER", 0, 0 }))
+	if (type(size) == "table") then
+		texture:SetSize(unpack(size))
+	end
+	texture:SetTexture(path)
+	if (type(color) == "table") then
+		texture:SetVertexColor(unpack(color))
+	else
+		texture:SetVertexColor(1, 1, 1, 1)
+	end
+	texture:Show()
+end
+
+-- The orb ships four interchangeable fill textures. LibOrb takes one path per
+-- animated layer, and the layout has always passed the same texture twice, so a
+-- style swap is the same pair with a different name.
+local MANA_ORB_TEXTURES = {
+	clouds = "orb2",
+	galaxy = "orb1",
+	moon = "orb3",
+	sphere = "orb4"
+}
+
+SetManaOrbFillTexture = function(mana, db)
+	-- Preserve the actual tier/variant layout for resource changes between
+	-- UpdateSettings calls; the root PlayerFrame config is not a fill layout.
+	mana.__AzeriteUI_OrbFillLayout = db
+	local profile = PlayerFrameMod.db and PlayerFrameMod.db.profile
+	if (ns.ThemeEffects and ns.ThemeEffects:StyleOrb(mana, profile and profile.flowingMana)) then return end
+	local style = PlayerFrameMod.db and PlayerFrameMod.db.profile and PlayerFrameMod.db.profile.manaOrbTexture
+	local asset = MANA_ORB_TEXTURES[style]
+	if (asset and asset ~= "orb2" and ns.API and ns.API.GetMedia) then
+		local path = ns.API.GetMedia(asset)
+		return mana:SetStatusBarTexture(path, path)
+	end
+	-- No override, or the override is the layout default: use the layout as written.
+	if (type(db.ManaOrbTexture) == "table") then
+		return mana:SetStatusBarTexture(unpack(db.ManaOrbTexture))
+	end
+	return mana:SetStatusBarTexture(db.ManaOrbTexture)
+end
+
+local ApplyDiabolicManaOrbArt = function(mana, db)
+	if (not mana or not db) then
+		return
+	end
+
+	local manaBackdrop = mana.Backdrop
+	local manaShade = mana.Shade
+	local manaCase = mana.Case
+	if (manaBackdrop) then
+		manaBackdrop:ClearAllPoints()
+		manaBackdrop:SetPoint(unpack(db.ManaOrbBackdropPosition))
+		manaBackdrop:SetSize(unpack(db.ManaOrbBackdropSize))
+		manaBackdrop:SetTexture(db.ManaOrbBackdropTexture)
+		manaBackdrop:SetVertexColor(unpack(db.ManaOrbBackdropColor))
+	end
+
+	if (manaShade) then
+		manaShade:ClearAllPoints()
+		manaShade:SetPoint(unpack(db.ManaOrbShadePosition))
+		manaShade:SetSize(unpack(db.ManaOrbShadeSize))
+		manaShade:SetTexture(db.ManaOrbShadeTexture)
+		manaShade:SetVertexColor(unpack(db.ManaOrbShadeColor))
+	end
+
+	if (manaCase) then
+		manaCase:ClearAllPoints()
+		manaCase:SetPoint(unpack(db.ManaOrbForegroundPosition))
+		manaCase:SetSize(unpack(db.ManaOrbForegroundSize))
+		manaCase:SetTexture(db.ManaOrbForegroundTexture)
+		manaCase:SetVertexColor(unpack(db.ManaOrbForegroundColor))
+	end
+
+	-- Glass, rim and pedestal.
+	-- These three textures are created on every login next to Backdrop, Shade and
+	-- Case, and used to be hidden unconditionally because the layout carried no
+	-- keys for them. They now render whenever the layout supplies a texture and
+	-- the profile asks for that layer.
+	local profile = PlayerFrameMod.db and PlayerFrameMod.db.profile
+
+	ApplyManaOrbDecoration(mana.Glass, db.ManaOrbGlassTexture, db.ManaOrbGlassPosition,
+		db.ManaOrbGlassSize, db.ManaOrbGlassColor, profile and profile.manaOrbGlass)
+
+	ApplyManaOrbDecoration(mana.Rim, db.ManaOrbRimTexture, db.ManaOrbRimPosition,
+		db.ManaOrbRimSize, db.ManaOrbRimColor, profile and profile.manaOrbRim)
+
+	ApplyManaOrbDecoration(mana.Artwork, db.ManaOrbArtworkTexture, db.ManaOrbArtworkPosition,
+		db.ManaOrbArtworkSize, db.ManaOrbArtworkColor, profile and profile.manaOrbPedestal)
+end
+
+local RefreshManaOrb = function(frame, event, unit)
+	if (not frame or not frame.ManaOrb) then
+		return
+	end
+	unit = unit or GetPlayerPowerUnit(frame)
+	UpdateManaOrbVisibility(frame, unit)
+	return ns.API.UpdateManaOrb(frame, event or "ForceUpdate", unit)
+end
+
+-- Toggle cast text color on protected casts.
+local Cast_PostCastInterruptible = function(element, unit)
+	if (element.notInterruptible) then
+		element.Text:SetTextColor(unpack(element.Text.colorProtected))
+	else
+		element.Text:SetTextColor(unpack(element.Text.color))
+	end
+	UpdateBarSpark(element)
+end
+
+local ShouldShowPlayerHealthPercent = function()
+	local profile = PlayerFrameMod and PlayerFrameMod.db and PlayerFrameMod.db.profile
+	if (profile and type(profile.showHealthPercent) == "boolean") then
+		return profile.showHealthPercent
+	end
+	return false
+end
+
+local UpdatePlayerHealthPercentVisibility = function(frame)
+	if (not frame or not frame.Health) then
+		return
+	end
+
+	local healthValue = frame.Health.Value
+	local healthPercent = frame.Health.Percent
+	if (not healthValue or not healthPercent) then
+		return
+	end
+
+	local castbar = frame.Castbar
+	if (castbar and castbar:IsShown()) then
+		healthValue:Hide()
+		healthPercent:Hide()
+		return
+	end
+
+	healthValue:Show()
+	if (ShouldShowPlayerHealthPercent()) then
+		healthPercent:Show()
+	else
+		healthPercent:Hide()
+	end
+end
+
+-- Toggle cast info and health info when castbar is visible.
+local Cast_UpdateTexts = function(element)
+	local health = element.__owner.Health
+	if (not health or not health.Value) then
+		return
+	end
+
+	if (element:IsShown()) then
+		element.Text:Show()
+		element.Time:Show()
+		health.Value:Hide()
+		if (health.Percent) then
+			health.Percent:Hide()
+		end
+	else
+		element.Text:Hide()
+		element.Time:Hide()
+		health.Value:Show()
+		if (health.Percent) then
+			if (ShouldShowPlayerHealthPercent()) then
+				health.Percent:Show()
+			else
+				health.Percent:Hide()
+			end
+		end
+	end
+	UpdateBarSpark(element)
+end
+
+-- Trigger PvPIndicator post update when combat status is toggled.
+local CombatIndicator_PostUpdate = function(element, inCombat)
+	element.__owner.PvPIndicator:ForceUpdate()
+end
+
+-- Only show Horde/Alliance badges, and hide them in combat.
+local PvPIndicator_Override = function(self, event, unit)
+	if (unit and unit ~= self.unit) then return end
+
+	local element = self.PvPIndicator
+	unit = unit or self.unit
+
+	local status
+	local factionGroup = UnitFactionGroup(unit) or "Neutral"
+
+	if (factionGroup ~= "Neutral") then
+		if (UnitIsPVPFreeForAll(unit)) then
+		elseif (UnitIsPVP(unit)) then
+			if (ns.IsRetail and unit == "player" and UnitIsMercenary(unit)) then
+				if (factionGroup == "Horde") then
+					factionGroup = "Alliance"
+				elseif (factionGroup == "Alliance") then
+					factionGroup = "Horde"
+				end
+			end
+			status = factionGroup
+		end
+	end
+
+	if (status and not self.CombatIndicator:IsShown()) then
+		element:SetTexture(element[status])
+		element:Show()
+	else
+		element:Hide()
+	end
+
+end
+
+-- Helper to adjust TexCoord based on profile setting
+local GetAdjustedTexCoord = function(baseTexCoord, adjustment)
+	if (not baseTexCoord or not adjustment or adjustment == 0) then
+		return baseTexCoord
+	end
+	-- baseTexCoord is {left, right, top, bottom} in normalized 0-1 coords
+	-- Convert to pixel space (0-255) for easier math
+	local left = math.floor(baseTexCoord[1] * 255 + 0.5)
+	local right = math.floor(baseTexCoord[2] * 255 + 0.5)
+	local top = math.floor(baseTexCoord[3] * 255 + 0.5)
+	local bottom = math.floor(baseTexCoord[4] * 255 + 0.5)
+	-- Apply adjustment to margins
+	left = math.max(0, left + adjustment)
+	right = math.min(255, right - adjustment)
+	top = math.max(0, top + adjustment)
+	bottom = math.min(255, bottom - adjustment)
+	-- Convert back to 0-1 range
+	return { left / 255, right / 255, top / 255, bottom / 255 }
+end
+
+-- Update player frame based on player level.
+local UnitFrame_UpdateTextures = function(self)
+	local playerLevel = playerLevel or UnitLevel("player")
+	local key = ns.API.GetLevelTier(playerLevel, playerXPDisabled)
+	local config = ns.GetConfig("PlayerFrame")
+	local db = config[key]
+	local profile = PlayerFrameMod and PlayerFrameMod.db and PlayerFrameMod.db.profile or nil
+
+	local ResolvePowerAnchorFrame = function(frameKey, power)
+		if (frameKey == "POWER") then
+			return power
+		elseif (frameKey == "POWER_BACKDROP") then
+			return power and power.Backdrop
+		elseif (frameKey == "POWER_CASE") then
+			return power and power.Case
+		elseif (frameKey == "HEALTH") then
+			return self.Health
+		end
+		return self
+	end
+	local powerBarOffsetX = ((profile and tonumber(profile.powerBarBaseOffsetX)) or 0) + ((profile and tonumber(profile.powerBarOffsetX)) or 0)
+	local powerBarOffsetY = ((profile and tonumber(profile.powerBarBaseOffsetY)) or 0) + ((profile and tonumber(profile.powerBarOffsetY)) or 0)
+	local powerCaseOffsetX = ((profile and tonumber(profile.powerCaseBaseOffsetX)) or 0) + ((profile and tonumber(profile.powerCaseOffsetX)) or 0)
+	local powerCaseOffsetY = ((profile and tonumber(profile.powerCaseBaseOffsetY)) or 0) + ((profile and tonumber(profile.powerCaseOffsetY)) or 0)
+	local powerThreatBarOffsetX = (profile and tonumber(profile.powerThreatBarOffsetX)) or 0
+	local powerThreatBarOffsetY = (profile and tonumber(profile.powerThreatBarOffsetY)) or 0
+	local powerThreatCaseOffsetX = (profile and tonumber(profile.powerThreatCaseOffsetX)) or 0
+	local powerThreatCaseOffsetY = (profile and tonumber(profile.powerThreatCaseOffsetY)) or 0
+	local powerBarScaleLegacy = (profile and tonumber(profile.powerBarScale)) or 1
+	local powerBarScaleX = (((profile and tonumber(profile.powerBarBaseScaleX)) or 1) * ((profile and tonumber(profile.powerBarScaleX)) or powerBarScaleLegacy))
+	local powerBarScaleY = (((profile and tonumber(profile.powerBarBaseScaleY)) or 1) * ((profile and tonumber(profile.powerBarScaleY)) or powerBarScaleLegacy))
+	local powerBackdropScaleX = (profile and tonumber(profile.powerBackdropScaleX)) or 1
+	local powerBackdropScaleY = (profile and tonumber(profile.powerBackdropScaleY)) or 1
+	local powerCaseScaleX = (profile and tonumber(profile.powerCaseScaleX)) or 1
+	local powerCaseScaleY = (profile and tonumber(profile.powerCaseScaleY)) or 1
+	local powerThreatBarScaleX = (profile and tonumber(profile.powerThreatBarScaleX)) or 1
+	local powerThreatBarScaleY = (profile and tonumber(profile.powerThreatBarScaleY)) or 1
+	local powerThreatCaseScaleX = (profile and tonumber(profile.powerThreatCaseScaleX)) or 1
+	local powerThreatCaseScaleY = (profile and tonumber(profile.powerThreatCaseScaleY)) or 1
+	local powerBarAnchorFrameKey = (profile and profile.powerBarAnchorFrame) or "FRAME"
+	local powerCaseAnchorFrameKey = (profile and profile.powerCaseAnchorFrame) or "POWER"
+	local powerThreatBarAnchorFrameKey = (profile and profile.powerThreatBarAnchorFrame) or "POWER"
+	local powerThreatCaseAnchorFrameKey = (profile and profile.powerThreatCaseAnchorFrame) or "POWER"
+	local powerBarArtLayer = (profile and tonumber(profile.powerBarArtLayer)) or 0
+	local useIceCrystal = UsePlayerIceCrystal()
+	local ClampLayer = function(value, defaultValue)
+		local numeric = tonumber(value)
+		if (type(numeric) ~= "number") then
+			numeric = defaultValue or 0
+		end
+		numeric = math_floor(numeric)
+		if (numeric < -8) then
+			numeric = -8
+		elseif (numeric > 7) then
+			numeric = 7
+		end
+		return numeric
+	end
+	local SafeSetDrawLayer = function(texture, layerName, subLevel, defaultSubLevel)
+		if (not texture or not texture.SetDrawLayer) then
+			return
+		end
+		local safeSubLevel = ClampLayer(subLevel, defaultSubLevel)
+		API.SafeCall("Player.texture.SetDrawLayer", texture.SetDrawLayer, texture, layerName, safeSubLevel)
+	end
+	if (powerBarScaleX <= 0) then
+		powerBarScaleX = 1
+	end
+	if (powerBarScaleY <= 0) then
+		powerBarScaleY = 1
+	end
+	local NormalizeScale = function(value)
+		value = tonumber(value)
+		if (type(value) ~= "number" or value <= 0) then
+			return 1
+		end
+		return value
+	end
+	powerBackdropScaleX = NormalizeScale(powerBackdropScaleX)
+	powerBackdropScaleY = NormalizeScale(powerBackdropScaleY)
+	powerCaseScaleX = NormalizeScale(powerCaseScaleX)
+	powerCaseScaleY = NormalizeScale(powerCaseScaleY)
+	powerThreatBarScaleX = NormalizeScale(powerThreatBarScaleX)
+	powerThreatBarScaleY = NormalizeScale(powerThreatBarScaleY)
+	powerThreatCaseScaleX = NormalizeScale(powerThreatCaseScaleX)
+	powerThreatCaseScaleY = NormalizeScale(powerThreatCaseScaleY)
+
+	local SetPointWithOffset = function(frame, pointData, offsetX, offsetY, anchorFrame)
+		if (not frame or not pointData or not pointData[1]) then
+			return
+		end
+		if (anchorFrame == frame) then
+			anchorFrame = nil
+		end
+		local x = (offsetX or 0)
+		local y = (offsetY or 0)
+		if (type(pointData[2]) == "number" or pointData[2] == nil) then
+			if (anchorFrame) then
+				frame:SetPoint(pointData[1], anchorFrame, pointData[1], (pointData[2] or 0) + x, (pointData[3] or 0) + y)
+			else
+				frame:SetPoint(pointData[1], (pointData[2] or 0) + x, (pointData[3] or 0) + y)
+			end
+		else
+			local relativeFrame = pointData[2]
+			if (relativeFrame == frame) then
+				relativeFrame = nil
+			end
+			if (relativeFrame) then
+				frame:SetPoint(pointData[1], relativeFrame, pointData[3], (pointData[4] or 0) + x, (pointData[5] or 0) + y)
+			else
+				frame:SetPoint(pointData[1], (pointData[4] or 0) + x, (pointData[5] or 0) + y)
+			end
+		end
+	end
+	local ScaleSize = function(sizeData, scaleX, scaleY)
+		if (not sizeData) then
+			return 0, 0
+		end
+		return (sizeData[1] or 0) * (scaleX or 1), (sizeData[2] or 0) * (scaleY or 1)
+	end
+	local GetAnchorPointToken = function(pointData)
+		if (not pointData) then
+			return "CENTER"
+		end
+		if (type(pointData[2]) == "number" or pointData[2] == nil) then
+			return pointData[1] or "CENTER"
+		end
+		return pointData[3] or pointData[1] or "CENTER"
+	end
+	local GetPointFactors = function(pointToken)
+		local token = tostring(pointToken or "CENTER")
+		local horizontal = 0
+		local vertical = 0
+		if (token:find("LEFT", 1, true)) then
+			horizontal = -1
+		elseif (token:find("RIGHT", 1, true)) then
+			horizontal = 1
+		end
+		if (token:find("BOTTOM", 1, true)) then
+			vertical = -1
+		elseif (token:find("TOP", 1, true)) then
+			vertical = 1
+		end
+		return horizontal, vertical
+	end
+	local GetAdjustedTexCoord = function(baseTexCoord, adjustment)
+		if (not baseTexCoord or not adjustment or adjustment == 0) then
+			return baseTexCoord
+		end
+		-- baseTexCoord is {left, right, top, bottom} in normalized 0-1 coords
+		-- Convert to pixel space (0-255) for easier math
+		local left = math.floor(baseTexCoord[1] * 255 + 0.5)
+		local right = math.floor(baseTexCoord[2] * 255 + 0.5)
+		local top = math.floor(baseTexCoord[3] * 255 + 0.5)
+		local bottom = math.floor(baseTexCoord[4] * 255 + 0.5)
+		-- Apply adjustment to margins
+		left = math.max(0, left + adjustment)
+		right = math.min(255, right - adjustment)
+		top = math.max(0, top + adjustment)
+		bottom = math.min(255, bottom - adjustment)
+		-- Convert back to 0-1 range
+		return { left / 255, right / 255, top / 255, bottom / 255 }
+	end
+
+	local health = self.Health
+	health:ClearAllPoints()
+	health:SetPoint(unpack(db.HealthBarPosition))
+	health:SetSize(unpack(db.HealthBarSize))
+	-- WoW 12.0: Only set texture if it changed to prevent flickering
+	if (health._cachedTexture ~= db.HealthBarTexture) then
+		health:SetStatusBarTexture(db.HealthBarTexture)
+		health._cachedTexture = db.HealthBarTexture
+	end
+	health.colorSmooth = false
+	health.colorClass = PlayerFrameMod.db.profile.useClassColor
+	health.colorHealth = true
+
+	health:SetOrientation(db.HealthBarOrientation)
+	health:SetSparkMap(db.HealthBarSparkMap)
+	UpdateBarSparkSize(health)
+	UpdateBarSpark(health)
+
+	local healthPreview = self.Health.Preview
+	if (healthPreview._cachedTexture ~= db.HealthBarTexture) then
+		healthPreview:SetStatusBarTexture(db.HealthBarTexture)
+		healthPreview._cachedTexture = db.HealthBarTexture
+	end
+	healthPreview:SetOrientation(db.HealthBarOrientation)
+
+	local healthBackdrop = self.Health.Backdrop
+	healthBackdrop:ClearAllPoints()
+	healthBackdrop:SetPoint(unpack(db.HealthBackdropPosition))
+	healthBackdrop:SetSize(unpack(db.HealthBackdropSize))
+	healthBackdrop:SetTexture(db.HealthBackdropTexture)
+	healthBackdrop:SetVertexColor(unpack(db.HealthBackdropColor))
+	if (ns.ThemeEngine) then ns.ThemeEngine:StyleHealth(self, db, false) end
+
+	local healPredict = self.HealthPrediction
+	healPredict:SetTexture(db.HealthBarTexture)
+
+	local absorb = self.HealthPrediction.absorbBar
+	if (absorb) then
+		if (absorb._cachedTexture ~= db.HealthBarTexture) then
+			absorb:SetStatusBarTexture(db.HealthBarTexture)
+			absorb._cachedTexture = db.HealthBarTexture
+		end
+		absorb:SetStatusBarColor(unpack(db.HealthAbsorbColor))
+		local orientation
+		if (db.HealthBarOrientation == "UP") then
+			orientation = "DOWN"
+		elseif (db.HealthBarOrientation == "DOWN") then
+			orientation = "UP"
+		elseif (db.HealthBarOrientation == "LEFT") then
+			orientation = "RIGHT"
+		else
+			orientation = "LEFT"
+		end
+		absorb:SetOrientation(orientation)
+		absorb:SetSparkMap(db.HealthBarSparkMap)
+		HidePlayerAbsorbBarVisual(absorb)
+	end
+
+	local power = self.Power
+	local shouldShowCrystal = ResolvePlayerPowerWidgetVisibility(self, "player")
+	power:ClearAllPoints()
+	local ptex
+	local powerAnchorFrame = ResolvePowerAnchorFrame(powerBarAnchorFrameKey, power)
+	local powerBarPoint = db[CURRENT_POWER_CRYSTAL_LAYOUT.barPointKey] or db[STOCK_POWER_CRYSTAL_LAYOUT.barPointKey]
+	local legacyPowerSize = db[STOCK_POWER_CRYSTAL_LAYOUT.barSizeKey] or db.PowerBarSize
+	local legacyPowerWidth, legacyPowerHeight = ScaleSize(legacyPowerSize, powerBarScaleX, powerBarScaleY)
+	legacyPowerWidth = math_floor(legacyPowerWidth + .5)
+	legacyPowerHeight = math_floor(legacyPowerHeight + .5)
+	local powerBackdropSize = db[CURRENT_POWER_CRYSTAL_LAYOUT.backdropSizeKey] or db[STOCK_POWER_CRYSTAL_LAYOUT.backdropSizeKey]
+	local powerBackdropWidth, powerBackdropHeight = ScaleSize(powerBackdropSize, powerBackdropScaleX, powerBackdropScaleY)
+	powerBackdropWidth = math_floor(powerBackdropWidth + .5)
+	powerBackdropHeight = math_floor(powerBackdropHeight + .5)
+	local powerDeltaWidth = powerBackdropWidth - legacyPowerWidth
+	local powerDeltaHeight = powerBackdropHeight - legacyPowerHeight
+	-- Keep crystal fill and backdrop perfectly locked: power bar follows backdrop anchor/size.
+	SetPointWithOffset(power, powerBarPoint, powerBarOffsetX, powerBarOffsetY, powerAnchorFrame)
+	power:SetSize(powerBackdropWidth, powerBackdropHeight)
+	-- WoW 12.0: Cache texture to prevent flickering
+	local powerTexture = (UsePlayerIceCrystal()) and db.PowerBarTextureWrath or db.PowerBarTexture
+	if (power._cachedTexture ~= powerTexture) then
+		power:SetStatusBarTexture(powerTexture)
+		power._cachedTexture = powerTexture
+	end
+	if (useIceCrystal) then
+		power.colorPower = false
+		power:SetStatusBarColor(1, 1, 1, 1)
+	else
+		power.colorPower = true
+	end
+	-- StatusBar itself has no SetTexCoord; apply to its texture if present.
+	ptex = power:GetStatusBarTexture()
+	local powerTexCoord = db[CURRENT_POWER_CRYSTAL_LAYOUT.barTexCoordKey] or db[STOCK_POWER_CRYSTAL_LAYOUT.barTexCoordKey]
+	local adjustedCoord = powerTexCoord
+	if (powerTexCoord) then
+		local texCoordAdjust = (profile and tonumber(profile.powerBarTexCoordAdjust)) or 0
+		adjustedCoord = GetAdjustedTexCoord(powerTexCoord, texCoordAdjust)
+	end
+	if (ptex and ptex.SetTexCoord and adjustedCoord) then
+		ptex:SetTexCoord(unpack(adjustedCoord))
+	end
+	if (type(adjustedCoord) == "table") then
+		power.__AzeriteUI_PowerFakeTexLeft = adjustedCoord[1]
+		power.__AzeriteUI_PowerFakeTexRight = adjustedCoord[2]
+		power.__AzeriteUI_PowerFakeTexTop = adjustedCoord[3]
+		power.__AzeriteUI_PowerFakeTexBottom = adjustedCoord[4]
+	elseif (ptex and ptex.GetTexCoord) then
+		local left, right, top, bottom = ptex:GetTexCoord()
+		power.__AzeriteUI_PowerFakeTexLeft = left
+		power.__AzeriteUI_PowerFakeTexRight = right
+		power.__AzeriteUI_PowerFakeTexTop = top
+		power.__AzeriteUI_PowerFakeTexBottom = bottom
+	end
+	power.__AzeriteUI_PowerFakeOrientation = db[CURRENT_POWER_CRYSTAL_LAYOUT.barOrientationKey] or db[STOCK_POWER_CRYSTAL_LAYOUT.barOrientationKey] or "UP"
+	power.__AzeriteUI_PowerFakeReverse = false
+	power.__AzeriteUI_PowerFakeWidth = powerBackdropWidth
+	power.__AzeriteUI_PowerFakeHeight = powerBackdropHeight
+	power.__AzeriteUI_PowerFakeMin = power.safeMin
+	power.__AzeriteUI_PowerFakeMax = power.safeMax
+	power.__AzeriteUI_PowerFakeValue = power.safeCur
+	if (ptex and ptex.SetDrawLayer) then
+		SafeSetDrawLayer(ptex, "ARTWORK", 0 + powerBarArtLayer, 0)
+	end
+	if (not shouldShowCrystal) then
+		power:Hide()
+	else
+		power:Show()
+	end
+	power:SetOrientation("VERTICAL")
+	if (power.SetSparkMap and db.PowerBarSparkMap) then
+		power:SetSparkMap(db.PowerBarSparkMap)
+	end
+	ShowPlayerNativePowerVisuals(power)
+	local powerFakeFill = power.FakeFill
+	if (powerFakeFill) then
+		powerFakeFill:Hide()
+	end
+
+	local powerBackdrop = self.Power.Backdrop
+	powerBackdrop:ClearAllPoints()
+	local powerBackdropAnchorFrame = power
+	SetPointWithOffset(powerBackdrop, CURRENT_POWER_CRYSTAL_LAYOUT.backdropPoint, 0, 0, powerBackdropAnchorFrame)
+	powerBackdrop:SetSize(powerBackdropWidth, powerBackdropHeight)
+	powerBackdrop:SetTexture((UsePlayerIceCrystal()) and db.PowerBackdropTextureWrath or db.PowerBackdropTexture)
+	powerBackdrop:SetVertexColor(1, 1, 1, 1)
+	SafeSetDrawLayer(powerBackdrop, "BACKGROUND", -2 + powerBarArtLayer, -2)
+
+	local powerCase = self.Power.Case
+	powerCase:ClearAllPoints()
+	local powerCaseAnchorFrame = ResolvePowerAnchorFrame(powerCaseAnchorFrameKey, power)
+	local powerCaseAnchorPoint = GetAnchorPointToken(db.PowerBarForegroundPosition)
+	local powerCaseHorizontal, powerCaseVertical = GetPointFactors(powerCaseAnchorPoint)
+	local powerCaseShiftX = powerCaseHorizontal * (powerDeltaWidth * .5)
+	local powerCaseShiftY = powerCaseVertical * (powerDeltaHeight * .5)
+	SetPointWithOffset(powerCase, db.PowerBarForegroundPosition, powerCaseOffsetX - powerCaseShiftX, powerCaseOffsetY - powerCaseShiftY, powerCaseAnchorFrame)
+	local powerCaseWidth, powerCaseHeight = ScaleSize(db.PowerBarForegroundSize, powerCaseScaleX, powerCaseScaleY)
+	powerCaseWidth = math_floor(powerCaseWidth + .5)
+	powerCaseHeight = math_floor(powerCaseHeight + .5)
+	powerCase:SetSize(powerCaseWidth, powerCaseHeight)
+	powerCase:SetTexture(db.PowerBarForegroundTexture)
+	powerCase:SetVertexColor(unpack(db.PowerBarForegroundColor))
+	SafeSetDrawLayer(powerCase, "ARTWORK", 2 + powerBarArtLayer, 2)
+	-- Core/ThemeEffects.lua: the theme's crystal case and the effect inside it.
+	if (ns.ThemeEffects) then
+		ns.ThemeEffects:StyleCrystal(power, powerTexture, adjustedCoord, db.PowerBarForegroundTexture)
+	end
+
+	local powerValue = self.Power.Value
+	if (powerValue) then
+		powerValue:ClearAllPoints()
+		powerValue:SetPoint(unpack(config.PowerValuePosition))
+		powerValue:SetFontObject(config.PowerValueFont)
+		ApplyScaledValueFont(powerValue, ClampPowerValueTextScale(PlayerFrameMod.db.profile.powerValueTextScale), true)
+		powerValue:SetTextColor(unpack(config.PowerValueColor))
+		powerValue:SetJustifyH(config.PowerValueJustifyH)
+		powerValue:SetJustifyV(config.PowerValueJustifyV)
+	end
+
+	local powerPercent = self.Power.Percent
+	if (powerPercent) then
+		powerPercent:ClearAllPoints()
+		if (config.PowerPercentagePosition) then
+			powerPercent:SetPoint(unpack(config.PowerPercentagePosition))
+		else
+			powerPercent:SetPoint("TOP", powerValue or self.Power, "BOTTOM", 0, -2)
+		end
+		powerPercent:SetFontObject(config.PowerPercentageFont or config.PowerValueFont)
+		local powerPercColor = config.PowerPercentageColor or config.PowerValueColor or { 1, 1, 1, 1 }
+		powerPercent:SetTextColor(powerPercColor[1], powerPercColor[2], powerPercColor[3], powerPercColor[4] or 1)
+		powerPercent:SetJustifyH(config.PowerPercentageJustifyH or "CENTER")
+		powerPercent:SetJustifyV(config.PowerPercentageJustifyV or "TOP")
+	end
+	ApplyPlayerPowerValueAlpha(self)
+
+	local mana = self.ManaOrb
+	mana:ClearAllPoints()
+	mana:SetPoint(unpack(db.ManaOrbPosition))
+	mana:SetSize(unpack(db.ManaOrbSize))
+	mana.colorPower = false
+	SetManaOrbFillTexture(mana, db)
+	UpdateManaOrbColor(mana)
+	do
+		local tex1, tex2 = mana:GetStatusBarTexture()
+		if (tex2 and tex2.SetTexCoord) then
+			tex2:SetTexCoord(1, 0, 1, 0)
+		end
+		if (tex1 and tex1.SetTexCoord) then
+			tex1:SetTexCoord(0, 1, 0, 1)
+		end
+	end
+	ApplyDiabolicManaOrbArt(mana, db)
+	ShowPlayerNativePowerVisuals(mana)
+
+	local cast = self.Castbar
+	cast:ClearAllPoints()
+	cast:SetPoint(unpack(db.HealthBarPosition))
+	cast:SetSize(unpack(db.HealthBarSize))
+	cast:SetStatusBarTexture(db.HealthBarTexture)
+	cast:SetStatusBarColor(unpack(db.HealthCastOverlayColor))
+	cast:SetOrientation(db.HealthBarOrientation)
+	cast:SetSparkMap(db.HealthBarSparkMap)
+	UpdateBarSparkSize(cast)
+	UpdateBarSpark(cast)
+
+	local threat = self.ThreatIndicator
+	if (threat) then
+		for key,texture in next,threat.textures do
+			local point = db[key.."ThreatPosition"]
+			local size = db[key.."ThreatSize"]
+			texture:ClearAllPoints()
+			if (point) then
+				if (key == "PowerBar") then
+					local threatBarAnchorFrame = ResolvePowerAnchorFrame(powerThreatBarAnchorFrameKey, power)
+					local threatPoint = GetAnchorPointToken(point)
+					local h, v = GetPointFactors(threatPoint)
+					local shiftX = h * (powerDeltaWidth * .5)
+					local shiftY = v * (powerDeltaHeight * .5)
+					SetPointWithOffset(texture, point, powerThreatBarOffsetX - shiftX, powerThreatBarOffsetY - shiftY, threatBarAnchorFrame)
+				elseif (key == "PowerBackdrop") then
+					local threatCaseAnchorFrame = ResolvePowerAnchorFrame(powerThreatCaseAnchorFrameKey, power)
+					local threatPoint = GetAnchorPointToken(point)
+					local h, v = GetPointFactors(threatPoint)
+					local shiftX = h * (powerDeltaWidth * .5)
+					local shiftY = v * (powerDeltaHeight * .5)
+					SetPointWithOffset(texture, point, powerThreatCaseOffsetX - shiftX, powerThreatCaseOffsetY - shiftY, threatCaseAnchorFrame)
+				else
+					texture:SetPoint(unpack(point))
+				end
+			end
+			if (size) then
+				if (key == "PowerBar") then
+					texture:SetSize(powerBackdropWidth, powerBackdropHeight)
+				elseif (key == "PowerBackdrop") then
+					local sx = powerCaseScaleX * powerThreatCaseScaleX
+					local sy = powerCaseScaleY * powerThreatCaseScaleY
+					texture:SetSize((size[1] or 0) * sx, (size[2] or 0) * sy)
+				else
+					texture:SetSize(unpack(size))
+				end
+			end
+			texture:SetTexture(db[key.."ThreatTexture"])
+		end
+	end
+
+	if (ns.ThemeEngine) then ns.ThemeEngine:StyleThreat(self, false) end
+	ApplyPlayerAuraLayout(self)
+	if (ns.LegacyHUD) then ns.LegacyHUD:RefreshUnit(self) end
+
+end
+
+local NormalizePowerOffsetBaseline = function(self)
+	local profile = self and self.db and self.db.profile
+	if (not profile) then
+		return
+	end
+	-- Legacy crystal tuning was introduced for oversized assets.
+	-- Normalize those exact legacy defaults back to current baseline offsets.
+	if ((tonumber(profile.powerBarOffsetX) or 0) == -76
+		and (tonumber(profile.powerBarOffsetY) or 0) == -49
+		and (tonumber(profile.powerCaseOffsetX) or 0) == 0
+		and (tonumber(profile.powerCaseOffsetY) or 0) == 50
+		and (tonumber(profile.powerThreatBarOffsetX) or 0) == 76
+		and (tonumber(profile.powerThreatBarOffsetY) or 0) == 52
+		and (tonumber(profile.powerThreatCaseOffsetX) or 0) == 0
+		and (tonumber(profile.powerThreatCaseOffsetY) or 0) == -34
+		and (tonumber(profile.powerBarBaseOffsetX) or 0) == 0
+		and (tonumber(profile.powerBarBaseOffsetY) or 0) == 0
+		and (tonumber(profile.powerCaseBaseOffsetX) or 0) == 0
+		and (tonumber(profile.powerCaseBaseOffsetY) or 0) == 0) then
+		profile.powerBarOffsetX = 0
+		profile.powerBarOffsetY = 0
+		profile.powerCaseOffsetX = 0
+		profile.powerCaseOffsetY = 0
+		profile.powerThreatBarOffsetX = 0
+		profile.powerThreatBarOffsetY = 0
+		profile.powerThreatCaseOffsetX = 0
+		profile.powerThreatCaseOffsetY = 0
+		profile.powerBarBaseOffsetX = POWER_CRYSTAL_BASELINE_OFFSET_X
+		profile.powerBarBaseOffsetY = POWER_CRYSTAL_BASELINE_OFFSET_Y
+	end
+	if (profile.powerCaseAnchorFrame == nil) then
+		profile.powerCaseAnchorFrame = "POWER"
+	end
+	if (profile.powerThreatBarAnchorFrame == nil) then
+		profile.powerThreatBarAnchorFrame = "POWER"
+	end
+	if (profile.powerThreatCaseAnchorFrame == nil) then
+		profile.powerThreatCaseAnchorFrame = "POWER"
+	end
+	if (not profile.powerAnchorsRestoredToStock) then
+		if (profile.powerCaseAnchorFrame == "FRAME") then
+			profile.powerCaseAnchorFrame = "POWER"
+		end
+		if (profile.powerThreatBarAnchorFrame == "FRAME") then
+			profile.powerThreatBarAnchorFrame = "POWER"
+		end
+		if (profile.powerThreatCaseAnchorFrame == "FRAME") then
+			profile.powerThreatCaseAnchorFrame = "POWER"
+		end
+		profile.powerAnchorsRestoredToStock = true
+	end
+	if (profile.powerOffsetZeroMigrated == nil) then
+		profile.powerBarBaseOffsetX = (tonumber(profile.powerBarBaseOffsetX) or 0) + (tonumber(profile.powerBarOffsetX) or 0)
+		profile.powerBarBaseOffsetY = (tonumber(profile.powerBarBaseOffsetY) or 0) + (tonumber(profile.powerBarOffsetY) or 0)
+		profile.powerCaseBaseOffsetX = (tonumber(profile.powerCaseBaseOffsetX) or 0) + (tonumber(profile.powerCaseOffsetX) or 0)
+		profile.powerCaseBaseOffsetY = (tonumber(profile.powerCaseBaseOffsetY) or 0) + (tonumber(profile.powerCaseOffsetY) or 0)
+		profile.powerBarOffsetX = 0
+		profile.powerBarOffsetY = 0
+		profile.powerCaseOffsetX = 0
+		profile.powerCaseOffsetY = 0
+		profile.powerOffsetZeroMigrated = true
+	end
+	if (not profile.powerCrystalBaselineApplied) then
+		local baseX = tonumber(profile.powerBarBaseOffsetX) or 0
+		local baseY = tonumber(profile.powerBarBaseOffsetY) or 0
+		local offX = tonumber(profile.powerBarOffsetX) or 0
+		local offY = tonumber(profile.powerBarOffsetY) or 0
+		if (baseX == 0 and baseY == 0 and offX == 0 and offY == 0) then
+			profile.powerBarBaseOffsetX = POWER_CRYSTAL_BASELINE_OFFSET_X
+			profile.powerBarBaseOffsetY = POWER_CRYSTAL_BASELINE_OFFSET_Y
+		end
+		profile.powerCrystalBaselineApplied = true
+	end
+end
+
+local UnitFrame_PostUpdate = function(self)
+	UnitFrame_UpdateTextures(self)
+end
+
+-- Frame Script Handlers
+--------------------------------------------
+local UnitFrame_OnEvent = function(self, event, unit, ...)
+	if (event == "PLAYER_ENTERING_WORLD") then
+		playerXPDisabled = IsXPUserDisabled()
+		playerLevel = UnitLevel("player")
+		playerIsRetribution = playerClass == "PALADIN" and (ns.IsRetailContent and GetSpecialization and GetSpecialization() == SPEC_PALADIN_RETRIBUTION)
+
+		if (self.PlayerAuras) then
+			self.PlayerAuras:ApplyPendingConfiguration()
+			self.PlayerAuras:ApplyPendingShownState()
+			self.PlayerAuras:ForceUpdate()
+		end
+		if (self.PlayerDebuffs) then
+			self.PlayerDebuffs:ApplyPendingConfiguration()
+			self.PlayerDebuffs:ApplyPendingShownState()
+			self.PlayerDebuffs:ForceUpdate()
+		end
+
+		self.Power:ForceUpdate()
+		RefreshManaOrb(self, event, GetPlayerPowerUnit(self))
+
+	elseif (event == "PLAYER_SPECIALIZATION_CHANGED") then
+		playerIsRetribution = playerClass == "PALADIN" and (ns.IsRetailContent and GetSpecialization and GetSpecialization() == SPEC_PALADIN_RETRIBUTION)
+
+		self.Power:ForceUpdate()
+		RefreshManaOrb(self, event, GetPlayerPowerUnit(self))
+
+	elseif (event == "UNIT_POWER_FREQUENT" or event == "UNIT_POWER_UPDATE" or event == "UNIT_MAXPOWER" or event == "UNIT_DISPLAYPOWER" or event == "UNIT_ENTERED_VEHICLE" or event == "UNIT_EXITED_VEHICLE") then
+		if (IsPlayerPowerUnit(unit) or IsPlayerPowerUnit(self.unit)) then
+			if (self.Power and self.Power.ForceUpdate) then
+				self.Power:ForceUpdate()
+			end
+			RefreshManaOrb(self, event, unit or GetPlayerPowerUnit(self))
+		end
+
+	elseif (event == "PLAYER_REGEN_ENABLED") then
+		ApplyPlayerAuraLayout(self)
+		if (self.PlayerAuras) then
+			self.PlayerAuras:ApplyPendingConfiguration()
+			self.PlayerAuras:ApplyPendingShownState()
+			self.PlayerAuras:SetDisplayEnabled(PlayerFrameMod.db.profile.showAuras)
+		end
+		if (self.PlayerDebuffs) then
+			self.PlayerDebuffs:ApplyPendingConfiguration()
+			self.PlayerDebuffs:ApplyPendingShownState()
+		end
+		UpdatePlayerDebuffShownState(self)
+		if (self.Power and self.Power.ForceUpdate) then
+			self.Power:ForceUpdate()
+		end
+		RefreshManaOrb(self, event, GetPlayerPowerUnit(self))
+
+	elseif (event == "PLAYER_REGEN_DISABLED") then
+		-- Do not force aura full refresh on combat entry; UNIT_AURA should drive updates.
+		if (self.Power and self.Power.ForceUpdate) then
+			self.Power:ForceUpdate()
+		end
+		RefreshManaOrb(self, event, GetPlayerPowerUnit(self))
+
+	elseif (event == "UNIT_ABSORB_AMOUNT_CHANGED") then
+		if (unit == self.unit) then
+			local eventAbsorb = select(1, ...)
+			if (self.HealthPrediction) then
+				-- Use event callback absorb as an extra numeric fallback source.
+				UpdatePlayerAbsorbState(self.HealthPrediction, unit, eventAbsorb, self.Health and self.Health.safeMax or nil)
+			end
+			if (self.Health and self.Health.ForceUpdate) then
+				self.Health:ForceUpdate()
+			end
+			if (self.Health and self.Health.Value and self.Health.Value.UpdateTag) then
+				self.Health.Value:UpdateTag()
+			end
+			local apiTotalAbsorb = UnitGetTotalAbsorbs and UnitGetTotalAbsorbs(unit) or nil
+			EmitAbsorbStateDebug(self, unit,
+				"Event(Player) unit=%s callback=%s apiTotal=%s healthSafeAbsorb=%s",
+				unit,
+				eventAbsorb,
+				apiTotalAbsorb,
+				self.Health and self.Health.safeAbsorb or nil)
+		end
+
+	   elseif (event == "ENABLE_XP_GAIN") then
+		   playerXPDisabled = false
+
+	elseif (event == "DISABLE_XP_GAIN") then
+		playerXPDisabled = true
+
+	elseif (event == "PLAYER_LEVEL_UP") then
+		-- The payload carries the new level; UnitLevel can still answer the old one.
+		playerLevel = ns.API.GetSafeLevel(unit) or UnitLevel("player")
+	end
+
+	UnitFrame_PostUpdate(self)
+end
+
+local style = function(self, unit)
+
+	local config = ns.GetConfig("PlayerFrame")
+	-- Pick the same profile key used by UnitFrame_UpdateTextures so we have
+	-- non-nil sizing/texture data before the first PostUpdate runs.
+	local key = ns.API.GetLevelTier(playerLevel, playerXPDisabled)
+	local db = config[key] or config.Seasoned or config.Hardened or config.Novice or config
+
+	self:SetSize(unpack(config.Size))
+	self:SetHitRectInsets(unpack(config.HitRectInsets))
+	self:SetFrameLevel(self:GetFrameLevel() + 2)
+
+	-- Ping resource callout
+	--------------------------------------------
+	-- Blizzard's PlayerFrame carries PingableType_PlayerUnitFrameMixin, which is
+	-- what makes a ping on your own frame call out your health and mana instead
+	-- of merely flagging where you are. oUF spawns every frame with the plain
+	-- PingableType_UnitFrameMixin, whose GetTargetInfo returns only a guid, so
+	-- that callout never fired on our player frame.
+	--
+	-- Blizzard gates isPlayerResource on the cursor being off the portrait, and
+	-- suppresses the radial wheel for the same region. Our player frame has no
+	-- portrait at all - the health orb and the power crystal are the whole frame
+	-- - so the resource branch is the only one that can apply here.
+	if (ns.IsRetail) then
+		local pingTargetInfo = { isPlayerResource = true }
+
+		self.GetTargetInfo = function()
+			pingTargetInfo.guid = UnitGUID("player")
+			return pingTargetInfo
+		end
+
+		self.GetAllowRadialWheel = function()
+			return false
+		end
+	end
+
+	-- Overlay for icons and text
+	--------------------------------------------
+	local overlay = CreateFrame("Frame", nil, self)
+	overlay:SetFrameLevel(self:GetFrameLevel() + 7)
+	overlay:SetAllPoints()
+
+	self.Overlay = overlay
+
+	-- Health
+	--------------------------------------------
+	local health = self:CreateBar()
+	if (health.SetForceNative) then health:SetForceNative(true) end
+	health:SetFrameLevel(health:GetFrameLevel() + 2)
+	health:DisableSmoothing(false) -- Eases while /az -> Unit Frames -> Smooth health and power is on (UnitFrame.lua).
+	-- WoW12 safe: no gradients, use oUF color paths.
+	health.colorSmooth = false
+	health.colorClass = PlayerFrameMod.db.profile.useClassColor
+	health.colorHealth = true
+	health.predictThreshold = .01
+
+	self.Health = health
+	self.Health.Override = ns.API.UpdateHealth
+	self.Health.PostUpdate = Health_PostUpdate
+	self.Health.PostUpdateColor = Health_PostUpdateColor
+	ns.API.BindStatusBarValueMirror(self.Health)
+
+	self.Health.Spark = nil
+
+	-- DEBUG: Show what's happening with secret values (toggle with /azdebughealth)
+	local debugText = self:CreateFontString(nil, "OVERLAY")
+	debugText:SetFontObject(GameFontNormal)
+	debugText:SetPoint("BOTTOM", UIParent, "CENTER", 0, 200)
+	debugText:SetWidth(800)
+	debugText:SetJustifyH("LEFT")
+	debugText:SetWordWrap(false)
+	debugText:SetText("DEBUG")
+	debugText:SetTextColor(1, 1, 0, 1)
+	self.HealthDebug = debugText
+	if (not ns.API.DEBUG_HEALTH) then
+		debugText:Hide()
+	end
+
+	local healthBackdrop = self:CreateTexture(nil, "BACKGROUND", nil, -1)
+
+	self.Health.Backdrop = healthBackdrop
+
+	local healthOverlay = CreateFrame("Frame", nil, health)
+	healthOverlay:SetFrameLevel(overlay:GetFrameLevel())
+	healthOverlay:SetAllPoints()
+
+	self.Health.Overlay = healthOverlay
+
+	local healthPreview = self:CreateBar(nil, health)
+	if (healthPreview.SetForceNative) then healthPreview:SetForceNative(true) end
+	healthPreview:SetAllPoints(health)
+	healthPreview:SetFrameLevel(health:GetFrameLevel() - 1)
+	healthPreview:DisableSmoothing(true)
+	healthPreview:SetSparkTexture("")
+	healthPreview:SetAlpha(0)
+
+	self.Health.Preview = healthPreview
+
+	-- Health Prediction
+	--------------------------------------------
+	local healPredictFrame = CreateFrame("Frame", nil, health)
+	healPredictFrame:SetFrameLevel(health:GetFrameLevel() + 2)
+
+	local healPredict = healPredictFrame:CreateTexture(nil, "OVERLAY", nil, 1)
+
+	self.HealthPrediction = healPredict
+
+	-- Cast Overlay
+	--------------------------------------------
+	local castbar = self:CreateBar()
+	castbar:SetFrameLevel(self:GetFrameLevel() + 5)
+	castbar:DisableSmoothing(false, "castbars") -- Pushback eases while /az -> Unit Frames -> Smooth castbar pushback is on.
+
+	self.Castbar = castbar
+
+	local castSpark = castbar:CreateTexture(nil, "OVERLAY", nil, 3)
+	castSpark:SetTexture([[Interface\CastingBar\UI-CastingBar-Spark]])
+	castSpark:SetBlendMode("ADD")
+	castSpark:SetVertexColor(1, .95, .8, .85)
+	castSpark:Hide()
+	self.Castbar.Spark = castSpark
+
+	-- Cast Name
+	--------------------------------------------
+	local castText = healthOverlay:CreateFontString(nil, "OVERLAY")
+	castText:SetPoint(unpack(config.HealthValuePosition))
+	castText:SetFontObject(config.CastBarTextFont)
+	castText:SetTextColor(unpack(config.CastBarTextColor))
+	castText:SetJustifyH(config.HealthValueJustifyH)
+	castText:SetJustifyV(config.HealthValueJustifyV)
+	if (config.CastBarTextSize) then castText:SetSize(unpack(config.CastBarTextSize)) end
+	castText:Hide()
+	castText.color = config.CastBarTextColor or { 1, 1, 1, 1 }
+	castText.colorProtected = config.CastBarTextProtectedColor or castText.color
+
+	self.Castbar.Text = castText
+	self.Castbar.PostCastInterruptible = Cast_PostCastInterruptible
+	self.Castbar.PostCastStart = UpdateBarSpark
+	self.Castbar.PostCastUpdate = UpdateBarSpark
+	self.Castbar.PostCastStop = UpdateBarSpark
+	self.Castbar.PostCastFail = UpdateBarSpark
+	self.Castbar.PostCastInterrupted = UpdateBarSpark
+
+	-- Cast Time
+	--------------------------------------------
+	local castTime = healthOverlay:CreateFontString(nil, "OVERLAY")
+	castTime:SetPoint(unpack(config.CastBarValuePosition))
+	castTime:SetFontObject(config.CastBarValueFont)
+	castTime:SetTextColor(unpack(config.CastBarTextColor))
+	castTime:SetJustifyH(config.CastBarValueJustifyH)
+	castTime:SetJustifyV(config.CastBarValueJustifyV)
+	castTime:Hide()
+
+	self.Castbar.Time = castTime
+
+	self.Castbar:HookScript("OnShow", Cast_UpdateTexts)
+	self.Castbar:HookScript("OnHide", Cast_UpdateTexts)
+	ns.API.AttachScriptSafe(self.Castbar, "OnValueChanged", function(source)
+		UpdateBarSpark(source)
+	end)
+	ns.API.AttachScriptSafe(self.Castbar, "OnMinMaxChanged", function(source)
+		UpdateBarSpark(source)
+	end)
+
+	-- Health Value
+	--------------------------------------------
+	local healthValue = healthOverlay:CreateFontString(nil, "OVERLAY")
+	healthValue:SetPoint(unpack(config.HealthValuePosition))
+	healthValue:SetFontObject(config.HealthValueFont)
+	healthValue:SetTextColor(unpack(config.HealthValueColor))
+	healthValue:SetJustifyH(config.HealthValueJustifyH)
+	healthValue:SetJustifyV(config.HealthValueJustifyV)
+	if (ns.IsRetail) then
+		-- Keep stock-like inline composition; absorb tag handles wrapped visuals.
+		self:Tag(healthValue, prefix("[*:HealthCurrent]  [*:Absorb]"))
+	else
+		self:Tag(healthValue, prefix("[*:Health]"))
+	end
+
+	self.Health.Value = healthValue
+
+	-- Health Percentage
+	--------------------------------------------
+	local healthPerc = healthValue:GetParent():CreateFontString(nil, "OVERLAY")
+	-- Themes move the text from this anchor; reading it back is secret.
+	healthPerc.LayoutPoint = config.HealthPercentagePosition or { "LEFT", healthValue, "RIGHT", 18, 0 }
+	healthPerc:SetPoint(unpack(healthPerc.LayoutPoint))
+	healthPerc:SetFontObject(config.HealthPercentageFont or config.HealthValueFont)
+	local healthPercColor = config.HealthPercentageColor or config.HealthValueColor or { 1, 1, 1, 1 }
+	healthPerc:SetTextColor(healthPercColor[1], healthPercColor[2], healthPercColor[3], healthPercColor[4] or 1)
+	healthPerc:SetJustifyH(config.HealthPercentageJustifyH or "LEFT")
+	healthPerc:SetJustifyV(config.HealthPercentageJustifyV or "MIDDLE")
+	self:Tag(healthPerc, prefix("[*:HealthPercent]"))
+	healthPerc:Hide()  -- Hidden by default
+
+	self.Health.Percent = healthPerc
+
+	-- Absorb Bar
+	--------------------------------------------
+	if (ns.IsRetail) then
+		local absorb = self:CreateBar()
+		if (absorb.SetForceNative) then absorb:SetForceNative(true) end
+		absorb:SetAllPoints(health)
+		absorb:SetFrameLevel(health:GetFrameLevel() + 3)
+		HidePlayerAbsorbBarVisual(absorb)
+		if (absorb.HookScript) then
+			absorb:HookScript("OnShow", function(source)
+				HidePlayerAbsorbBarVisual(source)
+			end)
+		end
+
+		--self.Health.absorbBar = absorb
+	end
+
+	-- Power Crystal
+	local power = self:CreateBar()
+	if (power.SetForceNative) then
+		power:SetForceNative(true)
+	end
+	power:SetFrameLevel(self:GetFrameLevel() + CURRENT_POWER_CRYSTAL_LAYOUT.frameLevelOffset)
+	local powerPos = db[CURRENT_POWER_CRYSTAL_LAYOUT.barPointKey] or db[STOCK_POWER_CRYSTAL_LAYOUT.barPointKey] or { "CENTER", 0, 0 }
+	local powerSize = db[CURRENT_POWER_CRYSTAL_LAYOUT.barSizeKey] or db[STOCK_POWER_CRYSTAL_LAYOUT.barSizeKey] or { 80, 80 }
+	power:SetPoint(unpack(powerPos))
+	power:SetSize(unpack(powerSize))
+	power:SetStatusBarTexture(db.PowerBarTexture)
+	local ptex = power:GetStatusBarTexture()
+	local powerTexCoord = db[CURRENT_POWER_CRYSTAL_LAYOUT.barTexCoordKey] or db[STOCK_POWER_CRYSTAL_LAYOUT.barTexCoordKey]
+	if ptex and ptex.SetTexCoord and powerTexCoord then
+		local texCoordAdjust = (PlayerFrameMod.db.profile and tonumber(PlayerFrameMod.db.profile.powerBarTexCoordAdjust)) or 0
+		local adjustedCoord = GetAdjustedTexCoord(powerTexCoord, texCoordAdjust)
+		ptex:SetTexCoord(unpack(adjustedCoord))
+	end
+	power:SetOrientation(db[CURRENT_POWER_CRYSTAL_LAYOUT.barOrientationKey] or db[STOCK_POWER_CRYSTAL_LAYOUT.barOrientationKey] or "UP")
+	power:SetAlpha(db.PowerBarAlpha or 1)
+	power.frequentUpdates = true
+	power.displayAltPower = true
+	power.colorPower = true
+	power.GetDisplayPower = function(element)
+		local owner = element and element.__owner
+		local unitToken = GetPlayerPowerUnit(owner)
+		if (ns.IsRetailContent and playerClass == "SHAMAN" and GetSpecialization and GetSpecialization() == SPEC_SHAMAN_ELEMENTAL) then
+			if (GetElementalMaelstromDisplayMode() == "crystal_mana") then
+				return POWER_TYPE_MANA, 0
+			end
+		end
+		return UnitPowerType(unitToken)
+	end
+	power:DisableSmoothing(false) -- Eases while /az -> Unit Frames -> Smooth health and power is on (UnitFrame.lua).
+	power.__AzeriteUI_DisableTexturePercentMirror = true
+	power.__AzeriteUI_KeepMirrorPercentOnNoSample = true
+	-- Seed safe numeric values
+	power.safeBarMin = 0
+	power.safeBarMax = 1
+	power.safeBarValue = 1
+	if (ptex and ptex.GetTexCoord) then
+		local left, right, top, bottom = ptex:GetTexCoord()
+		power.__AzeriteUI_BaseTexCoordLeft = left
+		power.__AzeriteUI_BaseTexCoordRight = right
+		power.__AzeriteUI_BaseTexCoordTop = top
+		power.__AzeriteUI_BaseTexCoordBottom = bottom
+	end
+
+	self.Power = power
+	self.Power.Override = ns.API.UpdatePower
+	ns.API.BindStatusBarValueMirror(self.Power)
+	self.Power.PostUpdate = Power_UpdateVisibility
+	self.Power.PostUpdateColor = not (UsePlayerIceCrystal()) and Power_PostUpdateColor
+
+	local powerFakeFill = power:CreateTexture(nil, "ARTWORK", nil, 1)
+	powerFakeFill:SetAllPoints(power)
+	powerFakeFill:SetBlendMode("BLEND")
+	powerFakeFill:SetAlpha(1)
+	powerFakeFill:Hide()
+	self.Power.FakeFill = powerFakeFill
+
+	local powerSpark = power:CreateTexture(nil, "OVERLAY", nil, 3)
+	powerSpark:SetTexture([[Interface\CastingBar\UI-CastingBar-Spark]])
+	powerSpark:SetBlendMode("ADD")
+	powerSpark:SetVertexColor(1, .9, .7, .9)
+	powerSpark:SetSize(60, 12)
+	powerSpark:Hide()
+	self.Power.Spark = powerSpark
+
+	local powerBackdrop = power:CreateTexture(nil, "BACKGROUND", nil, -2)
+	local powerCase = power:CreateTexture(nil, "ARTWORK", nil, 2)
+
+	self.Power.Backdrop = powerBackdrop
+	self.Power.Case = powerCase
+
+	-- Power Value
+	--------------------------------------------
+	local powerValue = power:CreateFontString(nil, "OVERLAY")
+	powerValue:SetPoint(unpack(config.PowerValuePosition))
+	powerValue:SetFontObject(config.PowerValueFont)
+	powerValue:SetTextColor(unpack(config.PowerValueColor))
+	powerValue:SetJustifyH(config.PowerValueJustifyH)
+	powerValue:SetJustifyV(config.PowerValueJustifyV)
+
+	self.Power.Value = powerValue
+	UpdatePlayerPowerValueTag(self)
+
+	-- Power Percentage
+	--------------------------------------------
+	local powerPerc = power:CreateFontString(nil, "OVERLAY")
+	if (config.PowerPercentagePosition) then
+		powerPerc:SetPoint(unpack(config.PowerPercentagePosition))
+	else
+		powerPerc:SetPoint("TOP", powerValue, "BOTTOM", 0, -2)
+	end
+	powerPerc:SetFontObject(config.PowerPercentageFont or config.PowerValueFont)
+	local powerPercColor = config.PowerPercentageColor or config.PowerValueColor or { 1, 1, 1, 1 }
+	powerPerc:SetTextColor(powerPercColor[1], powerPercColor[2], powerPercColor[3], powerPercColor[4] or 1)
+	powerPerc:SetJustifyH(config.PowerPercentageJustifyH or "CENTER")
+	powerPerc:SetJustifyV(config.PowerPercentageJustifyV or "TOP")
+	self:Tag(powerPerc, prefix("[*:PowerPercent]"))
+	powerPerc:Hide() -- Hide power percentage
+
+	self.Power.Percent = powerPerc
+
+	-- Secondary Mana Crystal
+	-- *when mana exists but is not the displayed resource
+	--------------------------------------------
+	local secondaryMana = CreateFrame("StatusBar", nil, self)
+	secondaryMana:SetFrameLevel(power:GetFrameLevel() + 3)
+	local secondaryManaPosition = config.SecondaryManaBarPosition
+	secondaryMana:SetPoint(secondaryManaPosition[1], power, secondaryManaPosition[2], secondaryManaPosition[3], secondaryManaPosition[4])
+	secondaryMana:SetSize(unpack(config.SecondaryManaBarSize))
+	secondaryMana:SetStatusBarTexture(config.SecondaryManaBarTexture)
+	secondaryMana:SetOrientation("VERTICAL")
+	secondaryMana.__AzeriteUI_VisibleAlpha = config.SecondaryManaBarAlpha or 1
+	secondaryMana:SetAlpha(secondaryMana.__AzeriteUI_VisibleAlpha)
+	if (UnitPowerPercent and C_CurveUtil and C_CurveUtil.CreateCurve and Enum and Enum.LuaCurveType and Enum.LuaCurveType.Step) then
+		local visibilityCurve = C_CurveUtil.CreateCurve()
+		visibilityCurve:SetType(Enum.LuaCurveType.Step)
+		visibilityCurve:AddPoint(0, secondaryMana.__AzeriteUI_VisibleAlpha)
+		visibilityCurve:AddPoint(1, 0)
+		secondaryMana.__AzeriteUI_VisibilityCurve = visibilityCurve
+	end
+	secondaryMana:SetMinMaxValues(0, 1)
+	secondaryMana:SetValue(0)
+	local secondaryManaColor = config.PowerBarColors.MANA
+	secondaryMana:SetStatusBarColor(secondaryManaColor[1], secondaryManaColor[2], secondaryManaColor[3], secondaryManaColor[4] or 1)
+	secondaryMana:EnableMouse(false)
+
+	local secondaryManaBackdrop = secondaryMana:CreateTexture(nil, "BACKGROUND", nil, -2)
+	secondaryManaBackdrop:SetAllPoints(secondaryMana)
+	secondaryManaBackdrop:SetTexture(config.SecondaryManaBackdropTexture)
+	secondaryManaBackdrop:SetVertexColor(unpack(config.SecondaryManaBackdropColor))
+	secondaryMana.Backdrop = secondaryManaBackdrop
+
+	local secondaryManaValue = secondaryMana:CreateFontString(nil, "OVERLAY")
+	secondaryManaValue:SetPoint(unpack(config.SecondaryManaValuePosition))
+	secondaryManaValue:SetFontObject(config.SecondaryManaValueFont)
+	secondaryManaValue:SetTextColor(unpack(config.SecondaryManaValueColor))
+	secondaryManaValue:SetJustifyH("CENTER")
+	secondaryManaValue:SetJustifyV("MIDDLE")
+	secondaryMana.Value = secondaryManaValue
+	secondaryMana:Hide()
+	self.SecondaryManaCrystal = secondaryMana
+
+	-- ManaText Value
+	-- *legacy internal readout retained hidden for tag compatibility
+	--------------------------------------------
+	local manaText = power:CreateFontString(nil, "OVERLAY")
+	manaText:SetPoint(unpack(config.ManaTextPosition))
+	manaText:SetFontObject(config.ManaTextFont)
+	manaText:SetTextColor(unpack(config.ManaTextColor))
+	manaText:SetJustifyH(config.ManaTextJustifyH)
+	manaText:SetJustifyV(config.ManaTextJustifyV)
+	self:Tag(manaText, prefix("[*:ManaText:Low]"))
+	manaText:Hide()
+
+	self.Power.ManaText = manaText
+
+	-- Mana Orb
+	--------------------------------------------
+	local mana = self:CreateOrb(self:GetName().."ManaOrb")
+	mana:SetFrameLevel(self:GetFrameLevel() - 2)
+	mana.frequentUpdates = true
+	-- Listed with the other eased bars, so /azsmooth and /az -> Unit Frames switch it too
+	-- (ns.API.UpdateManaOrb passes mana.smoothing to the orb's native bar).
+	ns.UnitFrame.SetBarSmoothing(mana, true)
+	mana.displayAltPower = true
+	mana.colorPower = false
+	mana.__owner = self
+	SetManaOrbFillTexture(mana, db)
+	mana:SetStatusBarColor(unpack(config.PowerOrbColors.MANA))
+	do
+		local tex1, tex2 = mana:GetStatusBarTexture()
+		if (tex2 and tex2.SetTexCoord) then
+			tex2:SetTexCoord(1, 0, 1, 0)
+		end
+		if (tex1 and tex1.SetTexCoord) then
+			tex1:SetTexCoord(0, 1, 0, 1)
+		end
+	end
+	mana:EnableMouse(true)
+	if (mana.SetMouseClickEnabled) then
+		mana:SetMouseClickEnabled(false)
+	end
+	mana:SetScript("OnEnter", Power_OnEnter)
+	mana:SetScript("OnLeave", Power_OnLeave)
+	mana.OnEnter = Power_OnMouseOver
+	mana.OnLeave = Power_OnMouseOver
+
+	self.ManaOrb = mana
+	self.ManaOrb.Override = ns.API.UpdateManaOrb
+	self.ManaOrb.PostUpdate = Mana_PostUpdate
+	self.ManaOrb.GetDisplayPowerType = GetManaOrbPowerType
+	self.ManaOrb.ForceUpdate = function(element)
+		local owner = element and element.__owner
+		if (owner) then
+			return ns.API.UpdateManaOrb(owner, "ForceUpdate", GetPlayerPowerUnit(owner))
+		end
+	end
+
+	local manaCaseFrame = CreateFrame("Frame", nil, mana)
+	manaCaseFrame:SetFrameLevel(mana:GetFrameLevel() + 4)
+	manaCaseFrame:SetAllPoints()
+
+	-- Draw order inside manaCaseFrame, which sits four levels above the orb fill:
+	--   BORDER 0  glass      a specular dome over the fill, edges hidden by the case
+	--   BORDER 1  rim        a heavy ring at the fill's edge
+	--   ARTWORK 1 shade      the existing vignette
+	--   ARTWORK 2 case       the existing wood/stone surround
+	-- The pedestal is the exception. It is a plinth the orb stands on, not an
+	-- overlay, so it hangs off the orb frame itself below the backdrop. It used to
+	-- be created at OVERLAY 1 on the case frame, where it would have covered the
+	-- orb outright - which is presumably part of why it was never turned on.
+	local manaBackdrop = mana:CreateTexture(nil, "BACKGROUND", nil, -2)
+	local manaArtwork = mana:CreateTexture(nil, "BACKGROUND", nil, -3)
+	local manaShade = manaCaseFrame:CreateTexture(nil, "ARTWORK", nil, 1)
+	local manaCase = manaCaseFrame:CreateTexture(nil, "ARTWORK", nil, 2)
+	local manaGlass = manaCaseFrame:CreateTexture(nil, "BORDER", nil, 0)
+	local manaRim = manaCaseFrame:CreateTexture(nil, "BORDER", nil, 1)
+
+	self.ManaOrb.Backdrop = manaBackdrop
+	self.ManaOrb.Shade = manaShade
+	self.ManaOrb.Case = manaCase
+	self.ManaOrb.Glass = manaGlass
+	self.ManaOrb.Rim = manaRim
+	self.ManaOrb.Artwork = manaArtwork
+
+	-- Mana Orb Value
+	--------------------------------------------
+	local manaValue = manaCaseFrame:CreateFontString(nil, "OVERLAY")
+	manaValue:SetPoint(unpack(config.ManaValuePosition))
+	manaValue:SetFontObject(config.ManaValueFont)
+	ApplyScaledValueFont(manaValue, ClampPowerValueTextScale(PlayerFrameMod.db.profile.powerValueTextScale), true)
+	manaValue:SetTextColor(unpack(config.ManaValueColor))
+	manaValue:SetJustifyH(config.ManaValueJustifyH)
+	manaValue:SetJustifyV(config.ManaValueJustifyV)
+
+	self.ManaOrb.Value = manaValue
+	UpdatePlayerManaValueTag(self)
+
+	-- Mana Percentage
+	--------------------------------------------
+	local manaPerc = manaCaseFrame:CreateFontString(nil, "OVERLAY")
+	if (config.ManaPercentagePosition) then
+		manaPerc:SetPoint(unpack(config.ManaPercentagePosition))
+	else
+		manaPerc:SetPoint("TOP", manaValue, "BOTTOM", 0, -2)
+	end
+	manaPerc:SetFontObject(config.ManaPercentageFont or config.ManaValueFont)
+	local manaPercColor = config.ManaPercentageColor or config.ManaValueColor or { 1, 1, 1, 1 }
+	manaPerc:SetTextColor(manaPercColor[1], manaPercColor[2], manaPercColor[3], manaPercColor[4] or 1)
+	manaPerc:SetJustifyH(config.ManaPercentageJustifyH or "CENTER")
+	manaPerc:SetJustifyV(config.ManaPercentageJustifyV or "TOP")
+	self:Tag(manaPerc, prefix("[*:ManaPercent]"))
+	manaPerc:Hide() -- Hide mana percentage
+
+	self.ManaOrb.Percent = manaPerc
+	ApplyPlayerPowerValueAlpha(self)
+	RefreshManaOrb(self, "StyleInit", GetPlayerPowerUnit(self))
+
+	-- CombatFeedback Text
+	--------------------------------------------
+	local feedbackText = overlay:CreateFontString(nil, "OVERLAY")
+	feedbackText:SetPoint(config.CombatFeedbackPosition[1], self[config.CombatFeedbackAnchorElement], unpack(config.CombatFeedbackPosition))
+	feedbackText:SetFontObject(config.CombatFeedbackFont)
+
+	self.CombatFeedback = feedbackText
+
+	-- Combat Indicator
+	--------------------------------------------
+	local combatIndicator = overlay:CreateTexture(nil, "OVERLAY", nil, -2)
+	combatIndicator:SetSize(unpack(config.CombatIndicatorSize))
+	combatIndicator:SetPoint(unpack(config.CombatIndicatorPosition))
+	combatIndicator:SetTexture(config.CombatIndicatorTexture)
+	combatIndicator:SetVertexColor(unpack(config.CombatIndicatorColor))
+
+	self.CombatIndicator = combatIndicator
+
+	-- PvP Indicator
+	--------------------------------------------
+	local PvPIndicator = overlay:CreateTexture(nil, "OVERLAY", nil, -2)
+
+	self.PvPIndicator = PvPIndicator
+	self.PvPIndicator.Override = PvPIndicator_Override
+	ApplyPlayerPvPIndicatorLayout(self)
+
+	-- Threat Indicator
+	--------------------------------------------
+	local threatIndicator = CreateFrame("Frame", nil, self)
+	threatIndicator:SetFrameLevel(self:GetFrameLevel() - 2)
+	threatIndicator:SetAllPoints()
+
+	threatIndicator.textures = {
+		Health = threatIndicator:CreateTexture(nil, "BACKGROUND", nil, -3),
+		PowerBar = power:CreateTexture(nil, "BACKGROUND", nil, -3),
+		PowerBackdrop = power:CreateTexture(nil, "ARTWORK", nil, 1),
+		ManaOrb = mana:CreateTexture(nil, "BACKGROUND", nil, -3),
+	}
+	threatIndicator.Show = function(self)
+		self.isShown = true
+		for key,texture in next,self.textures do
+			texture:Show()
+		end
+	end
+	threatIndicator.Hide = function(self)
+		self.isShown = nil
+		for key,texture in next,self.textures do
+			texture:Hide()
+		end
+	end
+	threatIndicator.PostUpdate = function(self, unit, status, r, g, b)
+		if (self.isShown) then
+			local safeR = (type(r) == "number" and (not issecretvalue or not issecretvalue(r))) and r or 1
+			local safeG = (type(g) == "number" and (not issecretvalue or not issecretvalue(g))) and g or 0
+			local safeB = (type(b) == "number" and (not issecretvalue or not issecretvalue(b))) and b or 0
+			for key,texture in next,self.textures do
+				texture:SetVertexColor(safeR, safeG, safeB)
+			end
+		end
+	end
+
+	self.ThreatIndicator = threatIndicator
+
+	-- Auras
+	--------------------------------------------
+	local auras = ns.PlayerAuraContainers.Create(self, {
+		width = config.AurasSize[1],
+		height = config.AurasSize[2],
+		size = config.AuraSize,
+		spacing = config.AuraSpacing,
+		spacingX = config.AurasSpacingX,
+		spacingY = config.AurasSpacingY,
+		initialAnchor = config.AurasInitialAnchor,
+		growthX = config.AurasGrowthX,
+		growthY = config.AurasGrowthY,
+		maxBuffs = config.AurasNumTotal,
+		maxDebuffs = config.AurasNumTotal,
+		disableMouse = config.AurasDisableMouse,
+		disableCooldown = config.AurasDisableCooldown,
+		tooltipAnchor = config.AurasTooltipAnchor,
+		-- Weapon enchants, toggled by playerAuraShowWeaponEnchants in ApplyPlayerAuraLayout.
+		itemEnchantments = true
+	})
+	auras:SetSize(unpack(config.AurasSize))
+	auras:SetPoint(unpack(config.AurasPosition))
+	self.PlayerAuras = auras
+
+	local debuffHolder = CreateFrame("Frame", nil, UIParent)
+	debuffHolder:SetFrameStrata(self:GetFrameStrata())
+	debuffHolder:SetFrameLevel(self:GetFrameLevel() + 1)
+	do
+		local holderWidth = config.AurasSize[1] + PLAYER_DEBUFF_HOLDER_PADDING_LEFT + PLAYER_DEBUFF_HOLDER_PADDING_RIGHT
+		local holderHeight = config.AurasSize[2] + PLAYER_DEBUFF_HOLDER_PADDING_TOP + PLAYER_DEBUFF_HOLDER_PADDING_BOTTOM
+		debuffHolder:SetSize(holderWidth, holderHeight)
+	end
+	debuffHolder:Hide()
+	self.DebuffHolder = debuffHolder
+
+	local debuffs = ns.PlayerAuraContainers.Create(debuffHolder, {
+		width = config.AurasSize[1],
+		height = config.AurasSize[2],
+		size = config.AuraSize,
+		spacing = config.AuraSpacing,
+		spacingX = config.AurasSpacingX,
+		spacingY = config.AurasSpacingY,
+		initialAnchor = "TOPLEFT",
+		growthX = "RIGHT",
+		growthY = "DOWN",
+		maxBuffs = 0,
+		maxDebuffs = 0,
+		disableMouse = config.AurasDisableMouse,
+		disableCooldown = config.AurasDisableCooldown,
+		tooltipAnchor = config.AurasTooltipAnchor
+	})
+	debuffs:SetPoint("TOPLEFT", debuffHolder, "TOPLEFT", PLAYER_DEBUFF_HOLDER_PADDING_LEFT, -PLAYER_DEBUFF_HOLDER_PADDING_TOP)
+	debuffs:SetFrameStrata(self:GetFrameStrata())
+	debuffs:SetFrameLevel(self:GetFrameLevel() + 1)
+	debuffs:SetSize(unpack(config.AurasSize))
+	self.PlayerDebuffs = debuffs
+	debuffs:Hide()
+	debuffHolder:Hide()
+
+	ApplyPlayerAuraLayout(self)
+	ns.API.AttachScriptSafe(self, "OnHide", function(owner)
+		-- When the player frame hides, check if we should also hide the separate debuff layer.
+		-- Use the visibility intent flag (set by UpdatePlayerDebuffShownState) to decide.
+		-- If intendedVisibility is true, the debuff layer should stay visible even when the frame hides.
+		local debuffTarget = owner.DebuffHolder or owner.PlayerDebuffs
+		if (not debuffTarget) then
+			return
+		end
+		-- If debuff holder has an explicit visibility intent to be shown, don't hide it on frame hide.
+		-- This protects against transient frame visibility changes hiding the debuff row unexpectedly.
+		if (debuffTarget.intendedVisibility) then
+			return
+		end
+		-- Otherwise, ensure it's hidden when the frame hides.
+		if (owner.DebuffHolder) then
+			owner.DebuffHolder:Hide()
+		elseif (owner.PlayerDebuffs) then
+			owner.PlayerDebuffs:Hide()
+		end
+	end)
+	ns.API.AttachScriptSafe(self, "OnShow", function(owner)
+		ApplyPlayerAuraLayout(owner)
+	end)
+
+	-- Seasonal Flavors
+	--------------------------------------------
+	-- Feast of Winter Veil
+	if (ns.API.IsWinterVeil() and UsePlayerIceCrystal()) then
+		local winterVeilPower = power:CreateTexture(nil, "OVERLAY", nil, 0)
+		winterVeilPower:SetSize(unpack(config.Seasonal.WinterVeilPowerSize))
+		winterVeilPower:SetPoint(unpack(config.Seasonal.WinterVeilPowerPlace))
+		winterVeilPower:SetTexture(config.Seasonal.WinterVeilPowerTexture)
+
+		self.Power.WinterVeil = winterVeilPower
+
+		local winterVeilMana = manaCaseFrame:CreateTexture(nil, "OVERLAY", nil, 0)
+		winterVeilMana:SetSize(unpack(config.Seasonal.WinterVeilManaSize))
+		winterVeilMana:SetPoint(unpack(config.Seasonal.WinterVeilManaPlace))
+		winterVeilMana:SetTexture(config.Seasonal.WinterVeilManaTexture)
+
+		self.ManaOrb.WinterVeil = winterVeilMana
+	end
+
+	-- Love is in the Air
+	if (ns.API.IsLoveFestival()) then
+		combatIndicator:SetSize(unpack(config.Seasonal.LoveFestivalCombatIndicatorSize))
+		combatIndicator:ClearAllPoints()
+		combatIndicator:SetPoint(unpack(config.Seasonal.LoveFestivalCombatIndicatorPosition))
+		combatIndicator:SetTexture(config.Seasonal.LoveFestivalCombatIndicatorTexture)
+		combatIndicator:SetVertexColor(unpack(config.Seasonal.LoveFestivalCombatIndicatorColor))
+	end
+
+	-- Register events to handle texture updates.
+	self:RegisterEvent("PLAYER_ALIVE", UnitFrame_OnEvent, true)
+	self:RegisterEvent("PLAYER_ENTERING_WORLD", UnitFrame_OnEvent, true)
+	self:RegisterEvent("DISABLE_XP_GAIN", UnitFrame_OnEvent, true)
+	self:RegisterEvent("ENABLE_XP_GAIN", UnitFrame_OnEvent, true)
+	self:RegisterEvent("PLAYER_LEVEL_UP", UnitFrame_OnEvent, true)
+	self:RegisterEvent("PLAYER_XP_UPDATE", UnitFrame_OnEvent, true)
+	self:RegisterEvent("PLAYER_REGEN_ENABLED", UnitFrame_OnEvent, true)
+	self:RegisterEvent("PLAYER_REGEN_DISABLED", UnitFrame_OnEvent, true)
+
+	if (ns.IsRetail) then
+		--self:RegisterEvent("UNIT_HEALTH", UnitFrame_OnEvent)
+		--self:RegisterEvent("UNIT_MAXHEALTH", UnitFrame_OnEvent)
+		--self:RegisterEvent("UNIT_HEAL_PREDICTION", UnitFrame_OnEvent)
+		self:RegisterEvent("UNIT_ABSORB_AMOUNT_CHANGED", UnitFrame_OnEvent)
+		self:RegisterEvent("UNIT_POWER_UPDATE", UnitFrame_OnEvent)
+		self:RegisterEvent("UNIT_POWER_FREQUENT", UnitFrame_OnEvent)
+		self:RegisterEvent("UNIT_MAXPOWER", UnitFrame_OnEvent)
+		self:RegisterEvent("UNIT_DISPLAYPOWER", UnitFrame_OnEvent)
+		self:RegisterEvent("UNIT_ENTERED_VEHICLE", UnitFrame_OnEvent)
+		self:RegisterEvent("UNIT_EXITED_VEHICLE", UnitFrame_OnEvent)
+		--self:RegisterEvent("UNIT_HEAL_ABSORB_AMOUNT_CHANGED", UnitFrame_OnEvent)
+
+		if (playerClass == "PALADIN") then
+			self:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED", UnitFrame_OnEvent)
+		end
+	end
+
+	-- Textures need an update when frame is displayed.
+	self.PostUpdate = UnitFrame_PostUpdate
+
+end
+
+PlayerFrameMod.CreateUnitFrames = function(self)
+	-- The WoW11 start-up builds the frame and then calls Enable, whose OnEnable
+	-- builds it again: spawn once, or a second, unanchored copy keeps handling events.
+	if (self.frame) then return end
+
+	local unit, name = "player", "Player"
+
+	oUF:RegisterStyle(ns.Prefix..name, style)
+	oUF:SetActiveStyle(ns.Prefix..name)
+
+	self.frame = ns.UnitFrame.Spawn(unit, ns.Prefix.."UnitFrame"..name)
+
+	local enabled = true
+
+	self.frame.Enable = function(self)
+		enabled = true
+		local ok = API.TryCall(RegisterAttributeDriver, self, "unit", "[vehicleui]vehicle; player")
+		if (not ok) then
+			-- Taint/lockdown fallback: keep the frame visible on player unit
+			-- and retry secure driver registration when combat ends.
+			API.SafeCall("Player.Enable.SetAttribute", self.SetAttribute, self, "unit", "player")
+			PlayerFrameMod:RegisterEvent("PLAYER_REGEN_ENABLED", "RetryEnableDriver")
+		end
+		self:Show()
+	end
+
+	self.frame.Disable = function(self)
+		enabled = false
+		API.SafeCall("Player.Disable.UnregisterAttributeDriver", UnregisterAttributeDriver, self, "unit")
+		self:Hide()
+	end
+
+	self.frame.IsEnabled = function(self)
+		return enabled
+	end
+
+	UnregisterUnitWatch(self.frame)
+	self.frame:SetAttribute("toggleForVehicle", false)
+
+end
+
+-- The frame has just been put at its saved spot; Legacy may take it to the centre.
+PlayerFrameMod.PostUpdatePositionAndScale = function(self)
+	ns.UnitFrameModule.PostUpdatePositionAndScale(self)
+	if (ns.LegacyHUD and ns.LegacyHUD.UpdatePlayerCenter) then
+		ns.LegacyHUD:UpdatePlayerCenter(self)
+	end
+end
+
+PlayerFrameMod.RetryEnableDriver = function(self)
+	if (InCombatLockdown()) then
+		return
+	end
+	self:UnregisterEvent("PLAYER_REGEN_ENABLED", "RetryEnableDriver")
+	if (not self.frame or not self.frame.IsEnabled or not self.frame:IsEnabled()) then
+		return
+	end
+	API.SafeCall("Player.Retry.UnregisterAttributeDriver", UnregisterAttributeDriver, self.frame, "unit")
+	API.SafeCall("Player.Retry.RegisterAttributeDriver", RegisterAttributeDriver, self.frame, "unit", "[vehicleui]vehicle; player")
+end
+
+PlayerFrameMod.Update = function(self)
+	UpdatePlayerPowerValueTag(self.frame)
+	UpdatePlayerManaValueTag(self.frame)
+	ApplyPlayerPowerValueTextScale(self.frame)
+	ApplyPlayerPowerValueAlpha(self.frame)
+	ApplyPlayerPvPIndicatorLayout(self.frame)
+	ApplyPlayerAuraLayout(self.frame)
+	self:UpdateAuraAnchors()
+	self:UpdateSecondaryManaAnchor()
+
+	self.frame.Health.colorClass = self.db.profile.useClassColor
+	self.frame.Health.colorHealth = true
+	self.frame.Health:ForceUpdate()
+
+	if (self.db.profile.showAuras) then
+		self.frame.PlayerAuras:SetDisplayEnabled(true)
+		self.frame.PlayerAuras:ForceUpdate()
+		-- Use atomic UpdatePlayerDebuffShownState instead of direct SetShown calls.
+		UpdatePlayerDebuffShownState(self.frame, true)
+		if (self.frame.DebuffHolder and self.frame.DebuffHolder.intendedVisibility
+			and self.frame.PlayerDebuffs and self.frame.PlayerDebuffs.ForceUpdate) then
+			self.frame.PlayerDebuffs:ForceUpdate()
+		end
+	else
+		self.frame.PlayerAuras:SetDisplayEnabled(false)
+		if (self.frame.PlayerDebuffs) then
+			self.frame.PlayerDebuffs:SetDisplayEnabled(false)
+		end
+		if (self.frame.DebuffHolder) then
+			self.frame.DebuffHolder:Hide()
+		elseif (self.frame.PlayerDebuffs) then
+			self.frame.PlayerDebuffs:Hide()
+		end
+	end
+
+	if (self.db.profile.showCastbar) then
+		self.frame:EnableElement("Castbar")
+		self.frame.Castbar:ForceUpdate()
+	else
+		self.frame:DisableElement("Castbar")
+	end
+
+	UpdatePlayerHealthPercentVisibility(self.frame)
+
+	if (UsePlayerIceCrystal()) then
+		self.frame.Power.colorPower = false
+		self.frame.Power.PostUpdateColor = nil
+		self.frame.Power:SetStatusBarColor(1,1,1,1)
+	else
+		self.frame.Power.colorPower = true
+		self.frame.Power.PostUpdateColor = Power_PostUpdateColor
+	end
+
+	UpdateManaOrbVisibility(self.frame, GetPlayerPowerUnit(self.frame))
+	if (self.frame.PvPIndicator and self.frame.PvPIndicator.ForceUpdate) then
+		self.frame.PvPIndicator:ForceUpdate()
+	end
+
+	if (self.frame:IsElementEnabled("Power")) then
+		self.frame.Power:ForceUpdate()
+	end
+	RefreshManaOrb(self.frame, "Update", GetPlayerPowerUnit(self.frame))
+
+	self.frame:PostUpdate()
+end
+
+PlayerFrameMod.OnEnable = function(self)
+	NormalizePowerOffsetBaseline(self)
+
+	-- Blizzard's PlayerPowerBarAlt is left to Blizzard (some encounters and tutorials rely on it):
+	-- Components/Misc/SanityBarFix.lua keeps its events. This used to unregister them "only on WoW10",
+	-- but WoW10 is WoW11 on both clients, so it raced SanityBarFix at login (FixLog 2026-10-23).
+
+	self:CreateUnitFrames()
+	self:CreateAnchor(HUD_EDIT_MODE_PLAYER_FRAME_LABEL or PLAYER)
+	self:CreateAuraAnchors()
+	self:CreateSecondaryManaAnchor()
+
+	ns.MovableModulePrototype.OnEnable(self)
+end
+
+
+
+
+

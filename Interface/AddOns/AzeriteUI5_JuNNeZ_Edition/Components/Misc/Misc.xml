@@ -1,0 +1,32 @@
+<Ui xmlns="http://www.blizzard.com/wow/ui/">
+
+	<Script file="AlertFrames.lua"/>
+	<Script file="ArcheologyBar.lua"/>
+	<Script file="Banners.lua"/>
+	<Script file="ChatFrames.lua"/>
+	<Script file="Containers.lua"/>
+
+	<Script file="Durability.lua"/>
+	<Script file="BugSack.lua"/>
+	<Script file="ErrorsFrame.lua"/>
+	<Script file="GameMenu.lua"/>
+	<Script file="Info.lua"/>
+	<Script file="MythicPlus.lua"/>
+	<Script file="Minimap.lua"/>
+	<Script file="MirrorTimers.lua"/>
+	<Script file="QuestTimers.lua"/>
+	<Script file="RaidBossEmotes.lua"/>
+	<Script file="RaidTools.lua"/>
+	<Script file="RaidToolsActions.lua"/>
+	<Script file="TargetMarkersLite.lua"/>
+	<Script file="RaidWarnings.lua"/>
+	<Script file="Tooltips.lua"/>
+	<Script file="TrackerWoW11.lua"/>
+	<Script file="Tutorials.lua"/>
+	<Script file="UIWidgetBelowMinimap.lua"/>
+	<Script file="UIWidgetTopCenter.lua"/>
+	<Script file="VehicleSeat.lua"/>
+	<Script file="SanityBarFix.lua"/>
+	<Script file="WorldMap.lua"/>
+
+</Ui>

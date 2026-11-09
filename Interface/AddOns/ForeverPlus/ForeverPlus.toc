@@ -1,0 +1,89 @@
+## Interface: 16001
+## Title: ForeverPlus
+## Notes: Personal UI customizations for WoW Forever
+## Notes-deDE: Persönliche Anpassungen der Oberfläche für WoW Forever
+## Notes-esES: Personalización de la interfaz para WoW Forever
+## Notes-esMX: Personalización de la interfaz para WoW Forever
+## Notes-frFR: Personnalisations de l'interface pour WoW Forever
+## Notes-ruRU: Персональные настройки интерфейса для WoW Forever
+## Author: Epicstrike
+## Version: 1.0.7
+## SavedVariables: ForeverPlusDB
+## X-License: All Rights Reserved (see LICENSE)
+## IconTexture: Interface\AddOns\ForeverPlus\Media\Icon
+## AddonCompartmentFunc: ForeverPlus_OnAddonCompartmentClick
+## AddonCompartmentFuncOnEnter: ForeverPlus_OnAddonCompartmentEnter
+## AddonCompartmentFuncOnLeave: ForeverPlus_OnAddonCompartmentLeave
+
+# Order matters: Core first, Boot last. Locale before Init, because every
+# file after it marks its texts with L, Init.lua included.
+Core\Locale.lua
+Locales\deDE.lua
+Locales\esES.lua
+Locales\frFR.lua
+Locales\ruRU.lua
+Core\Init.lua
+Core\Util.lua
+Core\Serialize.lua
+Core\Theme.lua
+Core\Widgets.lua
+Core\Merchant.lua
+Core\Bars.lua
+Core\Warnings.lua
+Core\Weapon.lua
+Core\ChatText.lua
+Core\Options.lua
+Core\Config.lua
+Core\Commands.lua
+
+# Tables rather than logic. Loaded before the modules that read them.
+Data\Buffs.lua
+Data\Consumables.lua
+Data\Tracking.lua
+Data\Gathering.lua
+Data\Reagents.lua
+Data\Cooldowns.lua
+
+Modules\Diagnostics.lua
+# A measurement for the backlog, not a feature. Goes with its file.
+Modules\ShieldProbe.lua
+Modules\Menu.lua
+Modules\BarManager.lua
+Modules\Mover.lua
+Modules\Theme.lua
+Modules\Profiles.lua
+Modules\Info.lua
+Modules\QuestAutoTurnIn.lua
+Modules\QuestAutoAccept.lua
+Modules\QuestRewardValue.lua
+Modules\GossipAuto.lua
+Modules\Looting.lua
+Modules\AutoSellGray.lua
+Modules\AutoRepair.lua
+Modules\Interruptions.lua
+Modules\ErrorFilter.lua
+Modules\XPBarText.lua
+Modules\BuffExpiry.lua
+Modules\Consumables.lua
+Modules\Tooltip.lua
+Modules\InfoBar.lua
+Modules\BagSlots.lua
+Modules\AutoBuy.lua
+Modules\Ammunition.lua
+Modules\DurabilityWarning.lua
+Modules\Reagents.lua
+Modules\BagWindow.lua
+Modules\HideElements.lua
+Modules\MinimapButton.lua
+Modules\MailAlts.lua
+Modules\QuestZoneTracking.lua
+# The chat is one module in several files; Chat.lua declares it and the rest
+# register their parts with it, so it loads first.
+Modules\Chat.lua
+Modules\ChatWindow.lua
+Modules\ChatLines.lua
+Modules\ChatSearch.lua
+Modules\ChatSound.lua
+Modules\ChatHistory.lua
+
+Core\Boot.lua

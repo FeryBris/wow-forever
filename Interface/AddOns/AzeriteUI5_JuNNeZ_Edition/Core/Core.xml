@@ -1,0 +1,70 @@
+<Ui xmlns="http://www.blizzard.com/wow/ui/">
+
+	<!-- Data -->
+	<Script file="Common\Constants.lua"/>
+	<Script file="Common\Colors.lua"/>
+
+	<!--
+		API
+		* Can rely on anything in the data folder.
+		* Should not cross-reference API files.
+	-->
+	<Script file="API\Abbreviations.lua"/>
+	<Script file="API\Addons.lua"/>
+	<Script file="API\Assets.lua"/>
+	<Script file="API\Colors.lua"/>
+	<Script file="API\Frames.lua"/>
+	<Script file="API\Positions.lua"/>
+	<Script file="API\Scale.lua"/>
+	<Script file="API\SecureDrivers.lua"/>
+	<Script file="API\Tables.lua"/>
+	<Script file="API\ProtectedCall.lua"/>
+	<Script file="API\SecretValues.lua"/>
+	<Script file="API\Anchoring.lua"/>
+	<Script file="API\Layout.lua"/>
+	<Script file="API\Snapping.lua"/>
+	<Script file="API\Time.lua"/>
+
+	<!--
+		Widgets
+		* Can rely on assets, data and global API.
+		* Must support Widget cross-referencing,
+		  so don't define Widget upvalues at loading!
+	-->
+	<Script file="Widgets\Cooldowns.lua"/>
+	<Script file="Widgets\Popups.lua"/>
+
+	<!-- SharedMedia -->
+	<Script file="SharedMedia.lua"/>
+
+	<!-- Core -->
+	<Script file="Core.lua"/>
+	<Script file="ModulePrototype.lua"/>
+	<Script file="MovableFrameManager.lua"/>
+	<Script file="MovableFrameModulePrototype.lua"/>
+	<Script file="FixBlizzardBugs.lua"/>
+	<Script file="ExplorerMode.lua"/>
+	<Script file="Development.lua"/>
+	<!-- /azdebug and the probes load on demand from AzeriteUI5_JuNNeZ_Edition_Debug. -->
+	<Script file="DebugLoader.lua"/>
+	<Script file="Experimental.lua"/>
+	<Script file="LegacyHUD.lua"/>
+	<Script file="ThemeEngine.lua"/>
+	<Script file="PaladinTheme.lua"/>
+	<Script file="HunterMedia.lua"/>
+	<Script file="HunterGeometry.lua" />
+	<Script file="HunterTheme.lua"/>
+	<Script file="MageCrystalPreview.lua"/>
+	<Script file="MageTheme.lua"/>
+	<Script file="DruidTheme.lua"/>
+	<Script file="WarriorTheme.lua"/>
+	<Script file="RogueTheme.lua"/>
+	<Script file="ShamanTheme.lua"/>
+	<Script file="MoonwellSlosh.lua"/>
+	<Script file="WildheartCrystal.lua"/>
+	<Script file="ThemeEffects.lua"/>
+	<Script file="HalloweenEffects.lua"/>
+	<Script file="Halloween.lua"/>
+	<Script file="ThemeBarPreview.lua"/>
+
+</Ui>

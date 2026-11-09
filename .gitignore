@@ -1,0 +1,15 @@
+BlizzardError.exe
+Cache/
+D3D12/
+Fonts/
+GFSDK_Aftermath_Lib.x64.dll
+icudt78l.dat
+libxell.dll
+Logs/
+Screenshots/
+Utils/
+vkd3d-proton.cache
+Wow.exe
+wow_loader.dll
+.flavor.info
+WTF/Config.wtf

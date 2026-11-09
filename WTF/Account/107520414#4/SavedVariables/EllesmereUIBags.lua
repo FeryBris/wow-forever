@@ -1,0 +1,4 @@
+
+EllesmereUIBagsDB = {
+}
+EllesmereUIBagsInventoryDB = nil

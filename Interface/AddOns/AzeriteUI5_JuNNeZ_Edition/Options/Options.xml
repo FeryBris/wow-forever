@@ -1,0 +1,71 @@
+<Ui xmlns="http://www.blizzard.com/wow/ui/">
+
+	<!--
+		The custom options panel.
+		* Kit.lua is art and measurement only, and must load first.
+		* Look.lua is the window style (Rounded or Classic) the panel is built in.
+		* Config.lua reads AceConfig option tables. No frames, no AceGUI.
+		* Defaults.lua knows which settings differ from their defaults.
+		* Combat.lua holds writes made in combat until it ends.
+		* Controls.lua is the new panel's own widgets. No AceGUI at all.
+		* Preview.lua outlines the real frame owned by a changed setting.
+		* Renderer.lua turns an option table into rows of those controls.
+		* Views.lua gathers Quick Start and Changed from settings on other pages.
+		* Changelog.lua is generated from CHANGELOG.md by Tools/BuildChangelog.lua.
+		* PanelOptions.lua is the panel's own settings tab, and the changelog.
+		* Panel.lua is the new window itself, at /az (and the /az new alias).
+		* WhatsNew.lua is the hand-written popup notes; Kit\WhatsNew.lua draws them.
+		* Gallery.lua shows the controls on their own, at /az gallery.
+		* Widgets.lua registers AceGUI widget types for the retained classic window.
+		* Window.lua owns the retained /az classic window, its rail and its search.
+		* Stock AceConfigDialog remains available at /az legacy.
+	-->
+	<Script file="Kit\Kit.lua"/>
+	<Script file="Kit\Look.lua"/>
+	<Script file="Kit\Config.lua"/>
+	<Script file="Kit\Defaults.lua"/>
+	<Script file="Kit\Combat.lua"/>
+	<Script file="Kit\Controls.lua"/>
+	<Script file="Kit\Preview.lua"/>
+	<Script file="Kit\Renderer.lua"/>
+	<Script file="Kit\Views.lua"/>
+	<Script file="Changelog.lua"/>
+	<Script file="Kit\PanelOptions.lua"/>
+	<Script file="Kit\Panel.lua"/>
+	<Script file="WhatsNew.lua"/>
+	<Script file="Kit\WhatsNew.lua"/>
+	<Script file="Kit\FramePanel.lua"/>
+	<Script file="Kit\Gallery.lua"/>
+	<Script file="Kit\Widgets.lua"/>
+	<Script file="Kit\Window.lua"/>
+
+	<Script file="Options.lua"/>
+	<Script file="OptionsPages\ActionBars.lua"/>
+	<Script file="OptionsPages\Auras.lua"/>
+	<Script file="OptionsPages\Bags.lua"/>
+	<Script file="OptionsPages\Chat.lua"/>
+	<Script file="OptionsPages\CooldownManager.lua"/>
+	<!-- Hidden unless Development Mode is on: the control types no shipped
+	     setting uses, so that they can be tested at all. -->
+	<Script file="OptionsPages\ControlTypes.lua"/>
+	<Script file="OptionsPages\Debug.lua"/>
+	<Script file="OptionsPages\ExplorerMode.lua"/>
+	<Script file="OptionsPages\GameMenu.lua"/>
+	<Script file="OptionsPages\Info.lua"/>
+	<Script file="OptionsPages\MicroMenu.lua"/>
+	<Script file="OptionsPages\Minimap.lua"/>
+	<Script file="OptionsPages\MythicPlus.lua"/>
+	<Script file="OptionsPages\WorldMap.lua"/>
+	<Script file="OptionsPages\Nameplates.lua"/>
+	<Script file="OptionsPages\ExecuteRange.lua"/>
+	<Script file="OptionsPages\Widgets.lua"/>
+	<Script file="OptionsPages\Tooltips.lua"/>
+	<Script file="OptionsPages\Tracker.lua"/>
+	<Script file="OptionsPages\Themes.lua"/>
+	<Script file="OptionsPages\UnitFrames.lua"/>
+	<Script file="OptionsPages\HealthPrediction.lua"/>
+	<Script file="OptionsPages\GroupIndicators.lua"/>
+	<Script file="OptionsPages\RaidTools.lua"/>
+	<Script file="OptionsPages\AuraSounds.lua"/>
+
+</Ui>

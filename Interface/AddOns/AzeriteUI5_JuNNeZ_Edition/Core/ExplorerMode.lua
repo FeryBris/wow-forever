@@ -1,0 +1,920 @@
+--[[
+
+	The MIT License (MIT)
+
+	Copyright (c) 2026 Lars Norberg
+	Copyright (c) 2026 Jonas "JuNNeZ" Andersen (JuNNeZ Edition modifications)
+
+	Permission is hereby granted, free of charge, to any person obtaining a copy
+	of this software and associated documentation files (the "Software"), to deal
+	in the Software without restriction, including without limitation the rights
+	to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+	copies of the Software, and to permit persons to whom the Software is
+	furnished to do so, subject to the following conditions:
+
+	The above copyright notice and this permission notice shall be included in all
+	copies or substantial portions of the Software.
+
+	THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+	IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+	FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+	AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+	LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+	OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+	SOFTWARE.
+
+--]]
+local Addon, ns = ...
+local ExplorerMode = ns:NewModule("ExplorerMode", ns.MovableModulePrototype, "LibMoreEvents-1.0", "AceTimer-3.0")
+
+local LFF = LibStub("LibFadingFrames-1.0")
+
+-- Lua API
+local next = next
+local pairs = pairs
+local type = type
+
+-- Sourced from BlizzardInterfaceResources/Resources/EnumerationTables.lua
+local POWER_TYPE_MANA = Enum.PowerType.Mana
+
+-- WoW API. Since 12.0.0 these live in C_ActionBar on Retail and Forever; the
+-- globals survive only in Blizzard_DeprecatedActionBar, which loads only while
+-- the loadDeprecationFallbacks CVar is on. The global is the fallback.
+local C_ActionBar = C_ActionBar
+local GetActionBarAPI = function(name)
+	return (C_ActionBar and C_ActionBar[name]) or _G[name]
+end
+local HasVehicleActionBar = GetActionBarAPI("HasVehicleActionBar")
+local HasOverrideActionBar = GetActionBarAPI("HasOverrideActionBar")
+local HasTempShapeshiftActionBar = GetActionBarAPI("HasTempShapeshiftActionBar")
+local IsPossessBarVisible = GetActionBarAPI("IsPossessBarVisible")
+local HasBonusActionBar = GetActionBarAPI("HasBonusActionBar")
+local GetBonusBarOffset = GetActionBarAPI("GetBonusBarOffset")
+
+-- Player Constants
+local _,playerClass = UnitClass("player")
+local playerLevel = UnitLevel("player")
+
+-- Default settings, don't modify these.
+local defaults = { profile = ns:Merge({
+	enabled = false,
+
+	-- How long to wait before initiating
+	-- Explorer Mode after a loading screen.
+	delayOnLogin = 15,
+	delayOnReload = 0,
+	delayOnZoning = 0,
+	delayOnCombatEnd = 0,
+
+	-- These options are kind of backwards,
+	-- as they set when to EXIT the Explorer Mode.
+	fadeInCombat = false,
+	fadeInGroups = false,
+	fadeInInstances = false,
+	fadeInMythicPlus = false,
+	fadeWithFriendlyTarget = false,
+	fadeWithHostileTarget = false,
+	fadeWithDeadTarget = true,
+	fadeWithFocusTarget = false,
+	fadeInVehicles = false,
+	fadeWithLowMana = false,
+		fadeThresholdMana = .75,
+		fadeThresholdManaInForms = .5,
+		fadeThresholdEnergy = 0,
+	fadeWithLowHealth = false,
+		fadeThresholdHealth = .9,
+
+	-- Which elements to fade out
+	-- while in Explorer Mode.
+	fadeActionBars = true,
+	fadePetBar = true,
+	fadeStanceBar = true,
+	fadePlayerFrame = true,
+	fadePlayerClassPower = true,
+	fadePetFrame = true,
+	fadeFocusFrame = true,
+	fadeTracker = true,
+	fadeChatFrames = true,
+	fadeCooldownManager = true
+
+}, ns.MovableModulePrototype.defaults) }
+
+local FADE_OPTION_KEYS = {
+	"fadeActionBars",
+	"fadePetBar",
+	"fadeStanceBar",
+	"fadePlayerFrame",
+	"fadePlayerClassPower",
+	"fadePetFrame",
+	"fadeFocusFrame",
+	"fadeTracker",
+	"fadeChatFrames",
+	"fadeCooldownManager"
+}
+
+ExplorerMode.GenerateDefaults = function(self)
+	return defaults
+end
+
+ExplorerMode.UpdateSettings = function(self, forceRefresh)
+
+	local db = self.db.profile
+
+	if (db.enabled and not self.enabled) then
+		self:EnableExplorerMode()
+	elseif (not db.enabled and self.enabled) then
+		self:DisableExplorerMode()
+	end
+
+	local forced = not db.enabled or self:CheckForForcedState()
+	self.FORCED = forced
+
+	local modulesInfo = self._modulesInfo
+	if (not modulesInfo) then
+		modulesInfo = {
+			ActionBars = { moduleName = "ActionBars" },
+			PetBar = { moduleName = "PetBar" },
+			StanceBar = { moduleName = "StanceBar" },
+			PlayerFrame = { moduleName = "PlayerFrame" },
+			PlayerFrameAlternate = { moduleName = "PlayerFrameAlternate" },
+			PlayerFrameParty = { moduleName = "PlayerFrameParty" },
+			PlayerClassPowerFrame = { moduleName = "PlayerClassPowerFrame" },
+			PetFrame = { moduleName = "PetFrame" },
+			FocusFrame = { moduleName = "FocusFrame" },
+			Tracker = { moduleName = "Tracker" },
+			CooldownManager = { moduleName = "CooldownManager" }
+		}
+		self._modulesInfo = modulesInfo
+	end
+
+	local moduleStateCache = self._moduleStateCache or {}
+	local moduleChanged = false
+	for key, info in pairs(modulesInfo) do
+		local module = ns:GetModule(info.moduleName, true)
+		info.module = module
+		local enabled = module and module:IsEnabled() or false
+		info.enabled = enabled
+		if (moduleStateCache[key] == nil) or (moduleStateCache[key] ~= enabled) then
+			moduleChanged = true
+		end
+	end
+
+	local needsRefresh = forceRefresh or moduleChanged
+
+	if (not needsRefresh) then
+		local lastForced = self._lastForced
+		local lastEnabled = self._lastEnabled
+		if (lastForced == nil) or (forced ~= lastForced) or (lastEnabled == nil) or (db.enabled ~= lastEnabled) then
+			needsRefresh = true
+		end
+	end
+
+	if (not needsRefresh) then
+		local snapshot = self._fadeOptionSnapshot
+		if (not snapshot) then
+			needsRefresh = true
+		else
+			for _, key in ipairs(FADE_OPTION_KEYS) do
+				if (snapshot[key] ~= db[key]) then
+					needsRefresh = true
+					break
+				end
+			end
+		end
+	end
+
+	if (not needsRefresh) then
+		return
+	end
+
+	self._lastForced = forced
+	self._lastEnabled = db.enabled
+
+	local snapshot = self._fadeOptionSnapshot or {}
+	for _, key in ipairs(FADE_OPTION_KEYS) do
+		snapshot[key] = db[key]
+	end
+	self._fadeOptionSnapshot = snapshot
+
+	self._moduleStateCache = moduleStateCache
+	for key, info in pairs(modulesInfo) do
+		moduleStateCache[key] = info.enabled
+	end
+
+	-- Action Bars
+	--------------------------------------------
+	local ActionBarsInfo = modulesInfo.ActionBars
+	local ActionBars = ActionBarsInfo.module
+	if (ActionBars and ActionBars.bars) then
+		local fade = not forced and ActionBarsInfo.enabled and db.enabled and db.fadeActionBars
+		for id,bar in next,ActionBars.bars do
+
+			-- Exempt bars that are fully set to fade
+			-- in their own actionbar settings.
+			local db = bar.config
+			local enabled = (not bar.IsEnabled) or bar:IsEnabled()
+			local fullyFaded = db.enableBarFading and db.fadeAlone and db.fadeFrom == 1
+			if (fade and enabled and not fullyFaded) then
+
+				-- Register the bar for fading
+				LFF:RegisterFrameForFading(bar, self:GetName())
+			else
+				-- Unregister the bar for fading, does not affect button fading.
+				LFF:UnregisterFrameForFading(bar)
+			end
+
+			-- Update the bar's button fading.
+			if (db.enableBarFading) then
+				bar:UpdateFading() -- is this still needed?
+			end
+		end
+	end
+
+	local PetBarInfo = modulesInfo.PetBar
+	local PetBar = PetBarInfo.module
+	if (PetBar) then
+		local fade = not forced and PetBarInfo.enabled and db.enabled and db.fadePetBar
+		local petBar = PetBar.bar
+		if (petBar) then
+			local db = petBar.config
+			local enabled = (not petBar.IsEnabled) or petBar:IsEnabled()
+			local fullyFaded = db.enableBarFading and db.fadeAlone and db.fadeFrom == 1
+			if (fade and enabled and not fullyFaded) then
+				LFF:RegisterFrameForFading(petBar, self:GetName())
+			else
+				LFF:UnregisterFrameForFading(petBar)
+			end
+		end
+	end
+
+	local StanceBarInfo = modulesInfo.StanceBar
+	local StanceBar = StanceBarInfo.module
+	if (StanceBar) then
+		local fade = not forced and StanceBarInfo.enabled and db.enabled and db.fadeStanceBar
+		local stanceBar = StanceBar.bar
+		if (stanceBar) then
+			local db = stanceBar.config
+			local enabled = (not stanceBar.IsEnabled) or stanceBar:IsEnabled()
+			local fullyFaded = db.enableBarFading and db.fadeAlone and db.fadeFrom == 1
+			if (fade and enabled and not fullyFaded) then
+				LFF:RegisterFrameForFading(stanceBar, self:GetName())
+			else
+				LFF:UnregisterFrameForFading(stanceBar)
+			end
+		end
+	end
+
+	-- Unit Frames
+	--------------------------------------------
+	local PlayerFrameInfo = modulesInfo.PlayerFrame
+	local PlayerFrame = PlayerFrameInfo.module
+	if (PlayerFrame) then
+		local fade = not forced and PlayerFrameInfo.enabled and db.enabled and db.fadePlayerFrame
+		local playerFrame = PlayerFrame:GetFrame()
+		if (playerFrame) then
+			if (fade) then
+				LFF:RegisterFrameForFading(playerFrame, self:GetName())
+			else
+				LFF:UnregisterFrameForFading(playerFrame)
+			end
+		end
+	end
+
+	local PlayerFrameAlternateInfo = modulesInfo.PlayerFrameAlternate
+	local PlayerFrameAlternate = PlayerFrameAlternateInfo.module
+	if (PlayerFrameAlternate) then
+		local fade = not forced and PlayerFrameAlternateInfo.enabled and db.enabled and db.fadePlayerFrame
+		local playerFrame = PlayerFrameAlternate:GetFrame()
+		if (playerFrame) then
+			if (fade) then
+				LFF:RegisterFrameForFading(playerFrame, self:GetName())
+				LFF:RegisterFrameForFading(playerFrame.Portrait, self:GetName())
+			else
+				LFF:UnregisterFrameForFading(playerFrame)
+				LFF:UnregisterFrameForFading(playerFrame.Portrait)
+			end
+		end
+	end
+
+	-- The party-style player frame fades with the player frame. Its portrait model is a
+	-- child of the frame, and the portrait alpha fix follows the frame's alpha.
+	local PlayerFramePartyInfo = modulesInfo.PlayerFrameParty
+	local PlayerFrameParty = PlayerFramePartyInfo.module
+	if (PlayerFrameParty) then
+		local fade = not forced and PlayerFramePartyInfo.enabled and db.enabled and db.fadePlayerFrame
+		local playerFrame = PlayerFrameParty:GetFrame()
+		if (playerFrame) then
+			if (fade) then
+				LFF:RegisterFrameForFading(playerFrame, self:GetName())
+			else
+				LFF:UnregisterFrameForFading(playerFrame)
+			end
+		end
+	end
+
+	local PlayerClassPowerFrameInfo = modulesInfo.PlayerClassPowerFrame
+	local PlayerClassPowerFrame = PlayerClassPowerFrameInfo.module
+	if (PlayerClassPowerFrame) then
+		local fade = not forced and PlayerClassPowerFrameInfo.enabled and db.enabled and db.fadePlayerClassPower
+		local playerClassPowerFrame = PlayerClassPowerFrame:GetFrame()
+		if (playerClassPowerFrame) then
+			if (fade) then
+				LFF:RegisterFrameForFading(playerClassPowerFrame, self:GetName())
+			else
+				LFF:UnregisterFrameForFading(playerClassPowerFrame)
+			end
+		end
+	end
+
+	local PetFrameInfo = modulesInfo.PetFrame
+	local PetFrame = PetFrameInfo.module
+	if (PetFrame) then
+		local fade = not forced and PetFrameInfo.enabled and db.enabled and db.fadePetFrame
+		local petFrame = PetFrame:GetFrame()
+		if (petFrame) then
+			if (fade) then
+				LFF:RegisterFrameForFading(petFrame, self:GetName())
+			else
+				LFF:UnregisterFrameForFading(petFrame)
+			end
+		end
+	end
+
+	local FocusFrameInfo = modulesInfo.FocusFrame
+	local FocusFrame = FocusFrameInfo.module
+	if (FocusFrame) then
+		local fade = not forced and FocusFrameInfo.enabled and db.enabled and db.fadeFocusFrame
+		local focusFrame = FocusFrame:GetFrame()
+		if (focusFrame) then
+			if (fade) then
+				LFF:RegisterFrameForFading(focusFrame, self:GetName())
+			else
+				LFF:UnregisterFrameForFading(focusFrame)
+			end
+		end
+	end
+
+	-- Objectives Tracker
+	--------------------------------------------
+	local TrackerInfo = modulesInfo.Tracker
+	local TrackerModule = TrackerInfo.module
+	if (TrackerModule) then
+		local fade = not forced and TrackerInfo.enabled and db.enabled and db.fadeTracker
+		local tracker = TrackerModule.GetFrame and TrackerModule:GetFrame() -- we don't have this in WoW11
+		if (tracker) then
+			if (fade) then
+				LFF:RegisterFrameForFading(tracker, TrackerModule:GetName())
+			else
+				LFF:UnregisterFrameForFading(tracker)
+			end
+		end
+	end
+
+	-- Cooldown Manager
+	--------------------------------------------
+	-- Blizzard's viewers are faded through proxies the module owns, so their own
+	-- SetAlpha and Edit Mode opacity are left alone. See CooldownManager.lua.
+	local CooldownManagerInfo = modulesInfo.CooldownManager
+	local CooldownManagerModule = CooldownManagerInfo.module
+	if (CooldownManagerModule and CooldownManagerModule.GetFadeFrames) then
+		local fade = not forced and CooldownManagerInfo.enabled and db.enabled and db.fadeCooldownManager
+		for _,proxy in ipairs(CooldownManagerModule:GetFadeFrames()) do
+			if (fade) then
+				LFF:RegisterFrameForFading(proxy, self:GetName())
+			else
+				LFF:UnregisterFrameForFading(proxy)
+			end
+		end
+	end
+
+	-- Chat Windows
+	--------------------------------------------
+	local fadeChat = not forced and db.enabled and db.fadeChatFrames
+	for _,frameName in pairs(_G.CHAT_FRAMES) do
+		local chatFrame = _G[frameName]
+		if (chatFrame) then
+			if (fadeChat) then
+				LFF:RegisterFrameForFading(chatFrame, "ChatFrames")
+			else
+				LFF:UnregisterFrameForFading(chatFrame)
+			end
+		end
+	end
+
+end
+
+ExplorerMode.CheckForForcedState = function(self)
+	local db = self.db.profile
+
+	if (self.delayTimer) then
+		return true
+	end
+
+	if (self.inCombat and not db.fadeInCombat) then
+		return true
+	end
+
+	-- Check for the various targeting options.
+	if (self.hasTarget) then
+
+		-- Only check for hostile/friendly targets if the target is living
+		-- and the option to keep faded with dead targets isn't selected.
+		if not(self.hasDeadTarget and db.fadeWithDeadTarget) then
+
+			-- Hostile target and no hostile target fade selected.
+			if (self.hasAttackableTarget and not db.fadeWithHostileTarget) then
+				return true
+
+			-- Non-attackable target an no friendly fade selected.
+			elseif (not self.hasAttackableTarget and not db.fadeWithFriendlyTarget) then
+				return true
+			end
+		end
+	end
+
+	if (self.hasFocus and not db.fadeWithFocusTarget)
+	or (self.inGroup and not db.fadeInGroups)
+	or (self.hasOverride and not db.fadeInVehicles)
+	or (self.hasPossess and not db.fadeInVehicles)
+	or (self.isDragonRiding and not db.fadeInVehicles)
+	or (self.inVehicle and not db.fadeInVehicles)
+	or (self.inInstance and not db.fadeInInstances)
+	or (self.inMythicPlus and not db.fadeInMythicPlus)
+	or (self.lowHealth and not db.fadeWithLowHealth)
+	or (self.lowPower and not db.fadeWithLowMana)
+	--or (self.badAura)
+	or (self.busyCursor) then
+		return true
+	end
+
+	return nil
+end
+
+ExplorerMode.CheckCursor = function(self)
+	--if (CursorHasSpell() or CursorHasItem()) then
+	--	self.busyCursor = true
+	--	return
+	--end
+
+	-- other values: money, merchant
+	local cursor = GetCursorInfo()
+	if (cursor == "petaction")
+	or (cursor == "spell")
+	or (cursor == "macro")
+	or (cursor == "mount")
+	or (cursor == "item") then
+		self.busyCursor = true
+		return
+	end
+
+	self.busyCursor = nil
+end
+
+ExplorerMode.CheckHealth = function(self)
+	local min = UnitHealth("player") or 0
+	local max = UnitHealthMax("player") or 0
+	-- The game's answer wins whenever it is readable. The frame keeps its last
+	-- readable value through secret stretches, so after combat it can be stale,
+	-- and at full health no further event would correct it.
+	if not (issecretvalue and (issecretvalue(min) or issecretvalue(max))) then
+		self.lowHealth = (max > 0) and (min/max < self.db.profile.fadeThresholdHealth) or nil
+		return
+	end
+	local frame
+	local playerFrameAlternate = ns:GetModule("PlayerFrameAlternate", true)
+	if (playerFrameAlternate and playerFrameAlternate.IsEnabled and playerFrameAlternate:IsEnabled() and playerFrameAlternate.GetFrame) then
+		frame = playerFrameAlternate:GetFrame()
+	end
+	if (not frame) then
+		local playerFrameParty = ns:GetModule("PlayerFrameParty", true)
+		local profile = playerFrameParty and playerFrameParty.db and playerFrameParty.db.profile
+		if (profile and profile.enabled and playerFrameParty:IsEnabled() and playerFrameParty.GetFrame) then
+			frame = playerFrameParty:GetFrame()
+		end
+	end
+	if (not frame) then
+		local playerFrame = ns:GetModule("PlayerFrame", true)
+		if (playerFrame and playerFrame.IsEnabled and playerFrame:IsEnabled() and playerFrame.GetFrame) then
+			frame = playerFrame:GetFrame()
+		end
+	end
+	local health = frame and frame.Health
+	local frameMin = health and (health.safeCur or health.cur)
+	local frameMax = health and (health.safeMax or health.max)
+	local frameValuesSafe = (type(frameMin) == "number")
+		and (type(frameMax) == "number")
+		and (frameMax > 0)
+		and (not issecretvalue or (not issecretvalue(frameMin) and not issecretvalue(frameMax)))
+	if (frameValuesSafe) then
+		min = frameMin
+		max = frameMax
+	elseif issecretvalue and (issecretvalue(min) or issecretvalue(max)) then
+		self.lowHealth = nil
+		return
+	end
+	if (max > 0) and (min/max < self.db.profile.fadeThresholdHealth) then
+		self.lowHealth = true
+		return
+	end
+	self.lowHealth = nil
+end
+
+ExplorerMode.CheckPower = function(self)
+	local powerID, powerType = UnitPowerType("player")
+	if (powerType == "MANA") then
+		local min = UnitPower("player", POWER_TYPE_MANA) or 0
+		local max = UnitPowerMax("player", POWER_TYPE_MANA) or 0
+		-- Secret in combat (WoW 12+). Unknown is not low: treating it as empty
+		-- latched lowPower, and with full mana no power event clears it after combat.
+		if issecretvalue(min) or issecretvalue(max) then
+			self.lowPower = nil
+			return
+		end
+		if (max > 0) and (min/max < self.db.profile.fadeThresholdMana) then
+			self.lowPower = true
+			return
+		end
+	else
+		--if (powerType == "ENERGY" or powerType == "FOCUS") then
+		--local min = UnitPower("player") or 0
+		--local max = UnitPowerMax("player") or 0
+		--if (max > 0) and (min/max < self.db.profile.fadeThresholdEnergy) then
+		--	self.lowPower = true
+		--	return
+		--end
+		if (playerClass == "DRUID") then
+			local min = UnitPower("player", POWER_TYPE_MANA) or 0
+			local max = UnitPowerMax("player", POWER_TYPE_MANA) or 0
+			-- Secret in combat (WoW 12+); see above.
+			if issecretvalue(min) or issecretvalue(max) then
+				self.lowPower = nil
+				return
+			end
+			if (max > 0) and (min/max < self.db.profile.fadeThresholdManaInForms) then
+				self.lowPower = true
+				return
+			end
+		end
+	end
+	self.lowPower = nil
+end
+
+ExplorerMode.CheckVehicle = function(self)
+	-- Only check for vehicle bars where you have actions,
+	-- ignore vehicles you're just riding in like the
+	-- alliance/horde chopper mounts where you're a passenger.
+	if (HasVehicleActionBar()) then
+		self.inVehicle = true
+		return
+	end
+	self.inVehicle = nil
+end
+
+ExplorerMode.CheckOverride = function(self)
+	if (HasOverrideActionBar() or HasTempShapeshiftActionBar()) then
+		self.hasOverride = true
+		return
+	end
+	self.hasOverride = nil
+end
+
+ExplorerMode.CheckPossess = function(self)
+	if (IsPossessBarVisible()) then
+		self.hasPossess = true
+		return
+	end
+	self.hasPossess = nil
+end
+
+ExplorerMode.CheckDragonRiding = function(self)
+	if (HasBonusActionBar()) then
+		if (GetBonusBarOffset() == 5) then
+			if (IsMounted()) then
+				self.isDragonRiding = true
+				return
+			end
+		end
+	end
+	self.isDragonRiding = nil
+end
+
+ExplorerMode.CheckTarget = function(self)
+	if (UnitExists("target")) then
+		self.hasTarget = true
+		self.hasAttackableTarget = UnitCanAttack("player", "target")
+		self.hasDeadTarget = UnitIsDeadOrGhost("target")
+		return
+	end
+	self.hasTarget = nil
+	self.hasAttackableTarget = nil
+	self.hasDeadTarget = nil
+end
+
+ExplorerMode.CheckFocus = function(self)
+	if (UnitExists("focus")) then
+		self.hasFocus = true
+		return
+	end
+	self.hasFocus = nil
+end
+
+ExplorerMode.CheckGroup = function(self)
+	if (IsInGroup()) then
+		self.inGroup = true
+		return
+	end
+	self.inGroup = nil
+end
+
+ExplorerMode.CheckInstance = function(self)
+	if (IsInInstance()) then
+		self.inInstance = true
+		return
+	end
+	self.inInstance = nil
+end
+
+-- Whether a Mythic+ key is running. Not secret, and Forever has no keys, where the
+-- call is missing or answers false.
+ExplorerMode.CheckMythicPlus = function(self)
+	local challengeMode = C_ChallengeMode
+	local isActive = challengeMode and challengeMode.IsChallengeModeActive
+	if (type(isActive) == "function") then
+		local ok, active = pcall(isActive)
+		if (ok and active == true) then
+			self.inMythicPlus = true
+			return
+		end
+	end
+	self.inMythicPlus = nil
+end
+
+ExplorerMode.OnTimedForcedStateEnd = function(self)
+	if (self.delayTimer) then
+		self:CancelTimer(self.delayTimer)
+		self.delayTimer = nil
+	end
+
+	-- Restore the library's default fade out duration.
+	if (self.restoreFadeOutDuration) then
+		LFF:SetFadeOutDuration(nil)
+		self.restoreFadeOutDuration = nil
+	end
+
+	self:UpdateSettings()
+end
+
+ExplorerMode.SetTimedForcedState = function(self, duration)
+	if (self.delayTimer) then
+		self:CancelTimer(self.delayTimer)
+		self.delayTimer = nil
+	end
+
+	self.delayTimer = self:ScheduleTimer("OnTimedForcedStateEnd", duration)
+end
+
+ExplorerMode.OnEvent = function(self, event, ...)
+	if (event == "PLAYER_ENTERING_WORLD") then
+		local isInitialLogin, isReloadingUi = ...
+
+		-- Kill off remnant timers
+		-- from pure loading screens.
+		if (self.delayTimer) then
+			self:CancelTimer(self.delayTimer)
+			self.delayTimer = nil
+		end
+
+		local db = self.db.profile
+
+		-- Initiate a delay according to settings.
+		if (isInitialLogin) then
+			if (db.delayOnLogin > 0) then
+				self.hasLoadingScreenDelay = true
+				self:SetTimedForcedState(db.delayOnLogin)
+			end
+		elseif (isReloadingUi) then
+			if (db.delayOnReload > 0) then
+				self.hasLoadingScreenDelay = true
+				self:SetTimedForcedState(db.delayOnReload)
+			end
+		else
+			if (db.delayOnZoning > 0) then
+				self.hasLoadingScreenDelay = true
+				self:SetTimedForcedState(db.delayOnZoning)
+			end
+		end
+
+		if (self.delayTimer) then
+			-- Restore the library's default fade out duration.
+			LFF:SetFadeOutDuration(nil)
+		else
+			-- Hack to bypass the initial fadeout.
+			-- Without it we'll have half a second of frame visibility.
+			LFF:SetFadeOutDuration(0)
+			self.restoreFadeOutDuration = true
+		end
+
+		self.inCombat = InCombatLockdown()
+
+		self:CheckInstance()
+		self:CheckMythicPlus()
+		self:CheckGroup()
+		self:CheckTarget()
+
+		self:CheckFocus()
+		self:CheckVehicle()
+		self:CheckOverride()
+		self:CheckPossess()
+		self:CheckDragonRiding()
+
+		self:CheckHealth()
+		self:CheckPower()
+		--self:CheckAuras()
+		self:CheckCursor()
+
+	elseif (event == "PLAYER_LEVEL_UP") then
+			local level = ...
+			if (level and (level ~= playerLevel)) then
+				playerLevel = level
+			else
+				local level = UnitLevel("player")
+				if (not playerLevel) or (playerLevel < level) then
+					playerLevel = level
+				end
+			end
+
+	elseif (event == "PLAYER_REGEN_DISABLED") then
+		self.inCombat = true
+
+	elseif (event == "PLAYER_REGEN_ENABLED") then
+		self.inCombat = false
+
+		-- Health and power were secret or stale in combat, and at full neither
+		-- fires another event, so read them again now.
+		self:CheckHealth()
+		self:CheckPower()
+
+		if (self.db.profile.delayOnCombatEnd > 0) then
+			self:SetTimedForcedState(self.db.profile.delayOnCombatEnd)
+		end
+
+	elseif (event == "CURSOR_CHANGED") then
+		-- This, power and health fire far more often than their answer changes: only
+		-- a changed answer can change whether frames fade, so nothing else is redone.
+		local was = self.busyCursor
+		self:CheckCursor()
+		if (self.busyCursor == was) then return end
+
+	elseif (event == "PLAYER_TARGET_CHANGED") then
+		self:CheckTarget()
+
+	elseif (event == "PLAYER_FOCUS_CHANGED") then
+		self:CheckFocus()
+
+	elseif (event == "GROUP_ROSTER_UPDATE") then
+		self:CheckGroup()
+
+	elseif (event == "UPDATE_POSSESS_BAR") then
+		self:CheckPossess()
+
+	elseif (event == "UPDATE_OVERRIDE_ACTIONBAR") then
+		self:CheckOverride()
+
+	elseif (event == "UPDATE_BONUS_ACTIONBAR") then
+		self:CheckDragonRiding()
+
+	elseif (event == "PLAYER_MOUNT_DISPLAY_CHANGED") then
+		-- Every one of these flags latches: each is only re-read on the single
+		-- bar event that sets it, and any of them left true keeps ShouldNotFade
+		-- returning true forever. Dismounting - including the implicit dismount
+		-- from casting while mounted - can land after the last bar event, so
+		-- CheckDragonRiding in particular could keep a stale true and Explorer
+		-- Mode would never fade again until a reload. Re-read the whole set.
+		self:CheckVehicle()
+		self:CheckOverride()
+		self:CheckPossess()
+		self:CheckDragonRiding()
+
+	elseif (event == "UNIT_ENTERING_VEHICLE")
+		or (event == "UNIT_ENTERED_VEHICLE")
+		or (event == "UNIT_EXITING_VEHICLE")
+		or (event == "UNIT_EXITED_VEHICLE")
+		or (event == "UPDATE_VEHICLE_ACTIONBAR") then
+		self:CheckVehicle()
+
+	elseif (event == "UNIT_POWER_FREQUENT")
+		or (event == "UNIT_DISPLAYPOWER") then
+			local was = self.lowPower
+			self:CheckPower()
+			if (self.lowPower == was) then return end
+
+	elseif (event == "UNIT_HEALTH_FREQUENT") or (event == "UNIT_HEALTH") then
+		local was = self.lowHealth
+		self:CheckHealth()
+		if (self.lowHealth == was) then return end
+
+	--elseif (event == "UNIT_AURA") then
+		--self:CheckAuras()
+
+	elseif (event == "ZONE_CHANGED_NEW_AREA") then
+		self:CheckInstance()
+		self:CheckMythicPlus()
+
+	elseif (event == "CHALLENGE_MODE_START")
+		or (event == "CHALLENGE_MODE_COMPLETED")
+		or (event == "CHALLENGE_MODE_RESET") then
+		self:CheckMythicPlus()
+	end
+
+	self:UpdateSettings()
+end
+
+ExplorerMode.EnableExplorerMode = function(self)
+	self:RegisterEvent("CURSOR_CHANGED", "OnEvent")
+	self:RegisterEvent("ZONE_CHANGED_NEW_AREA", "OnEvent")
+	self:RegisterEvent("PLAYER_ENTERING_WORLD", "OnEvent")
+	self:RegisterEvent("PLAYER_LEAVING_WORLD", "OnEvent")
+	self:RegisterEvent("PLAYER_LEVEL_UP", "OnEvent")
+	self:RegisterEvent("PLAYER_REGEN_DISABLED", "OnEvent")
+	self:RegisterEvent("PLAYER_REGEN_ENABLED", "OnEvent")
+	self:RegisterEvent("PLAYER_TARGET_CHANGED", "OnEvent")
+	self:RegisterEvent("GROUP_ROSTER_UPDATE", "OnEvent")
+	self:RegisterUnitEvent("UNIT_HEALTH", "OnEvent", "player")
+	self:RegisterUnitEvent("UNIT_POWER_FREQUENT", "OnEvent", "player")
+	self:RegisterUnitEvent("UNIT_DISPLAYPOWER", "OnEvent", "player")
+	-- No UNIT_AURA: nothing reads auras (CheckAuras is gone), and every aura change in
+	-- combat ran the whole settings pass for nothing.
+
+	self:RegisterEvent("PLAYER_FOCUS_CHANGED", "OnEvent")
+	self:RegisterEvent("UPDATE_OVERRIDE_ACTIONBAR", "OnEvent")
+	self:RegisterEvent("UPDATE_POSSESS_BAR", "OnEvent")
+	self:RegisterEvent("UPDATE_BONUS_ACTIONBAR", "OnEvent")
+	self:RegisterEvent("PLAYER_MOUNT_DISPLAY_CHANGED", "OnEvent")
+	self:RegisterEvent("UPDATE_VEHICLE_ACTIONBAR", "OnEvent", "player")
+	self:RegisterUnitEvent("UNIT_ENTERED_VEHICLE", "OnEvent", "player")
+	self:RegisterUnitEvent("UNIT_ENTERING_VEHICLE", "OnEvent", "player")
+	self:RegisterUnitEvent("UNIT_EXITED_VEHICLE", "OnEvent", "player")
+	self:RegisterUnitEvent("UNIT_EXITING_VEHICLE", "OnEvent", "player")
+
+	-- Mythic+ keys starting and ending. Missing on Forever.
+	for _, event in ipairs({ "CHALLENGE_MODE_START", "CHALLENGE_MODE_COMPLETED", "CHALLENGE_MODE_RESET" }) do
+		if (ns.API.IsEventAvailable(event)) then
+			self:RegisterEvent(event, "OnEvent")
+		end
+	end
+
+	-- This is needed to put actionbars that were exempt from Explorer Mode fading
+	-- back into it when their own full fading has been disabled.
+	ns.RegisterCallback(self, "ActionBarSettings_Changed", "UpdateSettings")
+
+	self.enabled = true
+end
+
+ExplorerMode.DisableExplorerMode = function(self)
+	self:UnregisterEvent("CURSOR_CHANGED", "OnEvent")
+	self:UnregisterEvent("ZONE_CHANGED_NEW_AREA", "OnEvent")
+	self:UnregisterEvent("PLAYER_ENTERING_WORLD", "OnEvent")
+	self:UnregisterEvent("PLAYER_LEAVING_WORLD", "OnEvent")
+	self:UnregisterEvent("PLAYER_LEVEL_UP", "OnEvent")
+	self:UnregisterEvent("PLAYER_REGEN_DISABLED", "OnEvent")
+	self:UnregisterEvent("PLAYER_REGEN_ENABLED", "OnEvent")
+	self:UnregisterEvent("PLAYER_TARGET_CHANGED", "OnEvent")
+	self:UnregisterEvent("GROUP_ROSTER_UPDATE", "OnEvent")
+	self:UnregisterEvent("UNIT_HEALTH", "OnEvent", "player")
+	self:UnregisterEvent("UNIT_POWER_FREQUENT", "OnEvent", "player")
+	self:UnregisterEvent("UNIT_DISPLAYPOWER", "OnEvent", "player")
+
+	self:UnregisterEvent("PLAYER_FOCUS_CHANGED", "OnEvent")
+	self:UnregisterEvent("UPDATE_OVERRIDE_ACTIONBAR", "OnEvent")
+	self:UnregisterEvent("UPDATE_POSSESS_BAR", "OnEvent")
+	self:UnregisterEvent("UPDATE_BONUS_ACTIONBAR", "OnEvent")
+	self:UnregisterEvent("PLAYER_MOUNT_DISPLAY_CHANGED", "OnEvent")
+	self:UnregisterEvent("UPDATE_VEHICLE_ACTIONBAR", "OnEvent", "player")
+	self:UnregisterEvent("UNIT_ENTERED_VEHICLE", "OnEvent", "player")
+	self:UnregisterEvent("UNIT_ENTERING_VEHICLE", "OnEvent", "player")
+	self:UnregisterEvent("UNIT_EXITED_VEHICLE", "OnEvent", "player")
+	self:UnregisterEvent("UNIT_EXITING_VEHICLE", "OnEvent", "player")
+
+	for _, event in ipairs({ "CHALLENGE_MODE_START", "CHALLENGE_MODE_COMPLETED", "CHALLENGE_MODE_RESET" }) do
+		if (ns.API.IsEventAvailable(event)) then
+			self:UnregisterEvent(event, "OnEvent")
+		end
+	end
+	self.inMythicPlus = nil
+
+	-- This is needed to put actionbars that were exempt from Explorer Mode fading
+	-- back into it when their own full fading has been disabled.
+	ns.UnregisterCallback(self, "ActionBarSettings_Changed", "UpdateSettings")
+
+	self.enabled = nil
+end
+
+ExplorerMode.OnEnable = function(self)
+	-- Delay initial settings update slightly to avoid early iterations over ActionBars.bars
+	-- during login/reload where dependent modules may still be initializing.
+	self:ScheduleTimer(function()
+		if self.UpdateSettings then
+			self:UpdateSettings()
+		end
+	end, 1)
+end

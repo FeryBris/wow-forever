@@ -1,0 +1,11 @@
+<Ui xmlns="http://www.blizzard.com/wow/ui/">
+	<!-- One alert shown by the game itself while its buff is on the player (AuraShow.lua).
+	     The game shows "bar" only while the buff has the right number of stacks; everything
+	     Shadowflare draws for the alert sits inside it. -->
+	<Frame name="ShadowflareAuraTemplate" virtual="true">
+		<Size x="260" y="220"/>
+		<Frames>
+			<StatusBar parentKey="bar" setAllPoints="true" hidden="true" clipChildren="false"/>
+		</Frames>
+	</Frame>
+</Ui>

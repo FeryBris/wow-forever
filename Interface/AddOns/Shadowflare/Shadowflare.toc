@@ -1,0 +1,17 @@
+## Interface: 16001
+## Title: Shadowflare
+## Notes: Proc alerts for every class: Clearcasting, Heating Up, Shadow Trance, Overpower, Execute and more.
+## Notes-frFR: Alertes de procs pour toutes les classes : Idées claires, Transe de l'ombre, Fulgurance, Exécution et d'autres.
+## Author: Fistao
+## Version: 0.23.33
+## SavedVariables: ShadowflareDB
+
+Locale.lua
+Core.lua
+Profiles.lua
+Display.lua
+Settings.lua
+AuraShow.xml
+AuraShow.lua
+Options.lua
+Notes.lua

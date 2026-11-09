@@ -1,0 +1,103 @@
+ForeverPlus
+
+Copyright (C) 2026 Epicstrike. All rights reserved.
+
+This is not open source software. The source code is readable because World of
+Warcraft loads addons as plain Lua text, and because Blizzard's addon policy
+requires addon code to be visible, not because the rights to it have been
+given away. Being able to read the code grants you nothing beyond what is
+written below.
+
+
+1. WHAT THIS LICENSE COVERS
+
+   a) This license covers the files written for ForeverPlus by its author.
+      Those files are called the Author's Work below.
+
+   b) The Addon as distributed may also contain third-party components:
+      libraries written by other people and included without modification.
+      They are not the Author's Work, and this license does not apply to
+      them. Each one keeps the terms its own author placed on it, and where
+      those terms permit something this license forbids, those terms govern
+      that component.
+
+   c) Third-party components, when there are any, sit in ForeverPlus/Libs/
+      and are listed with their full notices in THIRD-PARTY-NOTICES.md, which
+      ships inside the Addon beside this file. If that file lists nothing,
+      the Addon contains nothing but the Author's Work.
+
+   d) Only permissively licensed components are ever bundled: licenses that
+      allow a component to be included in a work distributed under other
+      terms, and that ask for nothing beyond keeping their notices intact.
+      Nothing under the GPL or a comparable copyleft license is included, and
+      neither is anything whose terms are unclear.
+
+
+2. WHAT YOU MAY DO
+
+   a) Install and use the Addon, free of charge, for as long as you like.
+
+   b) Read and study the source code.
+
+   c) Change your own copy, for your own private use.
+
+   d) Keep backup copies for yourself.
+
+
+3. WHAT YOU MAY NOT DO
+
+   a) Distribute the Author's Work, in whole or in part, by any means. This
+      includes uploading it anywhere, bundling it with other software or with
+      a user interface package, and passing copies to other people.
+
+   b) Distribute a changed version of the Author's Work, under this name or
+      any other. The permission in 2 (c) covers your own installation only.
+
+   c) Charge for the Addon, place it behind a paywall, require a payment,
+      subscription or donation for access to it, or use it to carry
+      advertising.
+
+   d) Copy any part of the Author's Work into another addon or into any other
+      work, with or without attribution.
+
+   The Addon is distributed only through the channels named by the author. At
+   the time of writing that is the CurseForge project page for ForeverPlus.
+   The author may add, change or withdraw channels at any time.
+
+
+4. PERMISSION FOR THE DISTRIBUTION PLATFORM
+
+   The author grants CurseForge, and any other platform the author uploads the
+   Addon to, the right to host and distribute it. This permission is given by
+   the author to that platform; it is not a right that anyone else may rely on.
+
+
+5. RESERVED RIGHTS
+
+   Every right in the Author's Work not expressly granted above is reserved
+   by the author.
+
+   If you would like to do something this license does not permit (translate
+   it, fork it, reuse a piece of it), please ask. Permission may well be
+   given, and it costs nothing to enquire.
+
+   Contact: https://discord.com/users/195635523887431681
+
+
+6. NO WARRANTY
+
+   The Addon is provided "as is", without warranty of any kind, express or
+   implied, including but not limited to the warranties of merchantability,
+   fitness for a particular purpose and non-infringement.
+
+   To the fullest extent permitted by applicable law, the author shall not be
+   liable for any claim, damages or other liability, whether in an action of
+   contract, tort or otherwise, arising from, out of or in connection with the
+   Addon or the use of or other dealings in the Addon.
+
+
+7. TRADEMARKS AND GAME CONTENT
+
+   World of Warcraft and Blizzard Entertainment are trademarks or registered
+   trademarks of Blizzard Entertainment, Inc. This Addon is neither affiliated
+   with nor endorsed by Blizzard Entertainment.
